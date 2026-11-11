@@ -46,7 +46,13 @@ The API is the source of truth for the entitlement and the remaining trial count
 - Handicap history: the golfer enters an index and date. Migrated history comes from golftrack's `HandicapHistory`.
 
 ### 3.2 Courses
-Structure: **Course → Tee → TeeHole**, same as golftrack, where each tee has its own 18 holes with par, yardage and stroke index. A tee stores total, front-nine and back-nine par, course rating and slope.
+Structure: **Course → Tee → TeeVersion → TeeHole**. Each tee has its own holes with par, yardage and stroke index. A tee version stores total, front-nine and back-nine par, course rating and slope.
+
+**Versioning.** Ratings, slopes, stroke indexes, pars and yardages change over time, and a change must never alter rounds already played. So the numbers live on a **TeeVersion** with an `EffectiveFrom` date, and every round points to the exact TeeVersion it was played on.
+- **New version:** when a tee's numbers really change (a re-rating, new stroke indexes), an admin or user creates a new version with an effective date. New rounds use the version in effect on the date played. Old rounds keep their version.
+- **Correction:** if the data was simply wrong (a typo or bad import), an admin can correct a version in place, and the correction applies to the rounds that use it. A version that no rounds use yet can always be edited in place.
+- Course details (name, address, phone, website) aren't versioned, since they don't affect stats.
+- Each version records its source (import, manual, admin edit) and who changed it.
 
 Ways to add a course:
 1. **Search and import (main path).** Search GolfCourseAPI by name or location from the app or the web site, pick a result, and the API imports that single course with its tees and holes into our database, recording `Source = GolfCourseAPI` and the provider's course ID. Once imported, all reads come from our database and the provider is never called at runtime.
@@ -61,19 +67,28 @@ Data quality, because provider data can be out of date:
 GolfCourseAPI terms allow caching data fetched in normal use, but forbid bulk copying and redistribution. We only import a course when a golfer picks it, never in bulk. Provider integration sits behind an `ICourseProvider` interface so we can switch to another provider (such as golfapi.io for coordinates) later.
 
 ### 3.3 Logging a round
-Round header: course and tee, date played, holes played (9 or 18) and starting hole (1 or 10 for nine-hole rounds), round type, optional weather, wind, temperature, duration, distance walked and notes. These are golftrack's fields, minus the GameGolf and Hole19 links.
+Round header: course and tee (stored as the TeeVersion in effect), date played, round type and notes. **A round can include any number of holes**, in any order. There's no fixed 9 or 18, and the round is simply the holes the golfer entered. Each hole result records its hole number and its **entry sequence** (the order it was played), so a round that starts on 10, skips holes or plays a hole twice is recorded faithfully.
+
+**Captured automatically by the app** (all editable afterwards, and all optional so a round never fails because a sensor or service isn't available):
+- **Weather** at the moment the round starts: conditions, temperature, wind speed and wind direction. The app sends the course location (or, if the course has no coordinates, one coarse location reading from the phone) and the start time to the API, and the API asks a weather service. Keeping this in the API keeps the weather service key off the device and lets us switch providers. If the phone is offline at the start, the API looks up the weather for the round's start time and place when the round syncs.
+- **Duration**: time from starting the round to finishing it.
+- **Distance and step count**: from the phone's pedometer (iOS Core Motion gives both steps and distance; on Android, steps come from the step sensor or Health Connect, and distance is estimated from steps). No GPS tracking. The golfer is asked for motion permission the first time.
+
+Migrated golftrack rounds keep their old weather, wind and temperature categories in a text field, since they weren't recorded as measurements.
 
 The golfer chooses the **entry mode** when they start the round, and it applies to the whole round.
 
 **Quick entry** (golftrack parity), one record per hole:
-score, putts, fairway hit, tee shot left, right, long and short (independent flags, as in golftrack), GIR, penalty strokes, sand shots. GIR is suggested automatically from score and putts (`score − putts ≤ par − 2`) and can be overridden.
+score, putts, fairway hit, tee shot left, right, long and short (independent flags, as in golftrack), GIR, penalty strokes (any number, zero or more), **greenside sand shots** and **fairway sand shots** (counted separately). GIR is suggested automatically from score and putts (`score − putts ≤ par − 2`) and can be overridden.
 
 **Shot-by-shot**: the golfer logs every stroke (see §6). The hole summary record (the same fields as quick entry) is **derived from the shots** and stored, so every stat works the same way for both modes.
 
 Rounds can be edited after they're finished. Changing a shot-by-shot round recalculates its hole summaries.
 
 ### 3.4 Stats (golftrack parity)
-The same sections and stats as the current golftrack stats page, filtered by year:
+The same sections and stats as the current golftrack stats page, filtered by year.
+
+**Round length rule.** Stats split into 9-hole and 18-hole figures (round counts, scoring averages, low and high rounds, score histograms, putts per round, and the per-round columns in career and course tables) only include rounds with **exactly 9 or exactly 18 holes**. Rounds with any other number of holes are left out of those figures. They still count toward per-hole stats such as GIR %, driving accuracy, putting, par 3/4/5 averages, sand saves and scrambling, and they still appear in the round list. A round that plays the same hole twice counts the holes it recorded.
 
 - **Overall:** handicap index (as of a date), 18-hole scoring average, holes played, +/- par, with charts for driving accuracy, GIR, scoring percentages, recovery, putting averages and handicap history.
 - **Season:** rounds played split into 9 and 18 holes, and score-distribution histograms (9 holes: <40, 40–49, 50+; 18 holes: <80, 80–89, 90–99, 100+).
@@ -87,7 +102,7 @@ The same sections and stats as the current golftrack stats page, filtered by yea
 - **Handicap:** a history table and chart.
 - **Scorecard** page per round and **course detail** page.
 
-The rules for each stat are ported from golftrack's `Stats_*`, `Chart_*` and `Round_SeasonSummary` stored procedures in `golftrack-xyz/files/03-sprocs.sql`. For example, sand save means a hole with sand shots scored at par or better, scrambling means par or better on a missed GIR, and a hole-out means zero putts. Those definitions are written down as tests (see §10).
+The rules for each stat are ported from golftrack's `Stats_*`, `Chart_*` and `Round_SeasonSummary` stored procedures in `golftrack-xyz/files/03-sprocs.sql`. For example, sand save means a hole with greenside sand shots scored at par or better (golftrack counted any sand shot; fairway bunkers are now excluded), scrambling means par or better on a missed GIR, and a hole-out means zero putts. Those definitions are written down as tests (see §10).
 
 In the mobile app, v1 shows a round summary, the scorecard and a compact season summary (the Overall section). The full set of sections lives on the web site.
 
@@ -103,7 +118,7 @@ The API enforces the admin role on every admin endpoint. Hiding pages in the web
 The Uno app also builds for the browser (WebAssembly) with the same UI. It's **best effort**: if it causes significant extra work at any point, it is dropped from v1 without affecting anything else. It works online only, with no offline storage in the browser.
 
 ### 3.7 Migrating golftrack data
-A one-time console tool reads golftrack's SQL Server database (or a backup restored locally) and writes into the new Postgres database for Ron's account: courses, tees and holes (status `Verified`), rounds and hole details as quick-entry rounds, handicap history and round metadata. Duplicate rounds are reported, not silently merged (for example, the 2026 season results currently show one round four times). The tool can be re-run safely: it clears and reloads its own previously imported records.
+A one-time console tool reads golftrack's SQL Server database (or a backup restored locally) and writes into the new Postgres database for Ron's account: courses, tees and holes (status `Verified`, one TeeVersion per golftrack tee), rounds and hole details as quick-entry rounds, handicap history and round metadata. golftrack's single sand-shot count is mapped to **greenside** sand shots, since that's how its sand save stat used it. Entry sequence is taken from golftrack's `SequenceNumber`, or the hole number when that's empty. Duplicate rounds are reported, not silently merged (for example, the 2026 season results currently show one round four times). The tool can be re-run safely: it clears and reloads its own previously imported records.
 
 ## 4. Architecture
 
@@ -123,6 +138,8 @@ A one-time console tool reads golftrack's SQL Server database (or a backup resto
 | Database | PostgreSQL 17 | Fully relational; JSON columns only for rarely queried extras. |
 | Mobile and web app | Uno Platform (C#/XAML, MVUX or MVVM), targets iOS, Android and WebAssembly | Local SQLite through EF Core or sqlite-net. |
 | Web site | Astro, server-rendered with the Node adapter, TypeScript | Calls the API from the server; a light chart library for the charts. |
+| Weather | A weather service called only by the API, behind an `IWeatherProvider` interface; must allow commercial use and historical lookups (choose in the build plan, for example OpenWeatherMap or Open-Meteo's commercial plan) | |
+| Device sensors | Core Motion on iOS; step sensor or Health Connect on Android | Steps and distance only; no GPS tracking. |
 | Auth | ASP.NET Core Identity in the API, bearer access and refresh tokens; Apple and Google sign-in | The app stores tokens in secure storage. The web site keeps them in an encrypted httpOnly cookie on the server side. |
 
 ### Repository layout (single repo)
@@ -147,10 +164,11 @@ docs/
 - **Account**: Identity user plus role, tier, trial shot rounds used, profile fields, home course, units.
 - **HandicapEntry**: account, date, index.
 - **Course**: name, address, city, state or region, country, phone, website, status, source, provider ID, last verified at.
-- **Tee**: course, name, gender, par, rating, slope, front and back nine par, rating and slope.
-- **TeeHole**: tee, hole number, par, yardage, stroke index.
-- **Round**: client-generated GUID ID, account, tee, played on, holes played, starting hole, entry mode, round type, weather, wind, temperature, duration, distance, notes, updated at, deleted at (soft delete), version.
-- **HoleResult** (one per hole played): round, hole number, score, putts, fairway hit, tee shot left, right, long and short, GIR, penalty strokes, sand shots, `IsDerived` (true when it was calculated from shots).
+- **Tee**: course, name, gender.
+- **TeeVersion**: tee, effective from, par, rating, slope, front and back nine par, rating and slope, source, changed by, changed at.
+- **TeeHole**: tee version, hole number, par, yardage, stroke index.
+- **Round**: client-generated GUID ID, account, tee version, started at, finished at, entry mode, round type, notes, weather (conditions, temperature, wind speed, wind direction, plus a legacy text field for migrated rounds), duration, distance (miles), step count, updated at, deleted at (soft delete), version. The number of holes is the number of hole results, not a stored field.
+- **HoleResult** (one per hole played): round, hole number, entry sequence, score, putts, fairway hit, tee shot left, right, long and short, GIR, penalty strokes, greenside sand shots, fairway sand shots, `IsDerived` (true when it was calculated from shots).
 - **Shot** (shot-by-shot rounds only): see §6.
 - **CourseFlag**: course, tee and hole (optional), reporter, note, status, resolved by.
 - **AppSetting**: key and value (for example the trial round allowance).
@@ -164,8 +182,8 @@ Strokes gained compares each shot's starting position (distance to the hole and 
 **Shot** columns:
 | Field | Type | Notes |
 |---|---|---|
-| RoundId, HoleNumber, Sequence | | Order of strokes on the hole. |
-| StartLie | enum | Tee, Fairway, Rough, Sand, Recovery (trees or trouble), Green |
+| RoundId, HoleResultId, Sequence | | Order of strokes on the hole. |
+| StartLie | enum | Tee, Fairway, Rough, FairwaySand, GreensideSand, Recovery (trees or trouble), Green |
 | StartDistance | int | Yards to the hole, or **feet** when StartLie is Green. Filled in automatically from the previous shot's end. |
 | Club | enum | Driver, 3–7 wood, 2–6 hybrid, 2–9 iron, PW, GW, SW, LW, Putter. A per-golfer bag comes later. |
 | ShotType | enum | Tee, Approach, Layup, Chip, Pitch, Bunker, Recovery, Putt |
@@ -173,7 +191,7 @@ Strokes gained compares each shot's starting position (distance to the hole and 
 | EndDistance | int? | Yards or feet as above. Null when holed. |
 | Direction | enum | OnTarget, Left, Right, Short, Long (with combinations such as ShortLeft) |
 | Shape | enum? | Straight, Draw, Fade, Hook, Slice, Push, Pull, plus Topped and Fat as mishits |
-| PenaltyStrokes | int | 0, 1 or 2 |
+| PenaltyStrokes | int | Zero or more, no upper limit |
 
 The screens for entering this are meant to be refined later. The columns are what v2 needs.
 
@@ -182,7 +200,7 @@ The screens for entering this are meant to be refined later. The columns are wha
 - Putts = shots whose StartLie is Green
 - Fairway hit = on par 4s and 5s, the first shot's EndLie is Fairway. Tee shot left, right, long and short come from its Direction.
 - GIR = the ball first reaches the green (or is holed) within par − 2 strokes, counting penalties
-- Sand shots = shots whose StartLie is Sand
+- Greenside sand shots = shots whose StartLie is GreensideSand; fairway sand shots = shots whose StartLie is FairwaySand
 - Penalty strokes = sum of PenaltyStrokes
 
 ## 7. Offline use and sync
@@ -198,7 +216,7 @@ The screens for entering this are meant to be refined later. The columns are wha
 - `auth/*`: register, log in, refresh, Apple and Google sign-in
 - `me`: profile, handicap entries, entitlements
 - `courses`: search our database, `courses/provider-search`, `courses/import`, read, create and update, flag
-- `rounds`: list, read, upsert (whole round), delete, `sync/changes?since=`
+- `rounds`: list, read, upsert (whole round), delete, `sync/changes?since=`, `weather?lat=&lon=&at=` (proxies the weather service; also filled in on sync when missing)
 - `stats/{year}/*`: the sections in §3.4, plus `stats/career`, `stats/courses`, `rounds/{id}/scorecard`
 - `admin/*`: users, roles, tiers, courses and verification, flags, settings. Admin role required.
 
@@ -235,4 +253,9 @@ v2: strokes gained (baseline tables, then calculations per shot and per category
 | Stats | Same as golftrack for v1, calculated in shared C# rather than stored procedures |
 | Hosting | VPS with Docker for dev and beta; managed Postgres before paying customers |
 | History | Migrate Ron's golftrack data in v1 |
+| Holes per round | Any number, in any order; each hole keeps its entry sequence |
+| 9/18 reporting | Kept; only rounds with exactly 9 or 18 holes count toward it |
+| Course changes | Tee data is versioned; rounds point to the version they were played on |
+| Round extras | Weather, duration, distance and steps captured automatically by the app |
+| Sand and penalties | Greenside and fairway sand counted separately; penalties uncapped |
 | Importers | GHIN and Hole19 after v1; the others dropped |
