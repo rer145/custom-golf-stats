@@ -20,7 +20,7 @@ public class OffTheTeeStatsTests
     public void Left_and_right_tendency()
     {
         var round = Round(Day, Hole(4, 4, left: true), Hole(4, 4, left: true), Hole(5, 5, right: true),
-            Hole(4, 4, fairway: true), Hole(3, 3, left: true));
+            Hole(4, 4, fairway: true), Hole(3, 3));
         var s = OffTheTeeStats.Calculate([round]);
         Assert.Equal(new Ratio(2, 4), s.LeftTendency);
         Assert.Equal(new Ratio(1, 4), s.RightTendency);
