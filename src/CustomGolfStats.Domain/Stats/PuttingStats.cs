@@ -21,9 +21,9 @@ public static class PuttingStats
             return new Average(of.Sum(r => r.Putts), of.Count);
         }
 
-        // Mirrors Stats_PuttingStats: numerator counts every birdie-or-better hole
-        // (not only GIR holes); denominator is GIR holes.
-        var birdies = holes.Count(h => h.ToPar <= -1);
+        // Deliberately differs from Stats_PuttingStats (legacy bug: counted non-GIR birdies,
+        // so the ratio could exceed 100%). Only GIR holes count, e.g. a chip-in birdie does not.
+        var birdies = girHoles.Count(h => h.ToPar <= -1);
 
         return new PuttingSection(
             new Average(girHoles.Sum(h => h.Putts), girHoles.Count),

@@ -61,10 +61,10 @@ public class PuttingStatsTests
     }
 
     [Fact]
-    public void Birdie_conversion_numerator_counts_all_birdie_holes_like_sproc()
+    public void Birdie_conversion_ignores_non_gir_birdies()
     {
         var s = PuttingStats.Calculate([R(Hole(4, 3, putts: 1), Hole(4, 4, putts: 2, gir: true))]);
-        Assert.Equal(new Ratio(1, 1), s.BirdieConversion);
+        Assert.Equal(new Ratio(0, 1), s.BirdieConversion);
     }
 
     [Fact]
