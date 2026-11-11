@@ -10,6 +10,18 @@ public class ApproachStatsTests
         => ApproachStats.Calculate([Builders.Round(Day, holes)]);
 
     [Fact]
+    public void Par3_flagged_fairway_left_right_does_not_affect_directional_gir()
+    {
+        var s = Calc(
+            Builders.Hole(3, 3, gir: true, fairway: true, number: 1),
+            Builders.Hole(3, 3, gir: true, left: true, number: 2),
+            Builders.Hole(3, 3, gir: true, right: true, number: 3));
+        Assert.Null(s.GirFromFairway.Value);
+        Assert.Null(s.GirFromLeft.Value);
+        Assert.Null(s.GirFromRight.Value);
+    }
+
+    [Fact]
     public void Gir_ratio()
     {
         var s = Calc(Builders.Hole(4, 4, gir: true), Builders.Hole(4, 5), Builders.Hole(4, 4, gir: true), Builders.Hole(4, 6));

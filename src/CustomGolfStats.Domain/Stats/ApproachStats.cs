@@ -15,9 +15,11 @@ public static class ApproachStats
     {
         var holes = rounds.SelectMany(r => r.Holes).ToList();
 
-        var fairway = holes.Where(h => h.FairwayHit).ToList();
-        var left = holes.Where(h => h.TeeShotLeft).ToList();
-        var right = holes.Where(h => h.TeeShotRight).ToList();
+        // Par 3 tee shots are excluded, consistent with OffTheTeeStats.
+        var teeHoles = holes.Where(h => h.Par != 3).ToList();
+        var fairway = teeHoles.Where(h => h.FairwayHit).ToList();
+        var left = teeHoles.Where(h => h.TeeShotLeft).ToList();
+        var right = teeHoles.Where(h => h.TeeShotRight).ToList();
         var sand = holes.Where(h => h.GreensideSandShots > 0).ToList();
         var missed = holes.Where(h => !h.Gir).ToList();
 

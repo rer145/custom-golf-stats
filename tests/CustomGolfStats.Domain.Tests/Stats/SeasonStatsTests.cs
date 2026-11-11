@@ -86,6 +86,16 @@ public class SeasonStatsTests
     }
 
     [Fact]
+    public void Results_same_date_ties_break_by_id_descending()
+    {
+        var a = Builders.Round(D, Builders.Holes(9, 4, 4));
+        var b = Builders.Round(D, Builders.Holes(9, 4, 4));
+        var expected = new[] { a.Id, b.Id }.OrderByDescending(x => x).ToArray();
+        Assert.Equal(expected, SeasonStats.Results([a, b]).Select(r => r.RoundId).ToArray());
+        Assert.Equal(expected, SeasonStats.Results([b, a]).Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
     public void Results_par5_null_when_round_has_no_par5()
     {
         var row = SeasonStats.Results([Builders.Round(D, Builders.Holes(9, 4, 4))])[0];

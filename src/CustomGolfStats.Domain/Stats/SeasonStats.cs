@@ -21,7 +21,7 @@ public static class SeasonStats
 
     public static OverallTiles Overall(IReadOnlyList<RoundData> rounds)
     {
-        var eighteen = rounds.Where(r => r.Holes.Count == 18).ToList();
+        var eighteen = rounds.Where(r => r.Length == RoundLength.Eighteen).ToList();
         return new OverallTiles(
             new Average(eighteen.Sum(r => r.Score), eighteen.Count),
             rounds.Sum(r => r.Holes.Count),
@@ -30,10 +30,10 @@ public static class SeasonStats
 
     public static SeasonSection Season(IReadOnlyList<RoundData> rounds)
     {
-        var nine = rounds.Where(r => r.Holes.Count == 9).Select(r => r.Score).ToList();
-        var eighteen = rounds.Where(r => r.Holes.Count == 18).Select(r => r.Score).ToList();
+        var nine = rounds.Where(r => r.Length == RoundLength.Nine).Select(r => r.Score).ToList();
+        var eighteen = rounds.Where(r => r.Length == RoundLength.Eighteen).Select(r => r.Score).ToList();
         return new SeasonSection(
-            nine.Count, eighteen.Count, rounds.Count - nine.Count - eighteen.Count,
+            nine.Count, eighteen.Count, rounds.Count(r => r.Length is null),
             [
                 new("<40", nine.Count(s => s < 40)),
                 new("40-49", nine.Count(s => s is >= 40 and < 50)),
@@ -48,15 +48,14 @@ public static class SeasonStats
     }
 
     public static IReadOnlyList<SeasonResultRow> Results(IReadOnlyList<RoundData> rounds)
-        => rounds.OrderByDescending(r => r.PlayedOn).Select(ToRow).ToList();
+        => rounds.OrderByDescending(r => r.PlayedOn).ThenByDescending(r => r.Id).Select(ToRow).ToList();
 
     private static SeasonResultRow ToRow(RoundData r)
     {
-        var driving = r.Holes.Where(h => h.Par != 3).ToList();
         return new SeasonResultRow(r.Id, r.PlayedOn, r.CourseName, r.TeeName,
             r.Holes.Count, r.Score, r.ToPar, r.Putts,
             new Ratio(r.Holes.Count(h => h.Gir), r.Holes.Count),
-            new Ratio(driving.Count(h => h.FairwayHit), driving.Count),
+            DrivingAccuracy.Of(r.Holes),
             ToParFor(r.Holes, 3), ToParFor(r.Holes, 4), ToParFor(r.Holes, 5));
     }
 

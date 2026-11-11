@@ -59,11 +59,7 @@ public static class CareerStats
 
     private static Ratio Gir(List<HoleSummary> holes) => new(holes.Count(h => h.Gir), holes.Count);
 
-    private static Ratio Driving(List<HoleSummary> holes)
-    {
-        var driven = holes.Where(h => h.Par != 3).ToList();
-        return new Ratio(driven.Count(h => h.FairwayHit), driven.Count);
-    }
+    private static Ratio Driving(List<HoleSummary> holes) => DrivingAccuracy.Of(holes);
 
     private static Average ParToPar(List<HoleSummary> holes, int par)
     {

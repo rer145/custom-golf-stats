@@ -26,7 +26,7 @@ public class PuttingStatsTests
         var s = PuttingStats.Calculate([R(
             Hole(4, 4, putts: 1), Hole(4, 4, putts: 2), Hole(4, 5, putts: 3), Hole(4, 6, putts: 4))]);
         Assert.Equal(new Ratio(1, 4), s.OnePutt);
-        Assert.Equal(new Ratio(2, 4), s.ThreePuttAvoidance);
+        Assert.Equal(new Ratio(2, 4), s.ThreePuttRate);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class PuttingStatsTests
         var s = PuttingStats.Calculate([]);
         Assert.Null(s.PuttsPerHole.Value);
         Assert.Null(s.OnePutt.Value);
-        Assert.Null(s.ThreePuttAvoidance.Value);
+        Assert.Null(s.ThreePuttRate.Value);
         Assert.Null(s.PuttsPerRound9.Value);
         Assert.Null(s.PuttsPerRound18.Value);
     }

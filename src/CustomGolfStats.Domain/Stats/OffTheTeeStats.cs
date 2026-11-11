@@ -24,7 +24,7 @@ public static class OffTheTeeStats
         }
 
         return new OffTheTeeSection(
-            new Ratio(teeHoles.Count(h => h.FairwayHit), driving),
+            DrivingAccuracy.Of(holes),
             new Ratio(teeHoles.Count(h => h.TeeShotLeft), driving),
             new Ratio(teeHoles.Count(h => h.TeeShotRight), driving),
             ToPar(4, h => h.FairwayHit), ToPar(4, h => h.TeeShotLeft), ToPar(4, h => h.TeeShotRight),
