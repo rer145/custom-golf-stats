@@ -20,7 +20,7 @@ public static class HoleSummaryDeriver
         var first = ordered[0];
         var penalties = ordered.Sum(s => s.PenaltyStrokes);
         var score = ordered.Count + penalties;
-        var drivingHole = hole.Par >= 4;
+        var drivingHole = DrivingHole.IsDrivingHole(hole.Par);
 
         var running = 0;
         var gir = false;

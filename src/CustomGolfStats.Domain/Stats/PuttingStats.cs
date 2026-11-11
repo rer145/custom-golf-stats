@@ -1,10 +1,10 @@
 namespace CustomGolfStats.Domain.Stats;
 
+/// <param name="ThreePuttRate">Holes with three or more putts / holes. The UI may show avoidance as 1 - rate.</param>
 public sealed record PuttingSection(
     Average PuttsPerGir,
     Average PuttsPerHole,
     Ratio OnePutt,
-    /// <summary>Holes with three or more putts / holes. The UI may show avoidance as 1 - rate.</summary>
     Ratio ThreePuttRate,
     Average PuttsPerRound9, Average PuttsPerRound18,
     Ratio BirdieConversion);

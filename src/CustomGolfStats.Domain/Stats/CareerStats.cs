@@ -46,6 +46,8 @@ public static class CareerStats
             })
             .OrderBy(r => r.CourseName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.TeeName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.CourseId)
+            .ThenBy(r => r.TeeId)
             .ToList();
 
     private static LengthSummary Summarize(IEnumerable<RoundData> rounds, RoundLength length)

@@ -45,6 +45,10 @@ public class EntitlementsTests
     }
 
     [Fact]
+    public void Unknown_feature_throws()
+        => Assert.Throws<ArgumentOutOfRangeException>(() => Entitlements.CanUse((Feature)999, Tier.Paid, 0, 3));
+
+    [Fact]
     public void Default_trial_allowance_is_three()
     {
         Assert.Equal(3, Entitlements.DefaultTrialShotRounds);

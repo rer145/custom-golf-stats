@@ -14,7 +14,7 @@ public static class OffTheTeeStats
     public static OffTheTeeSection Calculate(IReadOnlyList<RoundData> rounds)
     {
         var holes = rounds.SelectMany(r => r.Holes).ToList();
-        var teeHoles = holes.Where(h => h.Par != 3).ToList();
+        var teeHoles = holes.Where(h => DrivingHole.IsDrivingHole(h.Par)).ToList();
         var driving = teeHoles.Count;
 
         Average ToPar(int par, Func<HoleSummary, bool> lie)

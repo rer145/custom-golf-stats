@@ -1,15 +1,14 @@
 namespace CustomGolfStats.Domain.Stats;
 
+/// <param name="Eagles">Holes at two or more under par. Albatross counts as an eagle (deliberate deviation from golftrack's == -2).</param>
+/// <param name="ParBreakers">(Birdies + eagles) / holes. Identical to <paramref name="BirdieOrBetter"/> (as in golftrack).</param>
+/// <param name="BirdieOrBetter">(Birdies + eagles) / holes. Identical to <paramref name="ParBreakers"/> (as in golftrack).</param>
 public sealed record ScoringSection(
     Average ScoringAverage9, Average ScoringAverage18,
     int? Lowest9, int? Highest9, int? Lowest18, int? Highest18,
-    int Birdies,
-    /// <summary>Holes at two or more under par. Albatross counts as an eagle (deliberate deviation from golftrack's == -2).</summary>
-    int Eagles,
-    /// <summary>(Birdies + eagles) / holes. Identical to <see cref="BirdieOrBetter"/> (as in golftrack).</summary>
+    int Birdies, int Eagles,
     Ratio ParBreakers,
     Average Par3Average, Average Par4Average, Average Par5Average,
-    /// <summary>(Birdies + eagles) / holes. Identical to <see cref="ParBreakers"/> (as in golftrack).</summary>
     Ratio BirdieOrBetter);
 
 public static class ScoringStats

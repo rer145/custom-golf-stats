@@ -46,9 +46,9 @@ public class SeasonStatsTests
         Assert.Equal(6, s.Rounds18);
         Assert.Equal(4, s.Rounds9);
         Assert.Equal([1, 2, 2, 1], s.Histogram18.Select(b => b.Count).ToArray());
-        Assert.Equal(["<80", "80-89", "90-99", "100+"], s.Histogram18.Select(b => b.Label).ToArray());
+        Assert.Equal([(null, 79), (80, 89), (90, 99), (100, null)], s.Histogram18.Select(b => (b.Min, b.Max)).ToArray());
         Assert.Equal([1, 2, 1], s.Histogram9.Select(b => b.Count).ToArray());
-        Assert.Equal(["<40", "40-49", "50+"], s.Histogram9.Select(b => b.Label).ToArray());
+        Assert.Equal([(null, 39), (40, 49), (50, null)], s.Histogram9.Select(b => (b.Min, b.Max)).ToArray());
     }
 
     [Fact]

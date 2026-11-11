@@ -4,7 +4,7 @@ namespace CustomGolfStats.Domain.Stats;
 
 public sealed record OverallTiles(Average ScoringAverage18, int HolesPlayed, int ToPar);
 
-public sealed record ScoreBucket(string Label, int Count);
+public sealed record ScoreBucket(int? Min, int? Max, int Count);
 
 public sealed record SeasonSection(int Rounds9, int Rounds18, int RoundsOtherLength,
     IReadOnlyList<ScoreBucket> Histogram9,
@@ -35,15 +35,15 @@ public static class SeasonStats
         return new SeasonSection(
             nine.Count, eighteen.Count, rounds.Count(r => r.Length is null),
             [
-                new("<40", nine.Count(s => s < 40)),
-                new("40-49", nine.Count(s => s is >= 40 and < 50)),
-                new("50+", nine.Count(s => s >= 50)),
+                new(null, 39, nine.Count(s => s < 40)),
+                new(40, 49, nine.Count(s => s is >= 40 and < 50)),
+                new(50, null, nine.Count(s => s >= 50)),
             ],
             [
-                new("<80", eighteen.Count(s => s < 80)),
-                new("80-89", eighteen.Count(s => s is >= 80 and < 90)),
-                new("90-99", eighteen.Count(s => s is >= 90 and < 100)),
-                new("100+", eighteen.Count(s => s >= 100)),
+                new(null, 79, eighteen.Count(s => s < 80)),
+                new(80, 89, eighteen.Count(s => s is >= 80 and < 90)),
+                new(90, 99, eighteen.Count(s => s is >= 90 and < 100)),
+                new(100, null, eighteen.Count(s => s >= 100)),
             ]);
     }
 

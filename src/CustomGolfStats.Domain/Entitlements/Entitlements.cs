@@ -11,7 +11,11 @@ public static class Entitlements
     public static bool CanUse(Feature feature, Tier tier, int trialRoundsUsed, int trialAllowance)
     {
         ThrowIfNegative(trialRoundsUsed, trialAllowance);
-        return tier == Tier.Paid || TrialRoundsRemaining(tier, trialRoundsUsed, trialAllowance) > 0;
+        return feature switch
+        {
+            Feature.ShotByShotEntry => tier == Tier.Paid || TrialRoundsRemaining(tier, trialRoundsUsed, trialAllowance) > 0,
+            _ => throw new ArgumentOutOfRangeException(nameof(feature), feature, "Unknown feature."),
+        };
     }
 
     /// <summary>Null means unlimited (Paid). Never negative.</summary>
