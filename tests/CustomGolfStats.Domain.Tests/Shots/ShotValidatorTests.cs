@@ -33,6 +33,36 @@ public class ShotValidatorTests
     }
 
     [Fact]
+    public void Duplicate_sequence_returns_SequenceNotContiguous()
+    {
+        Shot[] shots =
+        [
+            Shot(1, Lie.Tee, 150, Lie.Green, 5, Club.Iron7, ShotType.Tee),
+            Shot(1, Lie.Green, 5, Lie.Green, 2, Club.Putter, ShotType.Putt),
+            Shot(2, Lie.Green, 2, Lie.Holed, null, Club.Putter, ShotType.Putt),
+        ];
+        Assert.Equal(new[] { ShotError.SequenceNotContiguous }, ShotValidator.Validate(shots));
+    }
+
+    [Fact]
+    public void Shots_passed_out_of_order_are_valid()
+    {
+        Shot[] shots =
+        [
+            Shot(2, Lie.Green, 5, Lie.Holed, null, Club.Putter, ShotType.Putt),
+            Shot(1, Lie.Tee, 150, Lie.Green, 5, Club.Iron7, ShotType.Tee),
+        ];
+        Assert.Empty(ShotValidator.Validate(shots));
+    }
+
+    [Fact]
+    public void Multiple_problems_are_all_reported()
+    {
+        Shot[] shots = [Shot(1, Lie.Tee, 150, Lie.Green, null, Club.Iron7, ShotType.Tee)];
+        Assert.Equal(new[] { ShotError.NotHoled, ShotError.EndDistanceMismatch }, ShotValidator.Validate(shots));
+    }
+
+    [Fact]
     public void Holed_in_middle_returns_HoledBeforeLastShot()
     {
         Shot[] shots =

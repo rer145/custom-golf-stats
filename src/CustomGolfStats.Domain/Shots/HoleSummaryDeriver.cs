@@ -4,7 +4,11 @@ namespace CustomGolfStats.Domain.Shots;
 
 public static class HoleSummaryDeriver
 {
-    /// <summary>Derives a hole summary from shot-by-shot data.</summary>
+    /// <summary>
+    /// Derives a hole summary from shot-by-shot data. For shot-entered holes this is the GIR authority:
+    /// a penalty taken after the ball reached the green does not affect GIR, unlike
+    /// <see cref="GirRule.Suggest"/>, which works from totals only.
+    /// </summary>
     /// <exception cref="ArgumentException">The shots fail <see cref="ShotValidator.Validate"/>.</exception>
     public static HoleSummary Derive(HoleInfo hole, int entrySequence, IReadOnlyList<Shot> shots)
     {

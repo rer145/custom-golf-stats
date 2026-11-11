@@ -155,8 +155,7 @@ public class HoleSummaryDeriverTests
 
         var result = HoleSummaryDeriver.Derive(Par(4), 1, shots);
 
-        Assert.Equal(1, result.Putts);
-        Assert.False(result.Gir);
+        Assert.Equal(Builders.Hole(par: 4, score: 4, putts: 1, fairway: true, gir: false), result);
     }
 
     [Fact]
@@ -173,8 +172,7 @@ public class HoleSummaryDeriverTests
 
         var result = HoleSummaryDeriver.Derive(Par(5), 1, shots);
 
-        Assert.Equal(1, result.FairwaySandShots);
-        Assert.Equal(2, result.GreensideSandShots);
+        Assert.Equal(Builders.Hole(par: 5, score: 5, putts: 1, gir: false, greensideSand: 2, fairwaySand: 1), result);
     }
 
     [Fact]

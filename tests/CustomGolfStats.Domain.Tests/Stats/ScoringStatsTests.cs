@@ -15,6 +15,10 @@ public class ScoringStatsTests
         Assert.Null(s.ScoringAverage18.Value);
         Assert.Null(s.Lowest9);
         Assert.Null(s.Highest18);
+        Assert.Null(s.Highest9);
+        Assert.Null(s.Lowest18);
+        Assert.Null(s.Par4Average.Value);
+        Assert.Null(s.Par5Average.Value);
         Assert.Equal(0, s.Birdies);
         Assert.Equal(0, s.Eagles);
         Assert.Null(s.ParBreakers.Value);

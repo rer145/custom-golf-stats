@@ -3,9 +3,13 @@ namespace CustomGolfStats.Domain.Stats;
 public sealed record ScoringSection(
     Average ScoringAverage9, Average ScoringAverage18,
     int? Lowest9, int? Highest9, int? Lowest18, int? Highest18,
-    int Birdies, int Eagles,
+    int Birdies,
+    /// <summary>Holes at two or more under par. Albatross counts as an eagle (deliberate deviation from golftrack's == -2).</summary>
+    int Eagles,
+    /// <summary>(Birdies + eagles) / holes. Identical to <see cref="BirdieOrBetter"/> (as in golftrack).</summary>
     Ratio ParBreakers,
     Average Par3Average, Average Par4Average, Average Par5Average,
+    /// <summary>(Birdies + eagles) / holes. Identical to <see cref="ParBreakers"/> (as in golftrack).</summary>
     Ratio BirdieOrBetter);
 
 public static class ScoringStats
@@ -17,6 +21,7 @@ public static class ScoringStats
         var holes = rounds.SelectMany(r => r.Holes).ToList();
 
         var birdies = holes.Count(h => h.ToPar == -1);
+        // ToPar <= -2: albatross and better count as eagles.
         var eagles = holes.Count(h => h.ToPar <= -2);
         var breakers = new Ratio(birdies + eagles, holes.Count);
 

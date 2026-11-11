@@ -115,6 +115,15 @@ public class CareerStatsTests
     }
 
     [Fact]
+    public void Course_rows_ordering_ignores_case()
+    {
+        RoundData R(string course, string tee) =>
+            new(Guid.NewGuid(), new DateOnly(2025, 1, 1), Guid.NewGuid(), course, Guid.NewGuid(), tee, Builders.Holes(9, 4, 4));
+        var rows = CareerStats.ByCourseAndTee(new[] { R("b", "white"), R("A", "red"), R("B", "Blue"), R("a", "Black") });
+        Assert.Equal(new[] { "a/Black", "A/red", "B/Blue", "b/white" }, rows.Select(r => $"{r.CourseName}/{r.TeeName}"));
+    }
+
+    [Fact]
     public void Course_par_averages_to_par()
     {
         var holes = new[]

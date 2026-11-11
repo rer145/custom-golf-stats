@@ -44,8 +44,8 @@ public static class CareerStats
                     ParToPar(holes, 3), ParToPar(holes, 4), ParToPar(holes, 5),
                     rs.Min(r => r.PlayedOn), rs.Max(r => r.PlayedOn));
             })
-            .OrderBy(r => r.CourseName, StringComparer.Ordinal)
-            .ThenBy(r => r.TeeName, StringComparer.Ordinal)
+            .OrderBy(r => r.CourseName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.TeeName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
     private static LengthSummary Summarize(IEnumerable<RoundData> rounds, RoundLength length)
