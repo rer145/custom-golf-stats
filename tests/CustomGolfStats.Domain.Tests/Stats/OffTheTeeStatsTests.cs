@@ -17,6 +17,17 @@ public class OffTheTeeStatsTests
     }
 
     [Fact]
+    public void Par3_flags_are_ignored()
+    {
+        var round = Round(Day, Hole(4, 4, fairway: true), Hole(4, 4, left: true), Hole(4, 4, right: true),
+            Hole(3, 3, fairway: true, left: true, right: true));
+        var s = OffTheTeeStats.Calculate([round]);
+        Assert.Equal(new Ratio(1, 3), s.DrivingAccuracy);
+        Assert.Equal(new Ratio(1, 3), s.LeftTendency);
+        Assert.Equal(new Ratio(1, 3), s.RightTendency);
+    }
+
+    [Fact]
     public void Left_and_right_tendency()
     {
         var round = Round(Day, Hole(4, 4, left: true), Hole(4, 4, left: true), Hole(5, 5, right: true),

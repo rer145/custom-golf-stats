@@ -14,7 +14,8 @@ public static class OffTheTeeStats
     public static OffTheTeeSection Calculate(IReadOnlyList<RoundData> rounds)
     {
         var holes = rounds.SelectMany(r => r.Holes).ToList();
-        var driving = holes.Count(h => h.Par != 3);
+        var teeHoles = holes.Where(h => h.Par != 3).ToList();
+        var driving = teeHoles.Count;
 
         Average ToPar(int par, Func<HoleSummary, bool> lie)
         {
@@ -23,9 +24,9 @@ public static class OffTheTeeStats
         }
 
         return new OffTheTeeSection(
-            new Ratio(holes.Count(h => h.FairwayHit), driving),
-            new Ratio(holes.Count(h => h.TeeShotLeft), driving),
-            new Ratio(holes.Count(h => h.TeeShotRight), driving),
+            new Ratio(teeHoles.Count(h => h.FairwayHit), driving),
+            new Ratio(teeHoles.Count(h => h.TeeShotLeft), driving),
+            new Ratio(teeHoles.Count(h => h.TeeShotRight), driving),
             ToPar(4, h => h.FairwayHit), ToPar(4, h => h.TeeShotLeft), ToPar(4, h => h.TeeShotRight),
             ToPar(5, h => h.FairwayHit), ToPar(5, h => h.TeeShotLeft), ToPar(5, h => h.TeeShotRight));
     }
