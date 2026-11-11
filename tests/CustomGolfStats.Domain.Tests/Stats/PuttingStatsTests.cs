@@ -38,7 +38,7 @@ public class PuttingStatsTests
         Assert.Equal(32, s.PuttsPerRound18.Value);
         Assert.Equal(new Average(32, 1), s.PuttsPerRound18);
         Assert.Equal(0, s.PuttsPerRound9.Count);
-        Assert.Equal(18 + 36, s.PuttsPerHole.Total);
+        Assert.Equal(32 + 36, s.PuttsPerHole.Total);
         Assert.Equal(30, s.PuttsPerHole.Count);
     }
 
