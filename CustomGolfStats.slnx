@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CustomGolfStats.Domain/CustomGolfStats.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CustomGolfStats.Domain.Tests/CustomGolfStats.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
