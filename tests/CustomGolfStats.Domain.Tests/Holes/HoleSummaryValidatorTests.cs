@@ -31,6 +31,15 @@ public class HoleSummaryValidatorTests
         => Assert.Contains(HoleSummaryError.PuttsExceedScore, Errors(Builders.Hole(par: 4, score: 2, putts: 3)));
 
     [Fact]
+    public void Putts_equal_to_score_is_invalid()
+        => Assert.Equal([HoleSummaryError.PuttsExceedScore], Errors(Builders.Hole(par: 3, score: 1, putts: 1)));
+
+    [Fact]
+    public void Putts_plus_penalty_leaving_no_non_putt_stroke_is_invalid()
+        => Assert.Equal([HoleSummaryError.PenaltiesAndPuttsExceedScore],
+            Errors(Builders.Hole(par: 4, score: 2, putts: 1, penalties: 1)));
+
+    [Fact]
     public void Negative_penalty()
         => Assert.Equal([HoleSummaryError.NegativePenalty], Errors(Builders.Hole(par: 4, score: 4, penalties: -1)));
 
@@ -52,5 +61,7 @@ public class HoleSummaryValidatorTests
         Assert.Equal([HoleSummaryError.TeeFlagsOnPar3], Errors(Builders.Hole(par: 3, score: 3, fairway: true)));
         Assert.Equal([HoleSummaryError.TeeFlagsOnPar3], Errors(Builders.Hole(par: 3, score: 3, left: true)));
         Assert.Equal([HoleSummaryError.TeeFlagsOnPar3], Errors(Builders.Hole(par: 3, score: 3, longMiss: true)));
+        Assert.Equal([HoleSummaryError.TeeFlagsOnPar3], Errors(Builders.Hole(par: 3, score: 3, right: true)));
+        Assert.Equal([HoleSummaryError.TeeFlagsOnPar3], Errors(Builders.Hole(par: 3, score: 3, shortMiss: true)));
     }
 }
