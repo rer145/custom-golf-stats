@@ -99,32 +99,70 @@ public sealed class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFa
     }
 
     [Fact]
-    public async Task External_sign_in_links_an_existing_email_instead_of_duplicating()
+    public async Task External_sign_in_links_a_confirmed_existing_account_instead_of_duplicating()
     {
         await TestAuth.RegisterAsync(factory, "existing@example.com");
+        await TestAuth.SetAsync(factory, "existing@example.com", a => a.EmailConfirmed = true);
+        var existingId = await TestAuth.GetAccountIdAsync(factory, "existing@example.com");
         factory.TokenValidator.Accept("apple-existing", new ExternalIdentity("apple", "a-sub-1", "Existing@Example.com", true));
 
-        var response = await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "apple", idToken = "apple-existing" }, Ct);
+        var tokens = await ReadTokensAsync(await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "apple", idToken = "apple-existing" }, Ct));
 
-        await ReadTokensAsync(response);
         var accounts = await factory.WithDbAsync(db => db.Users.Where(a => a.NormalizedEmail == "EXISTING@EXAMPLE.COM").ToListAsync(Ct));
-        Assert.Single(accounts);
-        var logins = await factory.WithDbAsync(db => db.UserLogins.Where(l => l.UserId == accounts[0].Id).ToListAsync(Ct));
-        var login = Assert.Single(logins);
+        Assert.Equal(existingId, Assert.Single(accounts).Id);
+        var login = Assert.Single(await factory.WithDbAsync(db => db.UserLogins.Where(l => l.UserId == existingId).ToListAsync(Ct)));
         Assert.Equal("apple", login.LoginProvider);
         Assert.Equal("a-sub-1", login.ProviderKey);
+
+        var authed = factory.CreateClient();
+        authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+        var info = await authed.GetFromJsonAsync<System.Text.Json.JsonElement>("/auth/manage/info", Ct);
+        Assert.Equal("existing@example.com", info.GetProperty("email").GetString());
     }
 
     [Fact]
-    public async Task External_sign_in_does_not_link_an_unverified_email()
+    public async Task External_sign_in_does_not_link_an_unconfirmed_local_account_pre_hijack()
+    {
+        // The attacker registered the victim's address with a password (register has no email confirmation).
+        await TestAuth.RegisterAsync(factory, "prehijack@example.com");
+        factory.TokenValidator.Accept("google-victim", new ExternalIdentity("google", "g-sub-victim", "prehijack@example.com", true));
+
+        var response = await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "google", idToken = "google-victim" }, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Empty(await factory.WithDbAsync(db => db.UserLogins.Where(l => l.ProviderKey == "g-sub-victim").ToListAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task External_sign_in_does_not_link_an_unverified_external_email()
     {
         await TestAuth.RegisterAsync(factory, "victim@example.com");
+        await TestAuth.SetAsync(factory, "victim@example.com", a => a.EmailConfirmed = true);
         factory.TokenValidator.Accept("google-unverified", new ExternalIdentity("google", "g-sub-evil", "victim@example.com", false));
 
         var response = await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "google", idToken = "google-unverified" }, Ct);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Empty(await factory.WithDbAsync(db => db.UserLogins.Where(l => l.ProviderKey == "g-sub-evil").ToListAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Unverified_external_email_is_never_stored_so_it_cannot_squat_an_address()
+    {
+        factory.TokenValidator.Accept("apple-squat", new ExternalIdentity("apple", "a-sub-squat", "squat@example.com", false));
+        await ReadTokensAsync(await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "apple", idToken = "apple-squat" }, Ct));
+
+        var account = await factory.WithDbAsync(db => db.UserLogins.Where(l => l.ProviderKey == "a-sub-squat")
+            .Join(db.Users, l => l.UserId, u => u.Id, (_, u) => u).SingleAsync(Ct));
+        Assert.Null(account.Email);
+        Assert.False(account.EmailConfirmed);
+
+        // The real owner later signs in with a verified token for the same address: a separate account, no absorption.
+        factory.TokenValidator.Accept("google-owner", new ExternalIdentity("google", "g-sub-owner", "squat@example.com", true));
+        await ReadTokensAsync(await factory.CreateClient().PostAsJsonAsync("/auth/external", new { provider = "google", idToken = "google-owner" }, Ct));
+        var owner = await factory.WithDbAsync(db => db.Users.SingleAsync(u => u.Email == "squat@example.com", Ct));
+        Assert.NotEqual(account.Id, owner.Id);
+        Assert.True(owner.EmailConfirmed);
     }
 
     [Fact]

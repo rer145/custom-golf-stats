@@ -20,7 +20,8 @@ public sealed record ExternalAuthOptions(IReadOnlyList<string> AppleClientIds, I
 public sealed class ExternalTokenValidator(
     ExternalAuthOptions options,
     IReadOnlyDictionary<string, IConfigurationManager<OpenIdConnectConfiguration>> metadata,
-    TimeProvider time) : IExternalTokenValidator
+    TimeProvider time,
+    ILogger<ExternalTokenValidator> logger) : IExternalTokenValidator
 {
     public const string Apple = "apple";
     public const string Google = "google";
@@ -68,31 +69,17 @@ public sealed class ExternalTokenValidator(
 
         try
         {
-            var configuration = await source.GetConfigurationAsync(ct);
-            var parameters = new TokenValidationParameters
+            var result = await ValidateAsync(source, issuers, audiences, idToken, ct);
+            if (!result.IsValid && result.Exception is SecurityTokenSignatureKeyNotFoundException)
             {
-                ValidateIssuer = true,
-                ValidIssuers = issuers,
-                ValidateAudience = true,
-                ValidAudiences = audiences,
-                ValidateLifetime = true,
-                RequireExpirationTime = true,
-                RequireSignedTokens = true,
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKeys = configuration.SigningKeys,
-                ClockSkew = TimeSpan.FromMinutes(2),
-                LifetimeValidator = (notBefore, expires, _, p) =>
-                {
-                    var now = time.GetUtcNow().UtcDateTime;
-                    return expires is not null
-                        && expires.Value + p.ClockSkew > now
-                        && (notBefore is null || notBefore.Value - p.ClockSkew <= now);
-                },
-            };
+                // The provider may have rotated its signing keys: refresh the metadata and retry once.
+                source.RequestRefresh();
+                result = await ValidateAsync(source, issuers, audiences, idToken, ct);
+            }
 
-            var result = await _handler.ValidateTokenAsync(idToken, parameters);
             if (!result.IsValid || result.SecurityToken is not JsonWebToken jwt || string.IsNullOrEmpty(jwt.Subject))
             {
+                logger.LogDebug(result.Exception, "Rejected {Provider} ID token.", provider);
                 return null;
             }
 
@@ -105,8 +92,39 @@ public sealed class ExternalTokenValidator(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Metadata unreachable or token malformed: treat as an invalid token.
+            logger.LogWarning(ex, "Could not validate {Provider} ID token (metadata or configuration failure).", provider);
             return null;
         }
+    }
+
+    private async Task<TokenValidationResult> ValidateAsync(
+        IConfigurationManager<OpenIdConnectConfiguration> source,
+        string[] issuers,
+        IReadOnlyList<string> audiences,
+        string idToken,
+        CancellationToken ct)
+    {
+        var configuration = await source.GetConfigurationAsync(ct);
+        var parameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuers = issuers,
+            ValidateAudience = true,
+            ValidAudiences = audiences,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKeys = configuration.SigningKeys,
+            ClockSkew = TimeSpan.FromMinutes(2),
+            LifetimeValidator = (notBefore, expires, _, p) =>
+            {
+                var now = time.GetUtcNow().UtcDateTime;
+                return expires is not null
+                    && expires.Value + p.ClockSkew > now
+                    && (notBefore is null || notBefore.Value - p.ClockSkew <= now);
+            },
+        };
+        return await _handler.ValidateTokenAsync(idToken, parameters);
     }
 }

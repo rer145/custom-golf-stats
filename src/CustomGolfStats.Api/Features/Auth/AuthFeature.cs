@@ -1,4 +1,5 @@
 using CustomGolfStats.Api.Data.Entities;
+using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 
@@ -14,7 +15,8 @@ public static class AuthFeature
         services.AddSingleton<IExternalTokenValidator>(sp => new ExternalTokenValidator(
             ExternalAuthOptions.From(sp.GetRequiredService<IConfiguration>()),
             ExternalTokenValidator.CreateMetadataSources(),
-            sp.GetRequiredService<TimeProvider>()));
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<ExternalTokenValidator>>()));
         return services;
     }
 
@@ -32,11 +34,12 @@ public static class AuthFeature
 
         auth.MapPost("/external", ExternalSignInAsync)
             .WithName("AuthExternalSignIn")
+            .Produces<AccessTokenResponse>()
             .AllowAnonymous();
         return app;
     }
 
-    private static async Task<Results<EmptyHttpResult, ValidationProblem, UnauthorizedHttpResult>> ExternalSignInAsync(
+    private static async Task<Results<EmptyHttpResult, ValidationProblem, UnauthorizedHttpResult, ProblemHttpResult>> ExternalSignInAsync(
         ExternalSignInRequest request,
         IExternalTokenValidator validator,
         UserManager<Account> users,
@@ -67,35 +70,44 @@ public static class AuthFeature
         }
 
         var account = await users.FindByLoginAsync(identity.Provider, identity.Subject);
-        if (account is null)
+        if (account is null && identity.Email is not null)
         {
-            // Link by email only when the provider vouches for it; otherwise anyone could claim someone else's account.
-            if (identity.Email is not null)
+            account = await users.FindByEmailAsync(identity.Email);
+            if (account is not null)
             {
-                var byEmail = await users.FindByEmailAsync(identity.Email);
-                if (byEmail is not null)
+                // Link only when both sides vouch for the address. Register has no email confirmation, so an unconfirmed
+                // local account may belong to someone who does not own the address (pre-hijacking).
+                if (!account.EmailConfirmed || !identity.EmailVerified)
                 {
-                    if (!identity.EmailVerified)
-                    {
-                        return TypedResults.Unauthorized();
-                    }
-
-                    account = byEmail;
+                    return TypedResults.Problem(
+                        "An account with this email already exists; sign in with your password.",
+                        statusCode: StatusCodes.Status409Conflict);
                 }
-            }
 
-            if (account is null)
-            {
-                account = NewAccount(identity, request);
-                if (!(await users.CreateAsync(account)).Succeeded)
+                if (account.DisabledAt is not null)
                 {
                     return TypedResults.Unauthorized();
                 }
+
+                if (!(await users.AddLoginAsync(account, LoginInfo(identity))).Succeeded)
+                {
+                    return StoreFailure();
+                }
+            }
+        }
+
+        if (account is null)
+        {
+            account = NewAccount(identity, request);
+            if (!(await users.CreateAsync(account)).Succeeded)
+            {
+                return StoreFailure();
             }
 
-            if (!(await users.AddLoginAsync(account, new UserLoginInfo(identity.Provider, identity.Subject, identity.Provider))).Succeeded)
+            if (!(await users.AddLoginAsync(account, LoginInfo(identity))).Succeeded)
             {
-                return TypedResults.Unauthorized();
+                await users.DeleteAsync(account);
+                return StoreFailure();
             }
         }
 
@@ -110,16 +122,27 @@ public static class AuthFeature
         return TypedResults.Empty;
     }
 
+    private static ProblemHttpResult StoreFailure() =>
+        TypedResults.Problem("The account could not be saved.", statusCode: StatusCodes.Status500InternalServerError);
+
+    private static UserLoginInfo LoginInfo(ExternalIdentity identity) =>
+        new(identity.Provider, identity.Subject, identity.Provider);
+
     /// <summary>Accounts without an email still need a unique user name made of characters Identity allows.</summary>
     private static string SafeUserName(ExternalIdentity identity) =>
         identity.Provider + "_" + new string(identity.Subject.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' ? c : '_').ToArray());
 
-    private static Account NewAccount(ExternalIdentity identity, ExternalSignInRequest request) => new()
+    /// <summary>An unverified external email is never stored, so it cannot squat an address it does not own.</summary>
+    private static Account NewAccount(ExternalIdentity identity, ExternalSignInRequest request)
     {
-        UserName = identity.Email ?? SafeUserName(identity),
-        Email = identity.Email,
-        EmailConfirmed = identity.EmailVerified,
-        FirstName = request.FirstName?.Trim() ?? "",
-        LastName = request.LastName?.Trim() ?? "",
-    };
+        var email = identity.EmailVerified ? identity.Email : null;
+        return new Account
+        {
+            UserName = email ?? SafeUserName(identity),
+            Email = email,
+            EmailConfirmed = email is not null,
+            FirstName = request.FirstName?.Trim() ?? "",
+            LastName = request.LastName?.Trim() ?? "",
+        };
+    }
 }

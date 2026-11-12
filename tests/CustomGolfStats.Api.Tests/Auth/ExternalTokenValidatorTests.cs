@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using CustomGolfStats.Api.Features.Auth;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -39,7 +40,8 @@ public sealed class ExternalTokenValidatorTests : IDisposable
                 [ExternalTokenValidator.Apple] = source,
                 [ExternalTokenValidator.Google] = source,
             },
-            _time);
+            _time,
+            NullLogger<ExternalTokenValidator>.Instance);
     }
 
     private string Token(
@@ -50,7 +52,8 @@ public sealed class ExternalTokenValidatorTests : IDisposable
         string? subject = "sub-1",
         string? email = "golfer@example.com",
         string? emailVerified = "true",
-        bool? emailVerifiedBool = null)
+        bool? emailVerifiedBool = null,
+        DateTimeOffset? notBefore = null)
     {
         var claims = new Dictionary<string, object>();
         if (subject is not null) claims["sub"] = subject;
@@ -63,7 +66,7 @@ public sealed class ExternalTokenValidatorTests : IDisposable
             Issuer = issuer,
             Audience = audience,
             IssuedAt = Now.UtcDateTime,
-            NotBefore = Now.UtcDateTime.AddMinutes(-1),
+            NotBefore = (notBefore ?? Now.AddMinutes(-1)).UtcDateTime,
             Expires = expiry.UtcDateTime,
             Claims = claims,
             SigningCredentials = new SigningCredentials(signWith ?? _key, SecurityAlgorithms.RsaSha256),
@@ -161,7 +164,8 @@ public sealed class ExternalTokenValidatorTests : IDisposable
         var broken = new ExternalTokenValidator(
             new ExternalAuthOptions([AppleClient], []),
             new Dictionary<string, IConfigurationManager<OpenIdConnectConfiguration>> { ["apple"] = new FakeMetadata(null) },
-            _time);
+            _time,
+            NullLogger<ExternalTokenValidator>.Instance);
         Assert.Null(await broken.ValidateAsync("apple", Token(), Ct));
     }
 
@@ -174,15 +178,59 @@ public sealed class ExternalTokenValidatorTests : IDisposable
         Assert.Equal("https://accounts.google.com/.well-known/openid-configuration", ((ConfigurationManager<OpenIdConnectConfiguration>)sources["google"]).MetadataAddress);
     }
 
+    [Fact]
+    public async Task Token_that_is_not_yet_valid_is_rejected()
+    {
+        Assert.Null(await CreateValidator().ValidateAsync("apple", Token(notBefore: Now.AddHours(1)), Ct));
+    }
+
+    [Fact]
+    public async Task Unsigned_alg_none_token_is_rejected()
+    {
+        var header = Base64UrlEncoder.Encode("{\"alg\":\"none\",\"typ\":\"JWT\"}");
+        var payload = Base64UrlEncoder.Encode(
+            $"{{\"iss\":\"{AppleIssuer}\",\"aud\":\"{AppleClient}\",\"sub\":\"sub-1\",\"exp\":{Now.AddHours(1).ToUnixTimeSeconds()}}}");
+
+        Assert.Null(await CreateValidator().ValidateAsync("apple", $"{header}.{payload}.", Ct));
+    }
+
+    [Fact]
+    public async Task Rotated_signing_key_is_picked_up_by_refreshing_the_metadata_once()
+    {
+        var stale = new OpenIdConnectConfiguration();
+        stale.SigningKeys.Add(new RsaSecurityKey(RSA.Create(2048)) { KeyId = "old" });
+        var fresh = new OpenIdConnectConfiguration();
+        fresh.SigningKeys.Add(_key);
+        var source = new FakeMetadata(stale) { AfterRefresh = fresh };
+        var validator = new ExternalTokenValidator(
+            new ExternalAuthOptions([AppleClient], []),
+            new Dictionary<string, IConfigurationManager<OpenIdConnectConfiguration>> { ["apple"] = source },
+            _time,
+            NullLogger<ExternalTokenValidator>.Instance);
+
+        var identity = await validator.ValidateAsync("apple", Token(), Ct);
+
+        Assert.NotNull(identity);
+        Assert.Equal(1, source.Refreshes);
+    }
+
     private sealed class FakeMetadata(OpenIdConnectConfiguration? configuration) : IConfigurationManager<OpenIdConnectConfiguration>
     {
+        private OpenIdConnectConfiguration? _configuration = configuration;
+
+        public OpenIdConnectConfiguration? AfterRefresh { get; init; }
+
+        public int Refreshes { get; private set; }
+
         public Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel) =>
-            configuration is null
+            _configuration is null
                 ? throw new InvalidOperationException("metadata unreachable")
-                : Task.FromResult(configuration);
+                : Task.FromResult(_configuration);
 
         public void RequestRefresh()
         {
+            Refreshes++;
+            _configuration = AfterRefresh ?? _configuration;
         }
     }
 }
