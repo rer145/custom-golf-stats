@@ -2,6 +2,7 @@ using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Tests.Infrastructure;
 using CustomGolfStats.Domain;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -56,6 +57,7 @@ public sealed class SchemaTests(ApiFactory factory) : IClassFixture<ApiFactory>
             db.HandicapEntries.Add(new HandicapEntry { Account = account, EffectiveOn = new DateOnly(2026, 1, 1), Index = 12.4m });
             db.CourseFlags.Add(new CourseFlag { Course = course, Tee = tee, HoleNumber = 1, Reporter = account, Note = "Par is 5", CreatedAt = Now });
             db.AppSettings.Add(new AppSetting { Key = "SchemaTest", Value = "1" });
+            db.DataProtectionKeys.Add(new DataProtectionKey { FriendlyName = "schema", Xml = "<key />" });
             await db.SaveChangesAsync(ct);
         });
 
@@ -72,7 +74,7 @@ public sealed class SchemaTests(ApiFactory factory) : IClassFixture<ApiFactory>
             Assert.Equal(1, round.Version);
             Assert.Equal(Shape.Draw, Assert.Single(Assert.Single(round.HoleResults).Shots).Shape);
 
-            var account = await db.Users.SingleAsync(ct);
+            var account = await db.Users.SingleAsync(a => a.UserName == "schema@example.com", ct);
             Assert.Equal(Role.User, account.Role);
             Assert.Equal(Tier.Free, account.Tier);
             Assert.Equal(DistanceUnits.Yards, account.Units);
@@ -127,6 +129,48 @@ public sealed class SchemaTests(ApiFactory factory) : IClassFixture<ApiFactory>
             await Assert.ThrowsAsync<DbUpdateException>(() =>
                 TestData.AddTeeVersionAsync(db, seeded.Tee, TestData.DefaultEffectiveFrom));
         });
+    }
+
+    [Fact]
+    public async Task Normalized_email_is_unique_when_set()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await factory.WithDbAsync(async db =>
+        {
+            db.Users.Add(new Account { UserName = "u1", Email = "dup@example.com", NormalizedEmail = "DUP@EXAMPLE.COM", NormalizedUserName = "U1" });
+            db.Users.Add(new Account { UserName = "u2", NormalizedUserName = "U2" });
+            db.Users.Add(new Account { UserName = "u3", NormalizedUserName = "U3" });
+            await db.SaveChangesAsync(ct);
+
+            db.Users.Add(new Account { UserName = "u4", Email = "dup@example.com", NormalizedEmail = "DUP@EXAMPLE.COM", NormalizedUserName = "U4" });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync(ct));
+        });
+    }
+
+    [Fact]
+    public async Task A_shot_must_belong_to_its_hole_results_round()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, name: "Composite FK"));
+        await TestAuth.RegisterAsync(factory, "composite@example.com");
+        var accountId = await TestAuth.GetAccountIdAsync(factory, "composite@example.com");
+        var (first, second) = await factory.WithDbAsync(async db => (
+            await TestData.SeedQuickRoundAsync(db, accountId, seeded.Version, new DateOnly(2026, 5, 1), [4]),
+            await TestData.SeedQuickRoundAsync(db, accountId, seeded.Version, new DateOnly(2026, 5, 2), [4])));
+
+        // Raw SQL, since the model itself can't express a shot whose round differs from its hole result's.
+        await using var connection = new NpgsqlConnection(factory.ConnectionString);
+        await connection.OpenAsync(ct);
+        await using var command = new NpgsqlCommand(
+            "INSERT INTO shots (id, round_id, hole_result_id, sequence, start_lie, start_distance, club, shot_type, end_lie, direction, penalty_strokes) "
+            + "VALUES (@id, @round, @hole, 1, 'Tee', 400, 'Driver', 'Tee', 'Fairway', 'OnTarget', 0)",
+            connection);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("round", second.Id);
+        command.Parameters.AddWithValue("hole", first.HoleResults.Single().Id);
+
+        var ex = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync(ct));
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, ex.SqlState);
     }
 
     private static Course NewCourse(string name, CourseSource source, string? providerId) => new()

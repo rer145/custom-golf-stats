@@ -38,6 +38,11 @@ public class Course
 
     public Course? MergedIntoCourse { get; set; }
 
+    /// <summary>Who created (or imported) the course; null when unknown or the account was deleted.</summary>
+    public Guid? CreatedByAccountId { get; set; }
+
+    public Account? CreatedByAccount { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }

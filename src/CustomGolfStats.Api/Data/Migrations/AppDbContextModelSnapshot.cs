@@ -150,7 +150,9 @@ namespace CustomGolfStats.Api.Data.Migrations
                         .HasDatabaseName("ix_accounts_home_course_id");
 
                     b.HasIndex("NormalizedEmail")
-                        .HasDatabaseName("ix_accounts_normalized_email");
+                        .IsUnique()
+                        .HasDatabaseName("ix_accounts_normalized_email")
+                        .HasFilter("normalized_email IS NOT NULL");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
@@ -216,6 +218,10 @@ namespace CustomGolfStats.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_account_id");
+
                     b.Property<DateTimeOffset?>("LastVerifiedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_verified_at");
@@ -274,6 +280,9 @@ namespace CustomGolfStats.Api.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_courses");
+
+                    b.HasIndex("CreatedByAccountId")
+                        .HasDatabaseName("ix_courses_created_by_account_id");
 
                     b.HasIndex("MergedIntoCourseId")
                         .HasDatabaseName("ix_courses_merged_into_course_id");
@@ -454,6 +463,9 @@ namespace CustomGolfStats.Api.Data.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_hole_results");
+
+                    b.HasAlternateKey("Id", "RoundId")
+                        .HasName("ak_hole_results_id_round_id");
 
                     b.HasIndex("RoundId", "EntrySequence")
                         .IsUnique()
@@ -639,6 +651,9 @@ namespace CustomGolfStats.Api.Data.Migrations
                     b.HasIndex("RoundId")
                         .HasDatabaseName("ix_shots_round_id");
 
+                    b.HasIndex("HoleResultId", "RoundId")
+                        .HasDatabaseName("ix_shots_hole_result_id_round_id");
+
                     b.HasIndex("HoleResultId", "Sequence")
                         .IsUnique()
                         .HasDatabaseName("ix_shots_hole_result_id_sequence");
@@ -794,6 +809,29 @@ namespace CustomGolfStats.Api.Data.Migrations
                     b.ToTable("tee_versions", (string)null);
                 });
 
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text")
+                        .HasColumnName("friendly_name");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("text")
+                        .HasColumnName("xml");
+
+                    b.HasKey("Id")
+                        .HasName("pk_data_protection_keys");
+
+                    b.ToTable("data_protection_keys", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
                 {
                     b.Property<int>("Id")
@@ -888,11 +926,19 @@ namespace CustomGolfStats.Api.Data.Migrations
 
             modelBuilder.Entity("CustomGolfStats.Api.Data.Entities.Course", b =>
                 {
+                    b.HasOne("CustomGolfStats.Api.Data.Entities.Account", "CreatedByAccount")
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_courses_accounts_created_by_account_id");
+
                     b.HasOne("CustomGolfStats.Api.Data.Entities.Course", "MergedIntoCourse")
                         .WithMany()
                         .HasForeignKey("MergedIntoCourseId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_courses_courses_merged_into_course_id");
+
+                    b.Navigation("CreatedByAccount");
 
                     b.Navigation("MergedIntoCourse");
                 });
@@ -981,19 +1027,20 @@ namespace CustomGolfStats.Api.Data.Migrations
 
             modelBuilder.Entity("CustomGolfStats.Api.Data.Entities.ShotEntity", b =>
                 {
-                    b.HasOne("CustomGolfStats.Api.Data.Entities.HoleResult", "HoleResult")
-                        .WithMany("Shots")
-                        .HasForeignKey("HoleResultId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_shots_hole_results_hole_result_id");
-
                     b.HasOne("CustomGolfStats.Api.Data.Entities.Round", "Round")
                         .WithMany()
                         .HasForeignKey("RoundId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_shots_rounds_round_id");
+
+                    b.HasOne("CustomGolfStats.Api.Data.Entities.HoleResult", "HoleResult")
+                        .WithMany("Shots")
+                        .HasForeignKey("HoleResultId", "RoundId")
+                        .HasPrincipalKey("Id", "RoundId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_shots_hole_results_hole_result_id_round_id");
 
                     b.Navigation("HoleResult");
 

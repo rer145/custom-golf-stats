@@ -10,7 +10,11 @@ public sealed class ShotEntityConfiguration : IEntityTypeConfiguration<ShotEntit
     {
         builder.ToTable("shots");
         builder.HasIndex(s => new { s.HoleResultId, s.Sequence }).IsUnique();
-        builder.HasOne(s => s.HoleResult).WithMany(h => h.Shots).HasForeignKey(s => s.HoleResultId).OnDelete(DeleteBehavior.Cascade);
+        // (hole_result_id, round_id) -> hole_results(id, round_id): the denormalised round id can't disagree.
+        builder.HasOne(s => s.HoleResult).WithMany(h => h.Shots)
+            .HasForeignKey(s => new { s.HoleResultId, s.RoundId })
+            .HasPrincipalKey(h => new { h.Id, h.RoundId })
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(s => s.Round).WithMany().HasForeignKey(s => s.RoundId).OnDelete(DeleteBehavior.Cascade);
     }
 }

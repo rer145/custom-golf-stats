@@ -103,6 +103,81 @@ public sealed class CourseCreateAndReadTests(ApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task Manual_create_with_device_ids_is_idempotent_for_its_creator()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "offline-creator@example.com");
+        var other = await TestAuth.RegisterAsync(factory, "offline-other@example.com");
+        var courseId = Guid.NewGuid();
+        var teeId = Guid.NewGuid();
+        object Body(string name) => new
+        {
+            id = courseId,
+            name,
+            tees = new object[] { new { id = teeId, name = "White", rating = 70.1m, slope = 124, holes = Holes() } },
+        };
+
+        var created = await (await client.PostAsJsonAsync("/courses", Body("Offline Links"), Ct)).ReadAsync<CourseDetailDto>(HttpStatusCode.Created);
+        var retried = await (await client.PostAsJsonAsync("/courses", Body("Offline Links"), Ct)).ReadAsync<CourseDetailDto>(HttpStatusCode.OK);
+        var renamed = await client.PostAsJsonAsync("/courses", Body("Another Name"), Ct);
+        var someoneElse = await other.PostAsJsonAsync("/courses", Body("Offline Links"), Ct);
+        var teeClash = await client.PostAsJsonAsync("/courses", new
+        {
+            name = "Tee Clash",
+            tees = new object[] { new { id = teeId, name = "White", rating = 70.1m, slope = 124, holes = Holes() } },
+        }, Ct);
+
+        Assert.Equal((courseId, teeId), (created.Id, Assert.Single(created.Tees).Id));
+        Assert.Equal(courseId, retried.Id);
+        Assert.Single(retried.Tees);
+        Assert.Equal(HttpStatusCode.Conflict, renamed.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, someoneElse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, teeClash.StatusCode);
+        Assert.Equal(1, await factory.WithDbAsync(db => Task.FromResult(db.Courses.Count(c => c.Id == courseId))));
+    }
+
+    [Fact]
+    public async Task Adding_a_tee_creates_it_with_its_first_version()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "tee-adder@example.com");
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, name: "Add Tee GC", status: CourseStatus.Imported));
+        factory.Time.Advance(TimeSpan.FromMinutes(1));
+        var teeId = Guid.NewGuid();
+        var body = new { id = teeId, name = "Gold", gender = "Female", effectiveFrom = new DateOnly(2024, 1, 1), rating = 74.0m, slope = 140, holes = Holes() };
+
+        var tee = await (await client.PostAsJsonAsync($"/courses/{seeded.Course.Id}/tees", body, Ct)).ReadAsync<TeeDto>(HttpStatusCode.Created);
+        var retried = await (await client.PostAsJsonAsync($"/courses/{seeded.Course.Id}/tees", body, Ct)).ReadAsync<TeeDto>(HttpStatusCode.OK);
+        var invalid = await (await client.PostAsJsonAsync($"/courses/{seeded.Course.Id}/tees", new { name = "", rating = 74.0m, slope = 10 }, Ct))
+            .ReadValidationErrorsAsync();
+        var missing = await client.PostAsJsonAsync($"/courses/{Guid.NewGuid()}/tees", body, Ct);
+
+        Assert.Equal((teeId, "Gold", Gender.Female), (tee.Id, tee.Name, tee.Gender));
+        var version = Assert.Single(tee.Versions);
+        Assert.Equal((new DateOnly(2024, 1, 1), 72, 74.0m, 140), (version.EffectiveFrom, version.Par, version.Rating, version.Slope));
+        Assert.Equal(teeId, retried.Id);
+        Assert.Contains("name", invalid.Keys);
+        Assert.Contains("slope", invalid.Keys);
+        Assert.Contains("holes", invalid.Keys);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        var course = await factory.WithDbAsync(db => Task.FromResult(db.Courses.Single(c => c.Id == seeded.Course.Id)));
+        Assert.Equal((CourseStatus.UserEdited, factory.Time.GetUtcNow()), (course.Status, course.UpdatedAt));
+    }
+
+    [Fact]
+    public async Task Adding_a_tee_to_a_verified_course_as_a_golfer_becomes_a_flag()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "tee-proposer@example.com");
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, name: "Verified Tee GC", status: CourseStatus.Verified));
+
+        var flag = await (await client.PostAsJsonAsync($"/courses/{seeded.Course.Id}/tees",
+                new { name = "Gold", rating = 74.0m, slope = 140, holes = Holes() }, Ct))
+            .ReadAsync<CourseFlagDto>(HttpStatusCode.Accepted);
+
+        Assert.Equal(seeded.Course.Id, flag.CourseId);
+        Assert.Contains("Gold", flag.Note);
+        Assert.Equal(1, await factory.WithDbAsync(db => Task.FromResult(db.Tees.Count(t => t.CourseId == seeded.Course.Id))));
+    }
+
+    [Fact]
     public async Task Read_returns_every_version_and_flags_the_one_in_effect_today()
     {
         // The fake clock says 2026-06-01: the 2024 version is current, 2027 is in the future.

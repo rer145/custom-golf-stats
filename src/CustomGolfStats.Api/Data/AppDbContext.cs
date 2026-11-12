@@ -1,4 +1,5 @@
 using CustomGolfStats.Api.Data.Entities;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -10,8 +11,11 @@ namespace CustomGolfStats.Api.Data;
 /// <see cref="Account.Role"/> holds the role) plus every golf table. Names are snake_case and enums are strings.
 /// </summary>
 public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider timeProvider)
-    : IdentityUserContext<Account, Guid>(options)
+    : IdentityUserContext<Account, Guid>(options), IDataProtectionKeyContext
 {
+    /// <summary>ASP.NET Core data-protection keys (they protect bearer and refresh tokens), shared by every API instance.</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
     public DbSet<HandicapEntry> HandicapEntries => Set<HandicapEntry>();
 
     public DbSet<Course> Courses => Set<Course>();

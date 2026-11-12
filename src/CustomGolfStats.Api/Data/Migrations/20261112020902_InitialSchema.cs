@@ -25,37 +25,60 @@ namespace CustomGolfStats.Api.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "courses",
+                name: "data_protection_keys",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    club_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    address = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
-                    city = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    region = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    phone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    website = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
-                    latitude = table.Column<double>(type: "double precision", nullable: true),
-                    longitude = table.Column<double>(type: "double precision", nullable: true),
-                    status = table.Column<string>(type: "text", nullable: false),
-                    source = table.Column<string>(type: "text", nullable: false),
-                    provider_course_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    last_verified_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    merged_into_course_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    friendly_name = table.Column<string>(type: "text", nullable: true),
+                    xml = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_courses", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_courses_courses_merged_into_course_id",
-                        column: x => x.merged_into_course_id,
-                        principalTable: "courses",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
+                    table.PrimaryKey("pk_data_protection_keys", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "account_claims",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    claim_type = table.Column<string>(type: "text", nullable: true),
+                    claim_value = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_account_claims", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "account_logins",
+                columns: table => new
+                {
+                    login_provider = table.Column<string>(type: "text", nullable: false),
+                    provider_key = table.Column<string>(type: "text", nullable: false),
+                    provider_display_name = table.Column<string>(type: "text", nullable: true),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_account_logins", x => new { x.login_provider, x.provider_key });
+                });
+
+            migrationBuilder.CreateTable(
+                name: "account_tokens",
+                columns: table => new
+                {
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    login_provider = table.Column<string>(type: "text", nullable: false),
+                    name = table.Column<string>(type: "text", nullable: false),
+                    value = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_account_tokens", x => new { x.user_id, x.login_provider, x.name });
                 });
 
             migrationBuilder.CreateTable(
@@ -92,93 +115,47 @@ namespace CustomGolfStats.Api.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_accounts", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_accounts_courses_home_course_id",
-                        column: x => x.home_course_id,
-                        principalTable: "courses",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
-                name: "tees",
+                name: "courses",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    gender = table.Column<string>(type: "text", nullable: false)
+                    name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    club_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    address = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    city = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    region = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    phone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    website = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
+                    latitude = table.Column<double>(type: "double precision", nullable: true),
+                    longitude = table.Column<double>(type: "double precision", nullable: true),
+                    status = table.Column<string>(type: "text", nullable: false),
+                    source = table.Column<string>(type: "text", nullable: false),
+                    provider_course_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    last_verified_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    merged_into_course_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    created_by_account_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_tees", x => x.id);
+                    table.PrimaryKey("pk_courses", x => x.id);
                     table.ForeignKey(
-                        name: "fk_tees_courses_course_id",
-                        column: x => x.course_id,
+                        name: "fk_courses_accounts_created_by_account_id",
+                        column: x => x.created_by_account_id,
+                        principalTable: "accounts",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "fk_courses_courses_merged_into_course_id",
+                        column: x => x.merged_into_course_id,
                         principalTable: "courses",
                         principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "account_claims",
-                columns: table => new
-                {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    claim_type = table.Column<string>(type: "text", nullable: true),
-                    claim_value = table.Column<string>(type: "text", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_account_claims", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_account_claims_accounts_user_id",
-                        column: x => x.user_id,
-                        principalTable: "accounts",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "account_logins",
-                columns: table => new
-                {
-                    login_provider = table.Column<string>(type: "text", nullable: false),
-                    provider_key = table.Column<string>(type: "text", nullable: false),
-                    provider_display_name = table.Column<string>(type: "text", nullable: true),
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_account_logins", x => new { x.login_provider, x.provider_key });
-                    table.ForeignKey(
-                        name: "fk_account_logins_accounts_user_id",
-                        column: x => x.user_id,
-                        principalTable: "accounts",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "account_tokens",
-                columns: table => new
-                {
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    login_provider = table.Column<string>(type: "text", nullable: false),
-                    name = table.Column<string>(type: "text", nullable: false),
-                    value = table.Column<string>(type: "text", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_account_tokens", x => new { x.user_id, x.login_provider, x.name });
-                    table.ForeignKey(
-                        name: "fk_account_tokens_accounts_user_id",
-                        column: x => x.user_id,
-                        principalTable: "accounts",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -197,6 +174,26 @@ namespace CustomGolfStats.Api.Data.Migrations
                         name: "fk_handicap_entries_users_account_id",
                         column: x => x.account_id,
                         principalTable: "accounts",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "tees",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    course_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    gender = table.Column<string>(type: "text", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_tees", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_tees_courses_course_id",
+                        column: x => x.course_id,
+                        principalTable: "courses",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -372,6 +369,7 @@ namespace CustomGolfStats.Api.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_hole_results", x => x.id);
+                    table.UniqueConstraint("ak_hole_results_id_round_id", x => new { x.id, x.round_id });
                     table.ForeignKey(
                         name: "fk_hole_results_rounds_round_id",
                         column: x => x.round_id,
@@ -402,10 +400,10 @@ namespace CustomGolfStats.Api.Data.Migrations
                 {
                     table.PrimaryKey("pk_shots", x => x.id);
                     table.ForeignKey(
-                        name: "fk_shots_hole_results_hole_result_id",
-                        column: x => x.hole_result_id,
+                        name: "fk_shots_hole_results_hole_result_id_round_id",
+                        columns: x => new { x.hole_result_id, x.round_id },
                         principalTable: "hole_results",
-                        principalColumn: "id",
+                        principalColumns: new[] { "id", "round_id" },
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "fk_shots_rounds_round_id",
@@ -438,7 +436,9 @@ namespace CustomGolfStats.Api.Data.Migrations
             migrationBuilder.CreateIndex(
                 name: "ix_accounts_normalized_email",
                 table: "accounts",
-                column: "normalized_email");
+                column: "normalized_email",
+                unique: true,
+                filter: "normalized_email IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "ix_accounts_normalized_user_name",
@@ -470,6 +470,11 @@ namespace CustomGolfStats.Api.Data.Migrations
                 name: "ix_course_flags_tee_id",
                 table: "course_flags",
                 column: "tee_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_courses_created_by_account_id",
+                table: "courses",
+                column: "created_by_account_id");
 
             migrationBuilder.CreateIndex(
                 name: "ix_courses_merged_into_course_id",
@@ -510,6 +515,11 @@ namespace CustomGolfStats.Api.Data.Migrations
                 column: "tee_version_id");
 
             migrationBuilder.CreateIndex(
+                name: "ix_shots_hole_result_id_round_id",
+                table: "shots",
+                columns: new[] { "hole_result_id", "round_id" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_shots_hole_result_id_sequence",
                 table: "shots",
                 columns: new[] { "hole_result_id", "sequence" },
@@ -541,11 +551,47 @@ namespace CustomGolfStats.Api.Data.Migrations
                 name: "ix_tees_course_id",
                 table: "tees",
                 column: "course_id");
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_account_claims_accounts_user_id",
+                table: "account_claims",
+                column: "user_id",
+                principalTable: "accounts",
+                principalColumn: "id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_account_logins_accounts_user_id",
+                table: "account_logins",
+                column: "user_id",
+                principalTable: "accounts",
+                principalColumn: "id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_account_tokens_accounts_user_id",
+                table: "account_tokens",
+                column: "user_id",
+                principalTable: "accounts",
+                principalColumn: "id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_accounts_courses_home_course_id",
+                table: "accounts",
+                column: "home_course_id",
+                principalTable: "courses",
+                principalColumn: "id",
+                onDelete: ReferentialAction.SetNull);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "fk_courses_accounts_created_by_account_id",
+                table: "courses");
+
             migrationBuilder.DropTable(
                 name: "account_claims");
 
@@ -560,6 +606,9 @@ namespace CustomGolfStats.Api.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "course_flags");
+
+            migrationBuilder.DropTable(
+                name: "data_protection_keys");
 
             migrationBuilder.DropTable(
                 name: "handicap_entries");

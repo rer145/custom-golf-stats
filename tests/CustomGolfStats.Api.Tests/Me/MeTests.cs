@@ -89,6 +89,28 @@ public sealed class MeTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Put_me_with_a_merged_home_course_stores_the_course_it_was_merged_into()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "merged-home@example.com");
+        var (first, last) = await factory.WithDbAsync(async db =>
+        {
+            var a = (await TestData.SeedCourseAsync(db, "Merged A")).Course;
+            var b = (await TestData.SeedCourseAsync(db, "Merged B")).Course;
+            var c = (await TestData.SeedCourseAsync(db, "Survivor C")).Course;
+            a.MergedIntoCourseId = b.Id;
+            b.MergedIntoCourseId = c.Id;
+            await db.SaveChangesAsync(Ct);
+            return (a.Id, c.Id);
+        });
+
+        var put = await client.PutAsJsonAsync("/me", Profile(homeCourseId: first), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+        Assert.Equal(last, (await ReadAsync(put)).GetProperty("homeCourseId").GetGuid());
+        Assert.Equal(last, (await ReadAsync(await client.GetAsync("/me", Ct))).GetProperty("homeCourseId").GetGuid());
+    }
+
+    [Fact]
     public async Task Put_me_rejects_an_unknown_home_course()
     {
         var client = await TestAuth.RegisterAsync(factory, "badcourse@example.com");

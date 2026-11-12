@@ -10,20 +10,31 @@ using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 // Composition root only: features register themselves through their Add*/Map* extensions.
 var builder = WebApplication.CreateBuilder(args);
 
+// The build-time OpenAPI generator (GetDocument.Insider) starts the app without a database or secrets.
+var generatingDocument = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
+
 builder.Services.AddProblemDetails();
 // Enums travel as their names everywhere (requests, responses and the OpenAPI document).
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddOpenApi(options => options.AddOperationIds().AddStringEnumTypes());
+builder.Services.AddOpenApi(options => options.AddOperationIds().AddStringEnumTypes().AddBearerSecurity());
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseAppDatabase(
     services.GetRequiredService<IConfiguration>().GetConnectionString("Postgres")
     ?? throw new InvalidOperationException("ConnectionStrings:Postgres is not configured.")));
+
+// Keys live in the database, so tokens issued by one instance (or before a restart) stay valid on every instance.
+var dataProtection = builder.Services.AddDataProtection();
+if (!generatingDocument)
+{
+    dataProtection.PersistKeysToDbContext<AppDbContext>();
+}
 
 builder.Services.AddIdentityApiEndpoints<Account>()
     .AddUserValidator<UniqueEmailValidator>()
@@ -44,9 +55,6 @@ builder.Services
     .AddAdminFeature();
 
 var app = builder.Build();
-
-// The build-time OpenAPI generator (GetDocument.Insider) starts the app without a database or secrets.
-var generatingDocument = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
 
 if (!generatingDocument && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(AppEnvironments.Testing)))
 {

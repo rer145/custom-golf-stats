@@ -97,19 +97,21 @@ public sealed class StatsMappingTests(ApiFactory factory) : IClassFixture<ApiFac
         Assert.Equal(125, card.Slope);
         Assert.Equal(new DateOnly(1900, 1, 1), card.TeeVersionEffectiveFrom);
 
-        var h1 = card.Holes[0];
+        // Played holes come in the order they were played, then the unplayed ones by number.
+        Assert.Equal([2, 3, 1, 4, 5, 6], card.Holes.Take(6).Select(h => h.Number));
+        var h1 = card.Holes.Single(h => h.Number == 1);
         Assert.Equal((1, 4, 380, 7), (h1.Number, h1.Par, h1.Yardage, h1.StrokeIndex));
         Assert.Equal(new ScorecardHoleResultDto(3, 5, 3, false, true, false, false, false, false, 1, 1, 0), h1.Result);
 
-        var h2 = card.Holes[1];
+        var h2 = card.Holes.Single(h => h.Number == 2);
         Assert.Equal((2, 4, 380, 11), (h2.Number, h2.Par, h2.Yardage, h2.StrokeIndex));
         Assert.Equal(new ScorecardHoleResultDto(1, 4, 2, false, false, true, false, false, false, 0, 0, 2), h2.Result);
 
-        var h3 = card.Holes[2];
+        var h3 = card.Holes.Single(h => h.Number == 3);
         Assert.Equal((3, 3, 150, 15), (h3.Number, h3.Par, h3.Yardage, h3.StrokeIndex));
         Assert.Equal(new ScorecardHoleResultDto(2, 3, 1, false, false, false, true, false, true, 0, 0, 0), h3.Result);
 
-        var h4 = card.Holes[3];
+        var h4 = card.Holes.Single(h => h.Number == 4);
         Assert.Equal((4, 5, 520, 1), (h4.Number, h4.Par, h4.Yardage, h4.StrokeIndex));
         Assert.Equal(new ScorecardHoleResultDto(4, 6, 0, true, false, false, false, true, false, 0, 0, 0), h4.Result);
     }

@@ -46,6 +46,38 @@ public sealed class CourseImportTests(ApiFactory factory) : IClassFixture<ApiFac
     }
 
     [Fact]
+    public async Task Import_ranks_stroke_indexes_that_are_not_one_to_n()
+    {
+        // A nine-hole tee using the eighteen-hole odd indexes.
+        int[] odd = [9, 1, 17, 5, 13, 3, 15, 7, 11];
+        factory.CourseProvider.Add(new ProviderCourse("odd-si", "Odd Club", "Nine", null, "Bend", "OR", "United States", 44.0, -121.3,
+            [new ProviderTee("White", Gender.Male, 36, 35.0m, 120, null, null, null, null,
+                odd.Select(si => new ProviderHole(4, 350, si)).ToList())]));
+        var client = await TestAuth.RegisterAsync(factory, "odd-si@example.com");
+
+        var course = await (await client.PostAsJsonAsync("/courses/import", new { providerCourseId = "odd-si" }, Ct))
+            .ReadAsync<CourseDetailDto>(HttpStatusCode.Created);
+
+        var holes = Assert.Single(Assert.Single(course.Tees).Versions).Holes;
+        Assert.Equal([5, 1, 9, 3, 7, 2, 8, 4, 6], holes.Select(h => h.StrokeIndex));
+    }
+
+    [Fact]
+    public async Task Import_of_a_provider_course_without_usable_tees_is_502_and_saves_nothing()
+    {
+        factory.CourseProvider.Add(new ProviderCourse("no-tees", "Empty Club", "Nothing", null, "Bend", "OR", "United States", 44.0, -121.3,
+            [new ProviderTee("Long", Gender.Male, 108, 99.0m, 150, null, null, null, null,
+                Enumerable.Range(1, 27).Select(i => new ProviderHole(4, 350, i)).ToList())]));
+        var client = await TestAuth.RegisterAsync(factory, "no-tees@example.com");
+
+        var response = await client.PostAsJsonAsync("/courses/import", new { providerCourseId = "no-tees" }, Ct);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Contains("no usable tees", await response.Content.ReadAsStringAsync(Ct), StringComparison.OrdinalIgnoreCase);
+        Assert.False(await factory.WithDbAsync(db => db.Courses.AnyAsync(c => c.ProviderCourseId == "no-tees", Ct)));
+    }
+
+    [Fact]
     public async Task Importing_an_already_imported_course_returns_it_without_asking_the_provider()
     {
         factory.CourseProvider.Add(SimpleProviderCourse("idem-1", "Idem Club", "Idem Course"));

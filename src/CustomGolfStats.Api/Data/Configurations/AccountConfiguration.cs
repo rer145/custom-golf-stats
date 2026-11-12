@@ -9,7 +9,10 @@ public sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
     public void Configure(EntityTypeBuilder<Account> builder)
     {
         // Identity's own index names (EmailIndex, UserNameIndex) renamed to match the snake_case convention.
-        builder.HasIndex(a => a.NormalizedEmail).HasDatabaseName("ix_accounts_normalized_email");
+        // Unique like the user name: UniqueEmailValidator checks first, this closes the race. Accounts without an email
+        // (external sign-in with an unverified address) are exempt.
+        builder.HasIndex(a => a.NormalizedEmail).HasDatabaseName("ix_accounts_normalized_email")
+            .IsUnique().HasFilter("normalized_email IS NOT NULL");
         builder.HasIndex(a => a.NormalizedUserName).HasDatabaseName("ix_accounts_normalized_user_name").IsUnique();
 
         builder.Property(a => a.FirstName).HasMaxLength(100);

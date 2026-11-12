@@ -23,6 +23,8 @@ public sealed class CourseConfiguration : IEntityTypeConfiguration<Course>
             .HasFilter("provider_course_id IS NOT NULL");
         builder.HasIndex(c => c.Name);
 
+        builder.HasOne(c => c.CreatedByAccount).WithMany()
+            .HasForeignKey(c => c.CreatedByAccountId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(c => c.MergedIntoCourse).WithMany()
             .HasForeignKey(c => c.MergedIntoCourseId).OnDelete(DeleteBehavior.Restrict);
     }

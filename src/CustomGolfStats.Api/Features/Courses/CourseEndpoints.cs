@@ -36,6 +36,7 @@ public static class CourseEndpoints
         group.MapPost("", CreateAsync).WithName("CoursesCreate");
         group.MapGet("/{id:guid}", GetAsync).WithName("CoursesGet");
         group.MapPut("/{id:guid}", UpdateDetailsAsync).WithName("CoursesUpdateDetails");
+        group.MapPost("/{id:guid}/tees", CreateTeeAsync).WithName("CoursesCreateTee");
         group.MapPost("/{id:guid}/tees/{teeId:guid}/versions", CreateVersionAsync).WithName("CoursesCreateTeeVersion");
         group.MapPut("/{id:guid}/tees/{teeId:guid}/versions/{versionId:guid}", EditVersionAsync).WithName("CoursesEditTeeVersion");
         group.MapPost("/{id:guid}/flags", CreateFlagAsync).WithName("CoursesCreateFlag");
@@ -157,7 +158,8 @@ public static class CourseEndpoints
 
     /// <summary>
     /// <c>POST /courses/import</c>: imports one GolfCourseAPI course (201), or returns the course already imported
-    /// under that id (200) without calling the provider.
+    /// under that id (200) without calling the provider. 502 when the provider is unavailable or its course has no usable
+    /// tee (nothing is saved then).
     /// </summary>
     internal static async Task<Results<Created<CourseDetailDto>, Ok<CourseDetailDto>, ValidationProblem, NotFound, ProblemHttpResult>> ImportAsync(
         ImportCourseRequest request, ClaimsPrincipal user, ICourseProvider provider, AppDbContext db, TimeProvider time, CancellationToken ct)
@@ -192,6 +194,14 @@ public static class CourseEndpoints
         }
 
         var course = CourseImport.Build(source, providerCourseId, user.GetAccountId(), time.GetUtcNow());
+        if (course.Tees.Count == 0)
+        {
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Provider course has no usable tees",
+                detail: "The course provider returned no tee with 1 to 18 holes for this course, so nothing was imported.");
+        }
+
         db.Courses.Add(course);
         try
         {
@@ -216,33 +226,35 @@ public static class CourseEndpoints
     internal static async Task<Results<Ok<CourseDetailDto>, NotFound>> GetAsync(Guid id, AppDbContext db, TimeProvider time, CancellationToken ct) =>
         await LoadDetailAsync(db, id, time, ct) is { } course ? TypedResults.Ok(course) : TypedResults.NotFound();
 
-    /// <summary><c>POST /courses</c>: a manual course (Source Manual, Status UserEdited) with its tees and holes.</summary>
-    internal static async Task<Results<Created<CourseDetailDto>, ValidationProblem>> CreateAsync(
+    /// <summary>
+    /// <c>POST /courses</c>: a manual course (Source Manual, Status UserEdited) with its tees and holes. The course and
+    /// tee ids may be generated on the device (offline creation). A retry with the id of a course the same golfer already
+    /// created under the same name returns that course (200); any other clash with an existing course or tee id is 409.
+    /// </summary>
+    internal static async Task<Results<Created<CourseDetailDto>, Ok<CourseDetailDto>, ValidationProblem, ProblemHttpResult>> CreateAsync(
         CreateCourseRequest request, ClaimsPrincipal user, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var errors = new ValidationErrors();
         CourseRules.ValidateDetails(request.Details, errors);
+        if (request.Id == Guid.Empty)
+        {
+            errors.Add("id", "The id must not be empty.");
+        }
+
         if (request.Tees is null || request.Tees.Count == 0)
         {
             errors.Add("tees", "At least one tee is required.");
         }
         else
         {
+            var teeIds = new HashSet<Guid>();
             for (var i = 0; i < request.Tees.Count; i++)
             {
-                var tee = request.Tees[i];
-                if (tee is null)
+                ValidateTee(request.Tees[i], errors, $"tees[{i}]");
+                if (request.Tees[i]?.Id is { } teeId && !teeIds.Add(teeId))
                 {
-                    errors.Add($"tees[{i}]", "Tee is required.");
-                    continue;
+                    errors.Add($"tees[{i}].id", "Tee ids must be unique.");
                 }
-
-                if (string.IsNullOrWhiteSpace(tee.Name) || tee.Name.Trim().Length > 100)
-                {
-                    errors.Add($"tees[{i}].name", "A tee name of at most 100 characters is required.");
-                }
-
-                CourseRules.ValidateVersion(tee.Version, errors, requireEffectiveFrom: true, $"tees[{i}].");
             }
         }
 
@@ -251,23 +263,166 @@ public static class CourseEndpoints
             return TypedResults.ValidationProblem(errors.ToDictionary());
         }
 
-        var now = time.GetUtcNow();
         var accountId = user.GetAccountId();
-        var course = new Course { Name = "", Status = CourseStatus.UserEdited, Source = CourseSource.Manual, CreatedAt = now, UpdatedAt = now };
+        if (request.Id is { } requestedId && await db.Courses.AnyAsync(c => c.Id == requestedId, ct))
+        {
+            return await ExistingCourseAsync(db, requestedId, accountId, request.Name!.Trim(), time, ct);
+        }
+
+        var requestedTeeIds = request.Tees!.Select(t => t.Id).OfType<Guid>().ToList();
+        if (requestedTeeIds.Count > 0 && await db.Tees.AnyAsync(t => requestedTeeIds.Contains(t.Id), ct))
+        {
+            return IdInUse("A tee with one of these ids already exists.");
+        }
+
+        var now = time.GetUtcNow();
+        var course = new Course
+        {
+            Id = request.Id ?? Guid.CreateVersion7(),
+            Name = "",
+            Status = CourseStatus.UserEdited,
+            Source = CourseSource.Manual,
+            CreatedByAccountId = accountId,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
         CourseRules.ApplyDetails(course, request.Details);
         foreach (var teeRequest in request.Tees!)
         {
-            var tee = new Tee { Name = teeRequest.Name!.Trim(), Gender = teeRequest.Gender ?? Gender.Unspecified };
-            var version = new TeeVersion { Source = CourseSource.Manual, ChangedByAccountId = accountId, ChangedAt = now };
-            CourseRules.ApplyVersion(version, teeRequest.Version);
-            tee.Versions.Add(version);
-            course.Tees.Add(tee);
+            course.Tees.Add(BuildTee(teeRequest, accountId, now));
         }
 
         db.Courses.Add(course);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (TeeVersionEditor.IsUniqueViolation(ex) && request.Id is { } racedId)
+        {
+            // A concurrent retry of the same create won.
+            db.ChangeTracker.Clear();
+            return await ExistingCourseAsync(db, racedId, accountId, request.Name!.Trim(), time, ct);
+        }
+
         return TypedResults.Created($"/courses/{course.Id}", course.ToDetailDto(Today(time)));
     }
+
+    /// <summary>
+    /// <c>POST /courses/{id}/tees</c>: adds a tee with its first version (body as a tee of <c>POST /courses</c>). Sets the
+    /// course UserEdited unless Verified; a non-admin's addition to a Verified course becomes a flag (202). A retry with
+    /// the id of a tee already on this course under the same name returns it (200); another clash with a tee id is 409.
+    /// </summary>
+    internal static async Task<Results<Created<TeeDto>, Ok<TeeDto>, Accepted<CourseFlagDto>, ValidationProblem, NotFound, ProblemHttpResult>> CreateTeeAsync(
+        Guid id, CreateTeeRequest request, ClaimsPrincipal user, AppDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var course = await db.Courses.SingleOrDefaultAsync(c => c.Id == id, ct);
+        if (course is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var errors = new ValidationErrors();
+        ValidateTee(request, errors, "");
+        if (errors.Any)
+        {
+            return TypedResults.ValidationProblem(errors.ToDictionary());
+        }
+
+        var today = Today(time);
+        if (request.Id is { } teeId)
+        {
+            var existing = await db.Tees.AsNoTracking().Include(t => t.Versions).ThenInclude(v => v.Holes)
+                .SingleOrDefaultAsync(t => t.Id == teeId, ct);
+            if (existing is not null)
+            {
+                return existing.CourseId == id && existing.Name == request.Name!.Trim()
+                    ? TypedResults.Ok(existing.ToDto(today))
+                    : IdInUse("A tee with this id already exists.");
+            }
+        }
+
+        if (course.Status == CourseStatus.Verified && !IsAdmin(user))
+        {
+            return await ProposeAsync(db, time, user, id, teeId: null, "new tee", request, ct);
+        }
+
+        var now = time.GetUtcNow();
+        var tee = BuildTee(request, user.GetAccountId(), now);
+        tee.CourseId = id;
+        db.Tees.Add(tee);
+        course.UpdatedAt = now;
+        if (course.Status != CourseStatus.Verified)
+        {
+            course.Status = CourseStatus.UserEdited;
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (TeeVersionEditor.IsUniqueViolation(ex) && request.Id is not null)
+        {
+            db.ChangeTracker.Clear();
+            return IdInUse("A tee with this id already exists.");
+        }
+
+        return TypedResults.Created($"/courses/{id}", tee.ToDto(today));
+    }
+
+    private static void ValidateTee(CreateTeeRequest? tee, ValidationErrors errors, string key)
+    {
+        if (tee is null)
+        {
+            errors.Add(key, "Tee is required.");
+            return;
+        }
+
+        var prefix = key.Length == 0 ? "" : key + ".";
+        if (tee.Id == Guid.Empty)
+        {
+            errors.Add(prefix + "id", "The id must not be empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(tee.Name) || tee.Name.Trim().Length > 100)
+        {
+            errors.Add(prefix + "name", "A tee name of at most 100 characters is required.");
+        }
+
+        CourseRules.ValidateVersion(tee.Version, errors, requireEffectiveFrom: true, prefix);
+    }
+
+    private static Tee BuildTee(CreateTeeRequest request, Guid accountId, DateTimeOffset now)
+    {
+        var tee = new Tee { Name = request.Name!.Trim(), Gender = request.Gender ?? Gender.Unspecified };
+        if (request.Id is { } teeId)
+        {
+            tee.Id = teeId;
+        }
+
+        var version = new TeeVersion { Source = CourseSource.Manual, ChangedByAccountId = accountId, ChangedAt = now };
+        CourseRules.ApplyVersion(version, request.Version);
+        tee.Versions.Add(version);
+        return tee;
+    }
+
+    /// <summary>An idempotent create retry (same creator, same name) gets the stored course; anything else is 409.</summary>
+    private static async Task<Results<Created<CourseDetailDto>, Ok<CourseDetailDto>, ValidationProblem, ProblemHttpResult>> ExistingCourseAsync(
+        AppDbContext db, Guid id, Guid accountId, string name, TimeProvider time, CancellationToken ct)
+    {
+        var existing = await db.Courses.AsNoTracking()
+            .Where(c => c.Id == id)
+            .Select(c => new { c.CreatedByAccountId, c.Name })
+            .SingleOrDefaultAsync(ct);
+        if (existing is not null && existing.CreatedByAccountId == accountId && existing.Name == name)
+        {
+            return TypedResults.Ok((await LoadDetailAsync(db, id, time, ct))!);
+        }
+
+        return IdInUse("A course with this id already exists.");
+    }
+
+    private static ProblemHttpResult IdInUse(string detail) =>
+        TypedResults.Problem(statusCode: StatusCodes.Status409Conflict, title: "Id already in use", detail: detail);
 
     /// <summary>
     /// <c>PUT /courses/{id}</c>: replaces the course details. Sets Status UserEdited (a Verified course stays Verified

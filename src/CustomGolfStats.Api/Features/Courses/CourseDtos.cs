@@ -96,7 +96,12 @@ public sealed record CourseDetailsRequest(
     double? Latitude,
     double? Longitude);
 
+/// <summary>
+/// Body of <c>POST /courses</c>. <see cref="Id"/> (and each tee's id) may be generated on the device so a course created
+/// offline can be retried safely; the server generates them when omitted.
+/// </summary>
 public sealed record CreateCourseRequest(
+    Guid? Id,
     string? Name,
     string? ClubName,
     string? Address,
@@ -113,8 +118,12 @@ public sealed record CreateCourseRequest(
     public CourseDetailsRequest Details => new(Name, ClubName, Address, City, Region, Country, Phone, Website, Latitude, Longitude);
 }
 
-/// <summary>A tee and its first version. <see cref="EffectiveFrom"/> defaults to 1900-01-01, gender to Unspecified.</summary>
+/// <summary>
+/// A tee and its first version (in <c>POST /courses</c> and <c>POST /courses/{id}/tees</c>). <see cref="Id"/> is optional
+/// (device-generated for offline creation). <see cref="EffectiveFrom"/> defaults to 1900-01-01, gender to Unspecified.
+/// </summary>
 public sealed record CreateTeeRequest(
+    Guid? Id,
     string? Name,
     Gender? Gender,
     DateOnly? EffectiveFrom,

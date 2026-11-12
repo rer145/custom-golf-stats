@@ -35,6 +35,23 @@ public sealed class OpenApiDocumentTests(ApiFactory factory) : IClassFixture<Api
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
 
+    [Fact]
+    public async Task Operations_that_need_a_token_declare_the_bearer_scheme()
+    {
+        var served = JsonNode.Parse(await factory.CreateClient().GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken))!;
+
+        var scheme = served["components"]!["securitySchemes"]!["Bearer"]!;
+        Assert.Equal(("http", "bearer"), (scheme["type"]!.GetValue<string>(), scheme["scheme"]!.GetValue<string>()));
+
+        static bool Secured(JsonNode operation) =>
+            operation["security"]?.AsArray().Any(r => r!.AsObject().ContainsKey("Bearer")) == true;
+        Assert.True(Secured(served["paths"]!["/me"]!["get"]!));
+        Assert.True(Secured(served["paths"]!["/admin/users"]!["get"]!));
+        Assert.True(Secured(served["paths"]!["/auth/manage/info"]!["get"]!));
+        Assert.False(Secured(served["paths"]!["/auth/login"]!["post"]!));
+        Assert.False(Secured(served["paths"]!["/auth/external"]!["post"]!));
+    }
+
     // The server list depends on the host the document was generated or requested from, so it is not part of the contract.
     private static JsonNode? Normalise(JsonNode? document)
     {

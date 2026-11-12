@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Rounds;
 using CustomGolfStats.Api.Tests.Infrastructure;
@@ -142,6 +143,52 @@ public sealed class SyncChangesTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.Equal(nameof(Tier.Paid), paid.Entitlements.Tier);
         Assert.True(paid.Entitlements.Features.ShotByShotEntry);
         Assert.Null(paid.Entitlements.TrialShotRoundsRemaining);
+    }
+
+    [Fact]
+    public async Task A_correction_to_a_course_used_only_by_an_unchanged_round_comes_on_the_next_pull()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "course-change@example.com");
+        var admin = await TestAuth.RegisterAdminAsync(factory, "course-change-admin@example.com");
+        var used = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Corrected Course"));
+        await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Someone Else's Course"));
+        await PutAsync(client, Guid.NewGuid(), Quick(used.Tee.Id, Now, QuickHole(1, 4)));
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+        var first = await ReadAsync<SyncChangesResponse>(await client.GetAsync("/sync/changes", Ct));
+        var since = Uri.EscapeDataString(first.NextSince.ToString("O"));
+        factory.Time.Advance(TimeSpan.FromMinutes(5));
+
+        var quiet = await ReadAsync<SyncChangesResponse>(await client.GetAsync($"/sync/changes?since={since}", Ct));
+        var pars = (int[])TestData.DefaultPars.Clone();
+        pars[0] = 5;
+        var correction = await admin.PutAsJsonAsync(
+            $"/admin/courses/{used.Course.Id}/tees/{used.Tee.Id}/versions/{used.Version.Id}",
+            new
+            {
+                rating = 72.0m,
+                slope = 125,
+                holes = pars.Select((par, i) => new { number = i + 1, par, yardage = 400, strokeIndex = TestData.DefaultStrokeIndexes[i] }).ToArray(),
+            },
+            Ct);
+        Assert.Equal(HttpStatusCode.OK, correction.StatusCode);
+        var next = await ReadAsync<SyncChangesResponse>(await client.GetAsync($"/sync/changes?since={since}", Ct));
+
+        Assert.Empty(quiet.Rounds);
+        Assert.Empty(quiet.Courses);
+        Assert.Empty(next.Rounds);
+        var course = Assert.Single(next.Courses);
+        Assert.Equal(used.Course.Id, course.Id);
+        Assert.Equal(5, Assert.Single(Assert.Single(course.Tees).Versions).Holes[0].Par);
+    }
+
+    [Fact]
+    public async Task Since_with_an_unencoded_plus_offset_is_accepted()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "plus-since@example.com");
+
+        var response = await client.GetAsync("/sync/changes?since=2026-06-01T14:00:00+02:00", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

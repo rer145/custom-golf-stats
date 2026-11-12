@@ -76,9 +76,14 @@ public static class MeFeature
         RequireMaxLength(errors, "lastName", request.LastName, MaxNameLength);
         RequireMaxLength(errors, "ghinNumber", request.GhinNumber, MaxGhinLength);
 
-        if (request.HomeCourseId is { } courseId && !await db.Courses.AnyAsync(c => c.Id == courseId, ct))
+        Guid? homeCourseId = null;
+        if (request.HomeCourseId is { } courseId)
         {
-            errors["homeCourseId"] = ["The course does not exist."];
+            homeCourseId = await SurvivingCourseAsync(db, courseId, ct);
+            if (homeCourseId is null)
+            {
+                errors["homeCourseId"] = ["The course does not exist."];
+            }
         }
 
         if (errors.Count > 0)
@@ -97,7 +102,7 @@ public static class MeFeature
         account.LastName = request.LastName?.Trim() ?? "";
         account.Gender = gender ?? Gender.Unspecified;
         account.GhinNumber = string.IsNullOrWhiteSpace(request.GhinNumber) ? null : request.GhinNumber.Trim();
-        account.HomeCourseId = request.HomeCourseId;
+        account.HomeCourseId = homeCourseId;
         account.Units = units ?? DistanceUnits.Yards;
         await db.SaveChangesAsync(ct);
         return TypedResults.Ok(ToResponse(account));
@@ -174,6 +179,33 @@ public static class MeFeature
     {
         var response = await reader.GetAsync(user.GetAccountId(), ct);
         return response is null ? TypedResults.NotFound() : TypedResults.Ok(response);
+    }
+
+    /// <summary>
+    /// <paramref name="courseId"/>, or the course it was merged into (following the chain); null when it doesn't exist.
+    /// </summary>
+    private static async Task<Guid?> SurvivingCourseAsync(AppDbContext db, Guid courseId, CancellationToken ct)
+    {
+        const int maxHops = 10;
+        Guid? current = courseId;
+        for (var hop = 0; hop <= maxHops && current is { } id; hop++)
+        {
+            var course = await db.Courses.AsNoTracking().Where(c => c.Id == id)
+                .Select(c => new { c.MergedIntoCourseId }).SingleOrDefaultAsync(ct);
+            if (course is null)
+            {
+                return null;
+            }
+
+            if (course.MergedIntoCourseId is null)
+            {
+                return id;
+            }
+
+            current = course.MergedIntoCourseId;
+        }
+
+        return null;
     }
 
     // Limits mirror AccountConfiguration (first/last name 100, GHIN 20).

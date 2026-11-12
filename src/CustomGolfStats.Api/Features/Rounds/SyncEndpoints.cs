@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Security.Claims;
 using CustomGolfStats.Api.Data;
@@ -31,8 +32,10 @@ internal static class SyncEndpoints
     }
 
     /// <summary>
-    /// Rounds changed since <paramref name="since"/> (all of them when omitted), deleted ones as tombstones; the full
-    /// courses those rounds use; every handicap entry; and the golfer's entitlements. Rounds are filtered on the
+    /// Rounds changed since <paramref name="since"/> (all of them when omitted), deleted ones as tombstones; full courses
+    /// (the courses of the returned rounds, plus every course the golfer's other rounds or home course use whose data
+    /// changed since then, so a correction or new version arrives without a round change); every handicap entry; and the
+    /// golfer's entitlements. Rounds are filtered on the
     /// server-set <c>ModifiedAt &gt;= since</c>. <c>ModifiedAt</c> is stamped before its transaction commits (and servers'
     /// clocks can differ), so a write stamped just before this read may not be visible yet. The returned
     /// <c>nextSince</c> is therefore the server time taken before the reads minus <see cref="SyncOptions.CursorMargin"/>:
@@ -40,13 +43,17 @@ internal static class SyncEndpoints
     /// Rounds may come more than once; clients key them by id and version.
     /// </summary>
     private static async Task<Results<Ok<SyncChangesResponse>, ValidationProblem>> GetChangesAsync(
+        [Description("ISO 8601 date-time, normally the previous response's nextSince (UTC when it has no offset). URL-encode "
+            + "it: an unencoded '+' in the offset arrives as a space (tolerated, but '%2B' or 'Z' is correct).")]
         string? since, ClaimsPrincipal user, AppDbContext db, EntitlementsReader entitlementsReader, TimeProvider time,
         IOptions<SyncOptions> options, CancellationToken ct)
     {
         DateTimeOffset? cursor = null;
         if (!string.IsNullOrEmpty(since))
         {
-            if (!DateTimeOffset.TryParse(since, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+            // "...T10:00:00+02:00" sent without URL-encoding arrives with a space for the '+'.
+            if (!DateTimeOffset.TryParse(since, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+                && !DateTimeOffset.TryParse(since.Replace(' ', '+'), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out parsed))
             {
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["since"] = ["InvalidDateTime"] });
             }
@@ -65,7 +72,16 @@ internal static class SyncEndpoints
 
         var rounds = await roundsQuery.WithDetails().OrderBy(r => r.ModifiedAt).ThenBy(r => r.Id).ToListAsync(ct);
 
-        var courseIds = rounds.Select(r => r.TeeVersion.Tee.CourseId).Distinct().ToList();
+        var courseIds = rounds.Select(r => r.TeeVersion.Tee.CourseId).ToHashSet();
+        var changedCourses = db.Courses.Where(c => c.MergedIntoCourseId == null
+            && (db.Rounds.Any(r => r.AccountId == accountId && r.DeletedAt == null && r.TeeVersion.Tee.CourseId == c.Id)
+                || db.Users.Any(a => a.Id == accountId && a.HomeCourseId == c.Id)));
+        if (cursor is { } changedFrom)
+        {
+            changedCourses = changedCourses.Where(c => c.UpdatedAt >= changedFrom);
+        }
+
+        courseIds.UnionWith(await changedCourses.Select(c => c.Id).ToListAsync(ct));
         var courses = await db.Courses.AsNoTracking()
             .Where(c => courseIds.Contains(c.Id))
             .Include(c => c.Tees).ThenInclude(t => t.Versions).ThenInclude(v => v.Holes)
