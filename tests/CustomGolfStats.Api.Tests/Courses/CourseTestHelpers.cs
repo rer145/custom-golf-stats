@@ -63,7 +63,7 @@ internal static class CourseTestHelpers
             Assert.Fail($"Expected {(int)expected} but got {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         }
 
-        return (await response.Content.ReadFromJsonAsync<T>(Ct))!;
+        return (await response.Content.ReadFromJsonAsync<T>(TestJson.Options, Ct))!;
     }
 
     public static async Task<IDictionary<string, string[]>> ReadValidationErrorsAsync(this HttpResponseMessage response) =>

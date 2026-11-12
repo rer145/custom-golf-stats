@@ -8,12 +8,15 @@ using CustomGolfStats.Api.Features.Rounds;
 using CustomGolfStats.Api.Features.Stats;
 using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
 // Composition root only: features register themselves through their Add*/Map* extensions.
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
+// Enums travel as their names everywhere (requests, responses and the OpenAPI document).
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -22,6 +25,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseAp
     ?? throw new InvalidOperationException("ConnectionStrings:Postgres is not configured.")));
 
 builder.Services.AddIdentityApiEndpoints<Account>()
+    .AddUserValidator<UniqueEmailValidator>()
     .AddEntityFrameworkStores<AppDbContext>()
     .AddClaimsPrincipalFactory<AccountClaimsPrincipalFactory>();
 builder.Services.AddAuthorizationBuilder()

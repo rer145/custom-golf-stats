@@ -1,32 +1,10 @@
 using CustomGolfStats.Api.Data.Entities;
+using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
 using CustomGolfStats.Domain.Holes;
 using CustomGolfStats.Domain.Shots;
 
 namespace CustomGolfStats.Api.Features.Rounds;
-
-/// <summary>Collects validation errors keyed by field (<c>teeId</c>, <c>holes[3].shots[1]</c>, ...).</summary>
-internal sealed class ValidationErrors
-{
-    private readonly Dictionary<string, List<string>> errors = new(StringComparer.Ordinal);
-
-    public bool Any => errors.Count > 0;
-
-    public void Add(string key, string message)
-    {
-        if (!errors.TryGetValue(key, out var messages))
-        {
-            errors[key] = messages = [];
-        }
-
-        if (!messages.Contains(message))
-        {
-            messages.Add(message);
-        }
-    }
-
-    public Dictionary<string, string[]> ToDictionary() => errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.Ordinal);
-}
 
 /// <summary>
 /// Checks a pushed round and turns its holes into entities. Quick holes go through <see cref="HoleSummaryValidator"/>;

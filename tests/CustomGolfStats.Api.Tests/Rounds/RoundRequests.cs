@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Rounds;
+using CustomGolfStats.Api.Tests.Infrastructure;
 using CustomGolfStats.Domain;
 
 namespace CustomGolfStats.Api.Tests.Rounds;
@@ -43,7 +44,7 @@ public static class RoundRequests
 
     public static async Task<T> ReadAsync<T>(HttpResponseMessage response)
     {
-        var value = await response.Content.ReadFromJsonAsync<T>(TestContext.Current.CancellationToken);
+        var value = await response.Content.ReadFromJsonAsync<T>(TestJson.Options, TestContext.Current.CancellationToken);
         return value ?? throw new InvalidOperationException("Empty response body.");
     }
 }

@@ -51,8 +51,8 @@ public sealed class SyncChangesTests(ApiFactory factory) : IClassFixture<ApiFact
         var handicap = Assert.Single(changes.HandicapEntries);
         Assert.Equal(12.3m, handicap.Index);
 
-        Assert.Equal(Tier.Free, changes.Entitlements.Tier);
-        Assert.Equal(Role.User, changes.Entitlements.Role);
+        Assert.Equal(nameof(Tier.Free), changes.Entitlements.Tier);
+        Assert.Equal(nameof(Role.User), changes.Entitlements.Role);
         Assert.True(changes.Entitlements.Features.ShotByShotEntry);
         Assert.Equal(Entitlements.DefaultTrialShotRounds, changes.Entitlements.TrialShotRoundsRemaining);
     }
@@ -139,7 +139,7 @@ public sealed class SyncChangesTests(ApiFactory factory) : IClassFixture<ApiFact
 
         await TestAuth.SetAsync(factory, "ent@example.com", a => a.Tier = Tier.Paid);
         var paid = await ReadAsync<SyncChangesResponse>(await client.GetAsync("/sync/changes", Ct));
-        Assert.Equal(Tier.Paid, paid.Entitlements.Tier);
+        Assert.Equal(nameof(Tier.Paid), paid.Entitlements.Tier);
         Assert.True(paid.Entitlements.Features.ShotByShotEntry);
         Assert.Null(paid.Entitlements.TrialShotRoundsRemaining);
     }

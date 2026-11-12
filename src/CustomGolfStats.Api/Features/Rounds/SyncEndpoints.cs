@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using CustomGolfStats.Api.Data;
+using CustomGolfStats.Api.Features.Me;
 using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -39,7 +40,7 @@ internal static class SyncEndpoints
     /// Rounds may come more than once; clients key them by id and version.
     /// </summary>
     private static async Task<Results<Ok<SyncChangesResponse>, ValidationProblem>> GetChangesAsync(
-        string? since, ClaimsPrincipal user, AppDbContext db, AppSettingsReader settings, TimeProvider time,
+        string? since, ClaimsPrincipal user, AppDbContext db, EntitlementsReader entitlementsReader, TimeProvider time,
         IOptions<SyncOptions> options, CancellationToken ct)
     {
         DateTimeOffset? cursor = null;
@@ -78,7 +79,8 @@ internal static class SyncEndpoints
             .Select(h => new SyncHandicapEntryDto(h.Id, h.EffectiveOn, h.Index))
             .ToListAsync(ct);
 
-        var entitlements = await ReadEntitlementsAsync(db, settings, accountId, ct);
+        var entitlements = await entitlementsReader.GetAsync(accountId, ct)
+            ?? throw new InvalidOperationException("Signed-in account no longer exists.");
 
         return TypedResults.Ok(new SyncChangesResponse(
             serverTime,
@@ -87,21 +89,5 @@ internal static class SyncEndpoints
             [.. courses.Select(c => c.ToSyncDto())],
             handicapEntries,
             entitlements));
-    }
-
-    // TODO(merge): replace with Task 3's EntitlementsReader (Features/Me) once it lands; same response shape.
-    private static async Task<SyncEntitlementsDto> ReadEntitlementsAsync(AppDbContext db, AppSettingsReader settings, Guid accountId, CancellationToken ct)
-    {
-        var account = await db.Users.AsNoTracking()
-            .Where(a => a.Id == accountId)
-            .Select(a => new { a.Tier, a.Role, a.TrialShotRoundsUsed })
-            .SingleAsync(ct);
-        var allowance = await settings.GetTrialShotRoundsAsync(ct);
-        var used = Math.Max(0, account.TrialShotRoundsUsed);
-        return new SyncEntitlementsDto(
-            account.Tier,
-            account.Role,
-            new SyncEntitlementFeaturesDto(Entitlements.CanUse(Feature.ShotByShotEntry, account.Tier, used, allowance)),
-            Entitlements.TrialRoundsRemaining(account.Tier, used, allowance));
     }
 }

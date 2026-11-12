@@ -16,6 +16,31 @@ public sealed class RoundsEndpointsTests(ApiFactory factory) : IClassFixture<Api
     private DateTimeOffset Now => factory.Time.GetUtcNow();
 
     [Fact]
+    public async Task Round_json_uses_enum_names()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "enum-names@example.com");
+        var seeded = await SeedCourseAsync("Enum Links");
+        var id = Guid.NewGuid();
+        await PutAsync(client, id, Quick(seeded.Tee.Id, Now, QuickHole(1, 4)) with { RoundType = RoundType.League });
+
+        var json = await client.GetStringAsync($"/rounds/{id}", Ct);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("Quick", doc.RootElement.GetProperty("entryMode").GetString());
+        Assert.Equal("League", doc.RootElement.GetProperty("roundType").GetString());
+    }
+
+    [Fact]
+    public async Task OpenApi_document_shows_enums_as_strings()
+    {
+        var json = await factory.CreateClient().GetStringAsync("/openapi/v1.json", Ct);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var entryMode = doc.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("EntryMode");
+        Assert.Equal(["Quick", "ShotByShot"], entryMode.GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    [Fact]
     public async Task Creates_and_reads_a_quick_round()
     {
         var client = await TestAuth.RegisterAsync(factory, "quick@example.com");

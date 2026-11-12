@@ -5,7 +5,9 @@ using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Auth;
 using CustomGolfStats.Api.Tests.Infrastructure;
 using CustomGolfStats.Domain;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CustomGolfStats.Api.Tests.Auth;
 
@@ -38,6 +40,32 @@ public sealed class AuthEndpointsTests(ApiFactory factory) : IClassFixture<ApiFa
         var authed = factory.CreateClient();
         authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", refreshed.AccessToken);
         Assert.Equal(HttpStatusCode.OK, (await authed.GetAsync("/auth/manage/info", Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Two_accounts_cannot_register_the_same_email()
+    {
+        var client = factory.CreateClient();
+        var first = await client.PostAsJsonAsync("/auth/register", new { email = "dupe@example.com", password = TestAuth.Password }, Ct);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await client.PostAsJsonAsync("/auth/register", new { email = "DUPE@example.com", password = TestAuth.Password }, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+        Assert.Equal(1, await factory.WithDbAsync(db => db.Users.CountAsync(a => a.NormalizedEmail == "DUPE@EXAMPLE.COM", Ct)));
+    }
+
+    [Fact]
+    public async Task Account_with_an_email_that_is_already_taken_is_refused_whatever_its_user_name()
+    {
+        await TestAuth.RegisterAsync(factory, "taken@example.com");
+        await using var scope = factory.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<Account>>();
+
+        var result = await users.CreateAsync(new Account { UserName = "someone_else", Email = "Taken@Example.com" });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, e => e.Code == "DuplicateEmail");
     }
 
     [Fact]
