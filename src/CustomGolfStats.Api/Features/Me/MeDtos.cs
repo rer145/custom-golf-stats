@@ -10,7 +10,10 @@ public sealed record ProfileResponse(
     Guid? HomeCourseId,
     string Units);
 
-/// <summary>Gender and units are the enum names (case-insensitive); omitted values keep the defaults.</summary>
+/// <summary>
+/// PUT is a full replace: any omitted field is reset to its default (empty name, Unspecified gender, no GHIN or home
+/// course, Yards). Gender and units are the enum names (case-insensitive). Names max 100 characters, GHIN max 20.
+/// </summary>
 public sealed record UpdateProfileRequest(
     string? FirstName,
     string? LastName,

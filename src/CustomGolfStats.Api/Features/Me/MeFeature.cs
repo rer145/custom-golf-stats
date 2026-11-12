@@ -11,6 +11,8 @@ public static class MeFeature
 {
     private const decimal MinIndex = -10.0m;
     private const decimal MaxIndex = 54.0m;
+    private const int MaxNameLength = 100;
+    private const int MaxGhinLength = 20;
 
     public static IServiceCollection AddMeFeature(this IServiceCollection services)
     {
@@ -69,6 +71,10 @@ public static class MeFeature
                 errors["units"] = [$"Must be one of: {string.Join(", ", Enum.GetNames<DistanceUnits>())}."];
             }
         }
+
+        RequireMaxLength(errors, "firstName", request.FirstName, MaxNameLength);
+        RequireMaxLength(errors, "lastName", request.LastName, MaxNameLength);
+        RequireMaxLength(errors, "ghinNumber", request.GhinNumber, MaxGhinLength);
 
         if (request.HomeCourseId is { } courseId && !await db.Courses.AnyAsync(c => c.Id == courseId, ct))
         {
@@ -168,6 +174,15 @@ public static class MeFeature
     {
         var response = await reader.GetAsync(user.GetAccountId(), ct);
         return response is null ? TypedResults.NotFound() : TypedResults.Ok(response);
+    }
+
+    // Limits mirror AccountConfiguration (first/last name 100, GHIN 20).
+    private static void RequireMaxLength(Dictionary<string, string[]> errors, string field, string? value, int max)
+    {
+        if (value is not null && value.Trim().Length > max)
+        {
+            errors[field] = [$"Must be at most {max} characters."];
+        }
     }
 
     private static ProfileResponse ToResponse(Account a) =>

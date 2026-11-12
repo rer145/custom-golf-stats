@@ -112,6 +112,31 @@ public sealed class MeTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True((await ReadAsync(put)).GetProperty("errors").TryGetProperty(field, out _));
     }
 
+    [Theory]
+    [InlineData("firstName", 101)]
+    [InlineData("lastName", 101)]
+    [InlineData("ghinNumber", 21)]
+    public async Task Put_me_rejects_over_long_text_with_a_400(string field, int length)
+    {
+        var client = await TestAuth.RegisterAsync(factory, $"long-{field}@example.com");
+        var values = new Dictionary<string, object?> { ["firstName"] = "A", ["lastName"] = "B", [field] = new string('x', length) };
+
+        var put = await client.PutAsJsonAsync("/me", values, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+        Assert.True((await ReadAsync(put)).GetProperty("errors").TryGetProperty(field, out _));
+    }
+
+    [Fact]
+    public async Task Put_me_accepts_text_at_the_maximum_length()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "maxlen@example.com");
+
+        var put = await client.PutAsJsonAsync("/me", new { firstName = new string('x', 100), lastName = new string('y', 100), ghinNumber = new string('1', 20) }, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+    }
+
     [Fact]
     public async Task Handicap_entries_can_be_added_listed_and_deleted()
     {
