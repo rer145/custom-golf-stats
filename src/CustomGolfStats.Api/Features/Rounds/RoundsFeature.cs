@@ -4,6 +4,8 @@ public static class RoundsFeature
 {
     public static IServiceCollection AddRoundsFeature(this IServiceCollection services)
     {
+        services.AddOptions<SyncOptions>().BindConfiguration(SyncOptions.SectionName)
+            .Validate(o => o.CursorMargin >= TimeSpan.Zero, "Sync:CursorMargin must not be negative.");
         services.AddOptions<OpenMeteoOptions>().BindConfiguration(OpenMeteoOptions.SectionName);
         services.AddHttpClient<IWeatherProvider, OpenMeteoWeatherProvider>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<RoundWeatherFiller>();

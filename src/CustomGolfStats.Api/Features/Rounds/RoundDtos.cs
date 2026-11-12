@@ -122,9 +122,13 @@ public sealed record RoundSummaryDto(
     int Score,
     int ToPar);
 
-/// <summary><c>GET /sync/changes</c>. Pass <see cref="ServerTime"/> as <c>since</c> on the next pull.</summary>
+/// <summary>
+/// <c>GET /sync/changes</c>. Send <see cref="NextSince"/> back as <c>since</c> on the next pull (not <see cref="ServerTime"/>).
+/// <see cref="NextSince"/> is <see cref="ServerTime"/> minus a safety margin, so rounds can come again: key them by id and version.
+/// </summary>
 public sealed record SyncChangesResponse(
     DateTimeOffset ServerTime,
+    DateTimeOffset NextSince,
     IReadOnlyList<RoundDto> Rounds,
     IReadOnlyList<SyncCourseDto> Courses,
     IReadOnlyList<SyncHandicapEntryDto> HandicapEntries,

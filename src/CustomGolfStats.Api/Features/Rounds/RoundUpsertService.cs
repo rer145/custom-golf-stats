@@ -13,8 +13,8 @@ public enum UpsertStatus { Saved, Invalid, NotFound, Conflict }
 public sealed record UpsertOutcome(UpsertStatus Status, IDictionary<string, string[]>? Errors = null);
 
 /// <summary>
-/// <c>PUT /rounds/{id}</c>: last write wins per round on <see cref="Round.ClientUpdatedAt"/>, trial counting on the first
-/// create of a Free golfer's shot-by-shot round, then a weather lookup when the round has none.
+/// <c>PUT /rounds/{id}</c>: last write wins per round on <see cref="Round.ClientUpdatedAt"/>, trial counting once when a
+/// Free golfer's round is first stored as shot-by-shot, then a weather lookup when the round has none.
 /// </summary>
 public sealed class RoundUpsertService(AppDbContext db, TeeVersionService teeVersions, RoundWeatherFiller weather, TimeProvider time)
 {
@@ -112,8 +112,10 @@ public sealed class RoundUpsertService(AppDbContext db, TeeVersionService teeVer
         db.HoleResults.AddRange(holes);
         db.Shots.AddRange(holes.SelectMany(h => h.Shots));
 
-        var countTrial = existing is null
-            && round.EntryMode == EntryMode.ShotByShot
+        // A trial round is used when a shot-by-shot round is started: on create, or when an update switches a quick round
+        // to shot-by-shot. TrialCounted makes it once per round.
+        var countTrial = round.EntryMode == EntryMode.ShotByShot
+            && !round.TrialCounted
             && await db.Users.Where(a => a.Id == accountId).Select(a => a.Tier).SingleAsync(ct) == Tier.Free;
         if (!countTrial)
         {
@@ -121,8 +123,8 @@ public sealed class RoundUpsertService(AppDbContext db, TeeVersionService teeVer
             return new UpsertOutcome(UpsertStatus.Saved);
         }
 
-        // The insert and the increment commit together. A racing push of the same new round fails on the primary key,
-        // rolls back its increment and is re-run as an update, so the round is counted once.
+        // The round write and the increment commit together. A racing push of the same round loses on the primary key
+        // (create) or the Version token (update), rolls back its increment and is re-run, now seeing TrialCounted.
         round.TrialCounted = true;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);

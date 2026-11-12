@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace CustomGolfStats.Api.Features.Rounds;
@@ -35,7 +36,8 @@ internal static class WeatherEndpoints
         {
             observation = await provider.GetAsync(lat!.Value, lon!.Value, at!.Value.ToUniversalTime(), ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        // Unreachable, timed out, or answered with a body we can't read.
+        catch (Exception ex) when (ex is HttpRequestException or JsonException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
             return TypedResults.Problem("The weather service is unavailable.", statusCode: StatusCodes.Status502BadGateway);
         }

@@ -36,6 +36,27 @@ public sealed class TrialCountingTests(ApiFactory factory) : IClassFixture<ApiFa
     }
 
     [Fact]
+    public async Task Switching_a_quick_round_to_shot_by_shot_uses_one_trial_round_once()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "switch@example.com");
+        var teeId = await SeedTeeAsync();
+        var id = Guid.NewGuid();
+        var at = Now;
+        await PutAsync(client, id, Quick(teeId, at, QuickHole(1, 4)));
+        Assert.Equal(0, await TrialUsedAsync("switch@example.com"));
+
+        var switched = await PutAsync(client, id, ShotByShot(teeId, at.AddMinutes(1), ShotHole(1, 1)));
+        Assert.Equal(HttpStatusCode.OK, switched.StatusCode);
+        Assert.True((await ReadAsync<RoundDto>(switched)).TrialCounted);
+        Assert.Equal(1, await TrialUsedAsync("switch@example.com"));
+
+        // Back to quick and to shot-by-shot again: still one.
+        await PutAsync(client, id, Quick(teeId, at.AddMinutes(2), QuickHole(1, 4)));
+        await PutAsync(client, id, ShotByShot(teeId, at.AddMinutes(3), ShotHole(1, 1)));
+        Assert.Equal(1, await TrialUsedAsync("switch@example.com"));
+    }
+
+    [Fact]
     public async Task Round_is_stored_when_the_trial_is_used_up()
     {
         var client = await TestAuth.RegisterAsync(factory, "exhausted@example.com");

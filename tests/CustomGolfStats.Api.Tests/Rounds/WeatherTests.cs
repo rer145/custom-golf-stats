@@ -2,6 +2,9 @@ using System.Net;
 using CustomGolfStats.Api.Features.Rounds;
 using CustomGolfStats.Api.Tests.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using static CustomGolfStats.Api.Tests.Rounds.RoundRequests;
 
 namespace CustomGolfStats.Api.Tests.Rounds;
@@ -28,6 +31,23 @@ public sealed class WeatherTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(new WeatherDto("Clear sky", 71.5m, 8.2m, 270), weather);
         Assert.Contains(factory.WeatherProvider.Calls, c =>
             c.Lat == 40.5 && c.Lon == -75.25 && c.At == new DateTimeOffset(2026, 5, 30, 13, 0, 0, TimeSpan.Zero));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "not json {")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "{}")]
+    public async Task Weather_endpoint_maps_provider_failures_to_502(HttpStatusCode providerStatus, string providerBody)
+    {
+        var real = new OpenMeteoWeatherProvider(
+            new HttpClient(new CannedHandler(providerStatus, providerBody)),
+            Options.Create(new OpenMeteoOptions()),
+            factory.Time);
+        var api = factory.WithTestServices(services => services.Replace(ServiceDescriptor.Singleton<IWeatherProvider>(real)));
+        var client = await TestAuth.RegisterAsync(api, $"malformed-{(int)providerStatus}@example.com");
+
+        var response = await client.GetAsync("/weather?lat=40&lon=-75&at=2026-05-30T13:00:00Z", Ct);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
     }
 
     [Fact]
@@ -128,5 +148,11 @@ public sealed class WeatherTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Null(noStart.WeatherConditions);
         Assert.Null(noCoords.WeatherConditions);
         Assert.DoesNotContain(factory.WeatherProvider.Calls.Skip(before), c => c.Lat == 30);
+    }
+
+    private sealed class CannedHandler(HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
 }

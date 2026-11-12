@@ -68,15 +68,19 @@ public sealed class SyncChangesTests(ApiFactory factory) : IClassFixture<ApiFact
         await PutAsync(client, kept, Quick(seeded.Tee.Id, Now, QuickHole(1, 4)));
         await PutAsync(client, edited, Quick(seeded.Tee.Id, Now, QuickHole(1, 4)));
         await PutAsync(client, deleted, Quick(seeded.Tee.Id, Now, QuickHole(1, 4)));
-        factory.Time.Advance(TimeSpan.FromSeconds(1));
+        // Past the cursor margin, so the next pull no longer repeats these.
+        factory.Time.Advance(TimeSpan.FromMinutes(3));
         var first = await ReadAsync<SyncChangesResponse>(await client.GetAsync("/sync/changes", Ct));
         Assert.Equal(3, first.Rounds.Count);
+        Assert.Equal(first.ServerTime - TimeSpan.FromMinutes(2), first.NextSince);
 
         factory.Time.Advance(TimeSpan.FromMinutes(5));
         await PutAsync(client, edited, Quick(seeded.Tee.Id, Now, QuickHole(1, 6)));
         await client.DeleteAsync($"/rounds/{deleted}", Ct);
+        var writtenAt = Now;
+        factory.Time.Advance(TimeSpan.FromMinutes(3));
 
-        var since = Uri.EscapeDataString(first.ServerTime.ToString("O"));
+        var since = Uri.EscapeDataString(first.NextSince.ToString("O"));
         var second = await ReadAsync<SyncChangesResponse>(await client.GetAsync($"/sync/changes?since={since}", Ct));
 
         Assert.Equal(Now, second.ServerTime);
@@ -84,13 +88,33 @@ public sealed class SyncChangesTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.DoesNotContain(second.Rounds, r => r.Id == kept);
         Assert.Equal(6, Assert.Single(second.Rounds.Single(r => r.Id == edited).Holes).Score);
         var tombstone = second.Rounds.Single(r => r.Id == deleted);
-        Assert.Equal(Now, tombstone.DeletedAt);
+        Assert.Equal(writtenAt, tombstone.DeletedAt);
         Assert.Single(second.Courses);
 
         var third = await ReadAsync<SyncChangesResponse>(await client.GetAsync(
-            $"/sync/changes?since={Uri.EscapeDataString(Now.AddSeconds(1).ToString("O"))}", Ct));
+            $"/sync/changes?since={Uri.EscapeDataString(second.NextSince.ToString("O"))}", Ct));
         Assert.Empty(third.Rounds);
         Assert.Empty(third.Courses);
+    }
+
+    [Fact]
+    public async Task A_write_stamped_just_before_the_pull_but_committed_after_it_comes_on_the_next_pull()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "late@example.com");
+        var accountId = await TestAuth.GetAccountIdAsync(factory, "late@example.com");
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db));
+        var pull = await ReadAsync<SyncChangesResponse>(await client.GetAsync("/sync/changes", Ct));
+        Assert.Empty(pull.Rounds);
+
+        // A write whose ModifiedAt was stamped a second before the pull's server time but committed after the pull read.
+        var late = await factory.WithDbAsync(db =>
+            TestData.SeedQuickRoundAsync(db, accountId, seeded.Version, RoundRequests.PlayedOn, [4], pull.ServerTime.AddSeconds(-1)));
+        factory.Time.Advance(TimeSpan.FromMinutes(1));
+
+        var next = await ReadAsync<SyncChangesResponse>(await client.GetAsync(
+            $"/sync/changes?since={Uri.EscapeDataString(pull.NextSince.ToString("O"))}", Ct));
+
+        Assert.Equal(late.Id, Assert.Single(next.Rounds).Id);
     }
 
     [Fact]

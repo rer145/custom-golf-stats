@@ -5,8 +5,21 @@ using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace CustomGolfStats.Api.Features.Rounds;
+
+/// <summary>Configuration section <c>Sync</c>.</summary>
+public sealed class SyncOptions
+{
+    public const string SectionName = "Sync";
+
+    /// <summary>
+    /// How far before the server time <c>nextSince</c> is set, to cover writes still committing and clock skew between
+    /// API instances. Configured as <c>Sync:CursorMargin</c> (for example <c>00:02:00</c>).
+    /// </summary>
+    public TimeSpan CursorMargin { get; set; } = TimeSpan.FromMinutes(2);
+}
 
 /// <summary><c>/sync/changes</c>: what a device pulls.</summary>
 internal static class SyncEndpoints
@@ -18,12 +31,16 @@ internal static class SyncEndpoints
 
     /// <summary>
     /// Rounds changed since <paramref name="since"/> (all of them when omitted), deleted ones as tombstones; the full
-    /// courses those rounds use; every handicap entry; and the golfer's entitlements. <c>serverTime</c> is taken before
-    /// reading and rounds are filtered on the server-set <c>ModifiedAt &gt;= since</c>, so passing it back as the next
-    /// <c>since</c> never misses a write (a round may occasionally come twice).
+    /// courses those rounds use; every handicap entry; and the golfer's entitlements. Rounds are filtered on the
+    /// server-set <c>ModifiedAt &gt;= since</c>. <c>ModifiedAt</c> is stamped before its transaction commits (and servers'
+    /// clocks can differ), so a write stamped just before this read may not be visible yet. The returned
+    /// <c>nextSince</c> is therefore the server time taken before the reads minus <see cref="SyncOptions.CursorMargin"/>:
+    /// the client sends it back as <c>since</c>, and a write that commits within the margin is picked up next time.
+    /// Rounds may come more than once; clients key them by id and version.
     /// </summary>
     private static async Task<Results<Ok<SyncChangesResponse>, ValidationProblem>> GetChangesAsync(
-        string? since, ClaimsPrincipal user, AppDbContext db, AppSettingsReader settings, TimeProvider time, CancellationToken ct)
+        string? since, ClaimsPrincipal user, AppDbContext db, AppSettingsReader settings, TimeProvider time,
+        IOptions<SyncOptions> options, CancellationToken ct)
     {
         DateTimeOffset? cursor = null;
         if (!string.IsNullOrEmpty(since))
@@ -65,6 +82,7 @@ internal static class SyncEndpoints
 
         return TypedResults.Ok(new SyncChangesResponse(
             serverTime,
+            serverTime - options.Value.CursorMargin,
             [.. rounds.Select(r => r.ToDto())],
             [.. courses.Select(c => c.ToSyncDto())],
             handicapEntries,
