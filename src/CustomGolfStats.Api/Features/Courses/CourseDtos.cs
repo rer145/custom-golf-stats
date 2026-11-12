@@ -3,8 +3,6 @@ using CustomGolfStats.Api.Data.Entities;
 
 namespace CustomGolfStats.Api.Features.Courses;
 
-// Enums are written and read as their names (per property, so other features' JSON settings are untouched).
-
 /// <summary>A database search hit. <see cref="DistanceMiles"/> is set only when the search had <c>near</c>.</summary>
 public sealed record CourseSummaryDto(
     Guid Id,
@@ -15,7 +13,7 @@ public sealed record CourseSummaryDto(
     string? Country,
     double? Latitude,
     double? Longitude,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<CourseStatus>))] CourseStatus Status,
+    CourseStatus Status,
     double? DistanceMiles);
 
 public sealed record CourseDetailDto(
@@ -30,8 +28,8 @@ public sealed record CourseDetailDto(
     string? Website,
     double? Latitude,
     double? Longitude,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<CourseStatus>))] CourseStatus Status,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<CourseSource>))] CourseSource Source,
+    CourseStatus Status,
+    CourseSource Source,
     string? ProviderCourseId,
     DateTimeOffset? LastVerifiedAt,
     Guid? MergedIntoCourseId,
@@ -40,7 +38,7 @@ public sealed record CourseDetailDto(
 public sealed record TeeDto(
     Guid Id,
     string Name,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<Gender>))] Gender Gender,
+    Gender Gender,
     IReadOnlyList<TeeVersionDto> Versions);
 
 /// <summary>A tee version. <see cref="IsCurrent"/> marks the version in effect today (server date, UTC).</summary>
@@ -57,7 +55,7 @@ public sealed record TeeVersionDto(
     int? BackPar,
     decimal? BackRating,
     int? BackSlope,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<CourseSource>))] CourseSource Source,
+    CourseSource Source,
     DateTimeOffset ChangedAt,
     IReadOnlyList<TeeHoleDto> Holes);
 
@@ -80,7 +78,7 @@ public sealed record CourseFlagDto(
     Guid? TeeId,
     int? HoleNumber,
     string Note,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<FlagStatus>))] FlagStatus Status,
+    FlagStatus Status,
     DateTimeOffset CreatedAt);
 
 public sealed record ImportCourseRequest(string? ProviderCourseId);
@@ -118,7 +116,7 @@ public sealed record CreateCourseRequest(
 /// <summary>A tee and its first version. <see cref="EffectiveFrom"/> defaults to 1900-01-01, gender to Unspecified.</summary>
 public sealed record CreateTeeRequest(
     string? Name,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<Gender>))] Gender? Gender,
+    Gender? Gender,
     DateOnly? EffectiveFrom,
     decimal? Rating,
     int? Slope,

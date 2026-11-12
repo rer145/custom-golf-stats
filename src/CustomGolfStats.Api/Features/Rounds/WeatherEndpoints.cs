@@ -1,3 +1,4 @@
+using CustomGolfStats.Api.Infrastructure;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 

@@ -1,3 +1,4 @@
+using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using Microsoft.EntityFrameworkCore;

@@ -1,3 +1,4 @@
+using CustomGolfStats.Api.Features.Courses;
 using CustomGolfStats.Api.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,7 +62,7 @@ internal static class RoundMapping
                 [.. t.Versions.OrderBy(v => v.EffectiveFrom).Select(v => new SyncTeeVersionDto(
                     v.Id, v.EffectiveFrom, v.Par, v.Rating, v.Slope, v.FrontPar, v.FrontRating, v.FrontSlope,
                     v.BackPar, v.BackRating, v.BackSlope,
-                    [.. v.Holes.OrderBy(h => h.Number).Select(h => new SyncTeeHoleDto(h.Number, h.Par, h.Yardage, h.StrokeIndex))]))]))]);
+                    [.. v.Holes.OrderBy(h => h.Number).Select(h => new TeeHoleDto(h.Number, h.Par, h.Yardage, h.StrokeIndex))]))]))]);
 
     private static HoleResultDto ToDto(this HoleResult hole, int par) =>
         new(hole.HoleNumber, hole.EntrySequence, par, hole.Score, hole.Putts, hole.FairwayHit, hole.TeeShotLeft, hole.TeeShotRight,

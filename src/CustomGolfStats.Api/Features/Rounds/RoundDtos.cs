@@ -1,10 +1,9 @@
-using System.Text.Json.Serialization;
 using CustomGolfStats.Api.Data.Entities;
+using CustomGolfStats.Api.Features.Courses;
+using CustomGolfStats.Api.Features.Me;
 using CustomGolfStats.Domain;
 
 namespace CustomGolfStats.Api.Features.Rounds;
-
-// Enums travel as their names. The converter is set per property so this feature doesn't change JSON for the others.
 
 /// <summary>
 /// <c>PUT /rounds/{id}</c>: the whole round as the device has it. Missing weather is looked up by the server when the
@@ -15,8 +14,8 @@ public sealed record UpsertRoundRequest(
     DateOnly PlayedOn,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] EntryMode? EntryMode,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] RoundType? RoundType,
+    EntryMode? EntryMode,
+    RoundType? RoundType,
     string? Notes,
     string? WeatherConditions,
     decimal? TemperatureF,
@@ -51,14 +50,14 @@ public sealed record UpsertHoleRequest(
 /// <summary>One stroke. Distances are yards, or feet when the lie is Green. <see cref="EndDistance"/> is null when holed.</summary>
 public sealed record ShotDto(
     int Sequence,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Lie StartLie,
+    Lie StartLie,
     int StartDistance,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Club Club,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] ShotType ShotType,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Lie EndLie,
+    Club Club,
+    ShotType ShotType,
+    Lie EndLie,
     int? EndDistance,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Direction Direction,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Shape? Shape,
+    Direction Direction,
+    Shape? Shape,
     int PenaltyStrokes);
 
 /// <summary>A full round, as stored. <see cref="DeletedAt"/> is set on tombstones returned by <c>sync/changes</c>.</summary>
@@ -72,8 +71,8 @@ public sealed record RoundDto(
     DateOnly PlayedOn,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] EntryMode EntryMode,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] RoundType RoundType,
+    EntryMode EntryMode,
+    RoundType RoundType,
     string? Notes,
     string? WeatherConditions,
     decimal? TemperatureF,
@@ -117,7 +116,7 @@ public sealed record RoundSummaryDto(
     string CourseName,
     Guid TeeId,
     string TeeName,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] EntryMode EntryMode,
+    EntryMode EntryMode,
     int Holes,
     int Score,
     int ToPar);
@@ -132,7 +131,7 @@ public sealed record SyncChangesResponse(
     IReadOnlyList<RoundDto> Rounds,
     IReadOnlyList<SyncCourseDto> Courses,
     IReadOnlyList<SyncHandicapEntryDto> HandicapEntries,
-    SyncEntitlementsDto Entitlements);
+    EntitlementsResponse Entitlements);
 
 public sealed record SyncCourseDto(
     Guid Id,
@@ -146,8 +145,8 @@ public sealed record SyncCourseDto(
     string? Website,
     double? Latitude,
     double? Longitude,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] CourseStatus Status,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] CourseSource Source,
+    CourseStatus Status,
+    CourseSource Source,
     Guid? MergedIntoCourseId,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<SyncTeeDto> Tees);
@@ -155,7 +154,7 @@ public sealed record SyncCourseDto(
 public sealed record SyncTeeDto(
     Guid Id,
     string Name,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Gender Gender,
+    Gender Gender,
     IReadOnlyList<SyncTeeVersionDto> Versions);
 
 public sealed record SyncTeeVersionDto(
@@ -170,20 +169,9 @@ public sealed record SyncTeeVersionDto(
     int? BackPar,
     decimal? BackRating,
     int? BackSlope,
-    IReadOnlyList<SyncTeeHoleDto> Holes);
-
-public sealed record SyncTeeHoleDto(int Number, int Par, int Yardage, int StrokeIndex);
+    IReadOnlyList<TeeHoleDto> Holes);
 
 public sealed record SyncHandicapEntryDto(Guid Id, DateOnly EffectiveOn, decimal Index);
-
-/// <summary><see cref="TrialShotRoundsRemaining"/> is null for Paid golfers (unlimited).</summary>
-public sealed record SyncEntitlementsDto(
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Tier Tier,
-    [property: JsonConverter(typeof(JsonStringEnumConverter))] Role Role,
-    SyncEntitlementFeaturesDto Features,
-    int? TrialShotRoundsRemaining);
-
-public sealed record SyncEntitlementFeaturesDto(bool ShotByShotEntry);
 
 /// <summary><c>GET /weather</c>.</summary>
 public sealed record WeatherDto(string Conditions, decimal TemperatureF, decimal WindSpeedMph, int WindDirectionDegrees);
