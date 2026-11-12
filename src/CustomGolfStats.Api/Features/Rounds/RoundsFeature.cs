@@ -10,6 +10,7 @@ public static class RoundsFeature
         services.AddHttpClient<IWeatherProvider, OpenMeteoWeatherProvider>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<RoundWeatherFiller>();
         services.AddScoped<RoundUpsertService>();
+        services.AddScoped<RoundRederiver>();
         return services;
     }
 

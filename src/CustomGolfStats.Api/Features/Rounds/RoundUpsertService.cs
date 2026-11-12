@@ -17,7 +17,8 @@ public sealed record UpsertOutcome(UpsertStatus Status, IDictionary<string, stri
 /// <c>PUT /rounds/{id}</c>: last write wins per round on <see cref="Round.ClientUpdatedAt"/>, trial counting once when a
 /// Free golfer's round is first stored as shot-by-shot, then a weather lookup when the round has none.
 /// </summary>
-public sealed class RoundUpsertService(AppDbContext db, TeeVersionService teeVersions, RoundWeatherFiller weather, TimeProvider time)
+public sealed class RoundUpsertService(
+    AppDbContext db, TeeVersionService teeVersions, MergedTeeRedirector mergedTees, RoundWeatherFiller weather, TimeProvider time)
 {
     // Racing pushes of the same round lose on the primary key (create) or the Version token (update) and are re-run.
     private const int MaxAttempts = 5;
@@ -79,9 +80,19 @@ public sealed class RoundUpsertService(AppDbContext db, TeeVersionService teeVer
                 return new UpsertOutcome(UpsertStatus.Conflict);
         }
 
-        var keepVersion = existing is not null && existing.TeeVersion.TeeId == request.TeeId && existing.PlayedOn == request.PlayedOn;
-        var version = keepVersion ? existing!.TeeVersion : await teeVersions.ResolveAsync(request.TeeId, request.PlayedOn, ct);
+        // A tee of a course an admin merged into another (pushed, say, by a device that hasn't synced since) is redirected
+        // to the matching tee of the surviving course, so the round never lands back on the hidden duplicate.
         var errors = new ValidationErrors();
+        var redirect = await mergedTees.RedirectAsync(request.TeeId, ct);
+        if (redirect.Unmatched)
+        {
+            errors.Add("teeId", "MergedTeeUnmatched");
+            return new UpsertOutcome(UpsertStatus.Invalid, errors.ToDictionary());
+        }
+
+        var teeId = redirect.TeeId;
+        var keepVersion = existing is not null && existing.TeeVersion.TeeId == teeId && existing.PlayedOn == request.PlayedOn;
+        var version = keepVersion ? existing!.TeeVersion : await teeVersions.ResolveAsync(teeId, request.PlayedOn, ct);
         if (version is null)
         {
             errors.Add("teeId", "UnknownTee");
