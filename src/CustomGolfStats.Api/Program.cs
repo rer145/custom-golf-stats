@@ -18,7 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 // Enums travel as their names everywhere (requests, responses and the OpenAPI document).
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddOpenApi(options => options.AddOperationIds());
+builder.Services.AddOpenApi(options => options.AddOperationIds().AddStringEnumTypes());
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseAppDatabase(

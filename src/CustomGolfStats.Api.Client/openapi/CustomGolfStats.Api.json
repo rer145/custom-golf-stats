@@ -2648,7 +2648,8 @@
           "SandWedge",
           "LobWedge",
           "Putter"
-        ]
+        ],
+        "type": "string"
       },
       "CourseDetailDto": {
         "required": [
@@ -3029,7 +3030,8 @@
           "GolfCourseApi",
           "Manual",
           "Golftrack"
-        ]
+        ],
+        "type": "string"
       },
       "CoursesResponse": {
         "required": [
@@ -3050,7 +3052,8 @@
           "Imported",
           "UserEdited",
           "Verified"
-        ]
+        ],
+        "type": "string"
       },
       "CourseSummaryDto": {
         "required": [
@@ -3394,7 +3397,8 @@
           "ShortRight",
           "LongLeft",
           "LongRight"
-        ]
+        ],
+        "type": "string"
       },
       "EntitlementFeatures": {
         "required": [
@@ -3440,7 +3444,8 @@
         "enum": [
           "Quick",
           "ShotByShot"
-        ]
+        ],
+        "type": "string"
       },
       "ExternalSignInRequest": {
         "required": [
@@ -3482,7 +3487,8 @@
           "Open",
           "Resolved",
           "Dismissed"
-        ]
+        ],
+        "type": "string"
       },
       "ForgotPasswordRequest": {
         "required": [
@@ -3500,7 +3506,8 @@
           "Male",
           "Female",
           "Unspecified"
-        ]
+        ],
+        "type": "string"
       },
       "HandicapEntryResponse": {
         "required": [
@@ -3828,7 +3835,8 @@
           "Holed",
           "PenaltyArea",
           "OutOfBounds"
-        ]
+        ],
+        "type": "string"
       },
       "LoginRequest": {
         "required": [
@@ -4214,7 +4222,8 @@
         "enum": [
           "User",
           "Admin"
-        ]
+        ],
+        "type": "string"
       },
       "RoundDto": {
         "required": [
@@ -4471,7 +4480,8 @@
           "Casual",
           "Tournament",
           "League"
-        ]
+        ],
+        "type": "string"
       },
       "ScoreBucketDto": {
         "required": [
@@ -5008,9 +5018,9 @@
           "Push",
           "Pull",
           "Topped",
-          "Fat",
-          null
-        ]
+          "Fat"
+        ],
+        "type": "string"
       },
       "ShotDto": {
         "required": [
@@ -5097,7 +5107,8 @@
           "Bunker",
           "Recovery",
           "Putt"
-        ]
+        ],
+        "type": "string"
       },
       "StatsYearsResponse": {
         "required": [
@@ -5763,7 +5774,8 @@
         "enum": [
           "Free",
           "Paid"
-        ]
+        ],
+        "type": "string"
       },
       "TwoFactorRequest": {
         "type": "object",

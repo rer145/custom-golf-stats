@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi;
 
 namespace CustomGolfStats.Api.Infrastructure;
 
@@ -22,6 +23,32 @@ public static class OpenApiOperationIds
         [("GET", "/auth/manage/info")] = "AuthGetManageInfo",
         [("POST", "/auth/manage/info")] = "AuthUpdateManageInfo",
     };
+
+    /// <summary>
+    /// Enums travel as names (global <c>JsonStringEnumConverter</c>) but the generated schemas list the names without a
+    /// type; stating <c>"type": "string"</c> lets client generators emit string enums.
+    /// </summary>
+    public static OpenApiOptions AddStringEnumTypes(this OpenApiOptions options) =>
+        options.AddSchemaTransformer((schema, context, _) =>
+        {
+            if (context.JsonTypeInfo.Type.IsEnum || Nullable.GetUnderlyingType(context.JsonTypeInfo.Type)?.IsEnum == true)
+            {
+                // A nullable enum's schema also lists null as a value; nullability belongs to the property, not the enum.
+                schema.Type = JsonSchemaType.String;
+                if (schema.Enum is { } values)
+                {
+                    for (var i = values.Count - 1; i >= 0; i--)
+                    {
+                        if (values[i] is null || values[i].GetValueKind() == System.Text.Json.JsonValueKind.Null)
+                        {
+                            values.RemoveAt(i);
+                        }
+                    }
+                }
+            }
+
+            return Task.CompletedTask;
+        });
 
     /// <summary>Adds the operation transformer to the document options (<c>AddOpenApi(options =&gt; ...)</c>).</summary>
     public static OpenApiOptions AddOperationIds(this OpenApiOptions options) =>
