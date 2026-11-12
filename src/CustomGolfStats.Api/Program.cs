@@ -8,6 +8,7 @@ using CustomGolfStats.Api.Features.Rounds;
 using CustomGolfStats.Api.Features.Stats;
 using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
+using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,7 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 // Enums travel as their names everywhere (requests, responses and the OpenAPI document).
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddOperationIds());
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseAppDatabase(
@@ -44,7 +45,10 @@ builder.Services
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(AppEnvironments.Testing))
+// The build-time OpenAPI generator (GetDocument.Insider) starts the app without a database or secrets.
+var generatingDocument = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
+
+if (!generatingDocument && (app.Environment.IsDevelopment() || app.Environment.IsEnvironment(AppEnvironments.Testing)))
 {
     await using var scope = app.Services.CreateAsyncScope();
     await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();

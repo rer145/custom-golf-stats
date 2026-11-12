@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CustomGolfStats.Api.Client</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSwag.ApiDescription.Client">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <OpenApiReference Include="openapi\CustomGolfStats.Api.json" ClassName="CustomGolfStatsApiClient" Namespace="CustomGolfStats.Api.Client" CodeGenerator="NSwagCSharp">
+      <Options>/GenerateClientInterfaces:true /GenerateExceptionClasses:true /JsonLibrary:SystemTextJson /GenerateNullableReferenceTypes:true /UseBaseUrl:false /GenerateOptionalParameters:false /OperationGenerationMode:SingleClientFromOperationId /ClientClassAccessModifier:public /DateType:System.DateTimeOffset</Options>
+    </OpenApiReference>
+  </ItemGroup>
+
+</Project>

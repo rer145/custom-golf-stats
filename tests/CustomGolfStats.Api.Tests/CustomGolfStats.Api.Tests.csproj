@@ -10,6 +10,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The committed OpenAPI document, compared with what the running API serves. -->
+    <Content Include="..\..\src\CustomGolfStats.Api.Client\openapi\CustomGolfStats.Api.json" Link="openapi\CustomGolfStats.Api.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
@@ -22,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CustomGolfStats.Api\CustomGolfStats.Api.csproj" />
+    <ProjectReference Include="..\..\src\CustomGolfStats.Api.Client\CustomGolfStats.Api.Client.csproj" />
   </ItemGroup>
 
 </Project>

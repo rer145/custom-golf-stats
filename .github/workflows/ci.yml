@@ -16,3 +16,5 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet test --solution CustomGolfStats.slnx --configuration Release
+      # The build regenerates the OpenAPI document; fail if the committed copy is stale.
+      - run: git diff --exit-code -- src/CustomGolfStats.Api.Client/openapi
