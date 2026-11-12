@@ -137,6 +137,26 @@ public sealed class AdminMergeTests(ApiFactory factory) : IClassFixture<ApiFacto
     }
 
     [Fact]
+    public async Task Merge_onto_a_version_missing_played_holes_is_409_missing_holes()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "missing-holes-admin@example.com");
+        await TestAuth.RegisterAsync(factory, "missing-holes-golfer@example.com");
+        var golferId = await TestAuth.GetAccountIdAsync(factory, "missing-holes-golfer@example.com");
+        var source = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Eighteen Dup"));
+        var target = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Nine Holes", pars: [4, 4, 3, 5, 4, 4, 3, 4, 5]));
+        var round = await factory.WithDbAsync(db =>
+            TestData.SeedQuickRoundAsync(db, golferId, source.Version, new DateOnly(2025, 6, 1), Enumerable.Repeat(4, 10).ToList()));
+
+        var response = await admin.PostAsJsonAsync($"/admin/courses/{source.Course.Id}/merge", new { intoCourseId = target.Course.Id }, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement;
+        var unmatched = Assert.Single(body.GetProperty("unmatched").EnumerateArray());
+        Assert.Equal((source.Version.Id, "MissingHoles"), (unmatched.GetProperty("versionId").GetGuid(), unmatched.GetProperty("reason").GetString()));
+        Assert.Equal(source.Version.Id, await factory.WithDbAsync(db => db.Rounds.Where(r => r.Id == round.Id).Select(r => r.TeeVersionId).SingleAsync(Ct)));
+    }
+
+    [Fact]
     public async Task Merge_rejects_bad_targets()
     {
         var admin = await TestAuth.RegisterAdminAsync(factory, "badmerge-admin@example.com");

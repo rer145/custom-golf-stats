@@ -87,6 +87,23 @@ public sealed class TrialCountingTests(ApiFactory factory) : IClassFixture<ApiFa
     }
 
     [Fact]
+    public async Task Editing_a_shot_round_stored_while_paid_after_a_downgrade_uses_no_trial_round()
+    {
+        var client = await TestAuth.RegisterAsync(factory, "downgraded@example.com");
+        await TestAuth.SetAsync(factory, "downgraded@example.com", a => a.Tier = Tier.Paid);
+        var teeId = await SeedTeeAsync();
+        var id = Guid.NewGuid();
+        await PutAsync(client, id, ShotByShot(teeId, Now, ShotHole(1, 1)));
+        await TestAuth.SetAsync(factory, "downgraded@example.com", a => a.Tier = Tier.Free);
+
+        var edited = await PutAsync(client, id, ShotByShot(teeId, Now.AddMinutes(1), ShotHole(1, 1), ShotHole(2, 2)));
+
+        Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+        Assert.False((await ReadAsync<RoundDto>(edited)).TrialCounted);
+        Assert.Equal(0, await TrialUsedAsync("downgraded@example.com"));
+    }
+
+    [Fact]
     public async Task Racing_pushes_of_the_same_new_round_count_once()
     {
         var client = await TestAuth.RegisterAsync(factory, "race@example.com");

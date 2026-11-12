@@ -47,8 +47,8 @@ public sealed record CourseMergeResultDto(Guid CourseId, Guid IntoCourseId, int 
 
 /// <summary>
 /// A used source tee version that can't be moved. <see cref="Reason"/>: <c>NoMatchingTee</c> (no target tee with the
-/// same name and gender), <c>AmbiguousTee</c> (more than one), or <c>NoMatchingVersion</c> (the matching tee has no
-/// version with the same EffectiveFrom).
+/// same name and gender), <c>AmbiguousTee</c> (more than one), <c>NoMatchingVersion</c> (the matching tee has no
+/// version with the same EffectiveFrom), or <c>MissingHoles</c> (that version lacks hole numbers the rounds played).
 /// </summary>
 public sealed record UnmatchedTeeVersionDto(
     Guid TeeId,

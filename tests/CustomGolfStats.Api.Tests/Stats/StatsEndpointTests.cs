@@ -4,6 +4,7 @@ using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Stats;
 using CustomGolfStats.Api.Tests.Infrastructure;
+using CustomGolfStats.Api.Tests.Rounds;
 using CustomGolfStats.Domain;
 using CustomGolfStats.Domain.Stats;
 using Microsoft.EntityFrameworkCore;
@@ -373,6 +374,52 @@ public sealed class StatsEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
 
         Assert.Equal(HttpStatusCode.NotFound, (await otherClient.GetAsync($"/rounds/{round.Id}/scorecard", Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/rounds/{Guid.NewGuid()}/scorecard", Ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Scorecard_lists_a_hole_played_twice_in_entry_order_then_unplayed_holes()
+    {
+        var (client, _) = await NewGolferAsync();
+        var teeId = await factory.WithDbAsync(async db => (await TestData.SeedCourseAsync(db, "Twice GC")).Tee.Id);
+        var roundId = Guid.NewGuid();
+        var push = await RoundRequests.PutAsync(client, roundId, RoundRequests.Quick(teeId, factory.Time.GetUtcNow(),
+            RoundRequests.QuickHole(1, 5, sequence: 1),
+            RoundRequests.QuickHole(2, 4, sequence: 2),
+            RoundRequests.QuickHole(1, 3, sequence: 3)));
+        Assert.Equal(HttpStatusCode.OK, push.StatusCode);
+
+        var response = await client.GetAsync($"/rounds/{roundId}/scorecard", Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var card = (await response.Content.ReadFromJsonAsync<ScorecardResponse>(TestJson.Options, Ct))!;
+
+        Assert.Equal(3, card.HolesPlayed);
+        Assert.Equal(12, card.Score);
+        Assert.Equal(12 - (2 * TestData.DefaultPars[0]) - TestData.DefaultPars[1], card.ToPar);
+        Assert.Equal([1, 2, 1], card.Holes.Take(3).Select(h => h.Number));
+        Assert.Equal([1, 2, 3], card.Holes.Take(3).Select(h => h.Result!.EntrySequence));
+        Assert.Equal([5, 4, 3], card.Holes.Take(3).Select(h => h.Result!.Score));
+        Assert.Equal(TestData.DefaultPars[0], card.Holes[2].Par);
+        Assert.Equal(Enumerable.Range(3, 16), card.Holes.Skip(3).Select(h => h.Number));
+        Assert.All(card.Holes.Skip(3), h => Assert.Null(h.Result));
+    }
+
+    [Fact]
+    public async Task Stats_skip_hole_results_whose_hole_the_tee_version_lacks()
+    {
+        var (client, accountId) = await NewGolferAsync();
+        await factory.WithDbAsync(async db =>
+        {
+            var s = await TestData.SeedCourseAsync(db, "Gap GC");
+            await TestData.SeedQuickRoundAsync(db, accountId, s.Version, new DateOnly(2025, 5, 1), [4, 4, 3]);
+            // Bypasses the editor's guard to simulate data that lost a played hole.
+            await db.TeeHoles.Where(h => h.TeeVersionId == s.Version.Id && h.Number == 2).ExecuteDeleteAsync(Ct);
+        });
+
+        var response = await client.GetAsync("/stats/2025/scoring", Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var round = Assert.Single(await DomainRoundsAsync(accountId));
+        Assert.Equal([1, 3], round.Holes.Select(h => h.HoleNumber));
     }
 
     [Fact]

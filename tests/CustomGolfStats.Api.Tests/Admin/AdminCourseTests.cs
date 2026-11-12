@@ -142,6 +142,31 @@ public sealed class AdminCourseTests(ApiFactory factory) : IClassFixture<ApiFact
     }
 
     [Fact]
+    public async Task Correction_that_removes_played_holes_is_409_and_changes_nothing()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "removes-admin@example.com");
+        await TestAuth.RegisterAsync(factory, "removes-golfer@example.com");
+        var golferId = await TestAuth.GetAccountIdAsync(factory, "removes-golfer@example.com");
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Shrinking Links"));
+        await factory.WithDbAsync(db => TestData.SeedQuickRoundAsync(db, golferId, seeded.Version, new DateOnly(2026, 5, 1),
+            Enumerable.Repeat(4, 11).ToList()));
+        var nineHoles = new
+        {
+            rating = 35.0m,
+            slope = 120,
+            holes = Enumerable.Range(1, 9).Select(n => new { number = n, par = 4, yardage = 380, strokeIndex = n }).ToArray(),
+        };
+
+        var response = await admin.PutAsJsonAsync(
+            $"/admin/courses/{seeded.Course.Id}/tees/{seeded.Tee.Id}/versions/{seeded.Version.Id}", nineHoles, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement;
+        Assert.Equal([10, 11], body.GetProperty("holeNumbers").EnumerateArray().Select(e => e.GetInt32()));
+        Assert.Equal(18, await factory.WithDbAsync(db => db.TeeHoles.CountAsync(h => h.TeeVersionId == seeded.Version.Id, Ct)));
+    }
+
+    [Fact]
     public async Task Verify_marks_the_course_verified_now()
     {
         var admin = await TestAuth.RegisterAdminAsync(factory, "verify-admin@example.com");

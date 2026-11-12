@@ -105,6 +105,7 @@ public sealed class RoundUpsertService(
             return new UpsertOutcome(UpsertStatus.Invalid, errors.ToDictionary());
         }
 
+        var storedMode = existing?.EntryMode;
         var round = existing ?? new Round { Id = roundId, AccountId = accountId };
         if (existing is null)
         {
@@ -125,8 +126,10 @@ public sealed class RoundUpsertService(
         db.Shots.AddRange(holes.SelectMany(h => h.Shots));
 
         // A trial round is used when a shot-by-shot round is started: on create, or when an update switches a quick round
-        // to shot-by-shot. TrialCounted makes it once per round.
-        var countTrial = round.EntryMode == EntryMode.ShotByShot
+        // to shot-by-shot. Editing a round that was already shot-by-shot (say, stored while Paid) never uses one.
+        // TrialCounted makes it once per round.
+        var countTrial = storedMode != EntryMode.ShotByShot
+            && round.EntryMode == EntryMode.ShotByShot
             && !round.TrialCounted
             && await db.Users.Where(a => a.Id == accountId).Select(a => a.Tier).SingleAsync(ct) == Tier.Free;
         if (!countTrial)

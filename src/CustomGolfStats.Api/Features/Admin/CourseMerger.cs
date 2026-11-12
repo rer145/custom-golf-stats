@@ -37,7 +37,8 @@ public sealed record CourseMergeResult(
 /// <item>Each source tee matches the target tee with the same name (trimmed, case-insensitive) and gender
 /// (<see cref="TeeMatching"/>); two such target tees are ambiguous.</item>
 /// <item>Each source version that rounds use (soft-deleted rounds included) matches the matched tee's version with the
-/// same EffectiveFrom. If any used version has no single match, nothing changes and the unmatched ones are returned.</item>
+/// same EffectiveFrom, and that version must have every hole number the rounds played. If any used version has no single
+/// such match, nothing changes and the unmatched ones are returned.</item>
 /// <item>Otherwise those rounds move to the matching target versions (ModifiedAt and Version bumped, so sync sends the
 /// new course and tee) and shot-by-shot ones are re-derived on the target's holes (<see cref="RoundRederiver"/>); open
 /// flags move to the target (their tee mapped, or cleared when it has no single match); home courses and courses
@@ -126,6 +127,16 @@ public sealed class CourseMerger(AppDbContext db, RoundRederiver rederiver, Time
                 var match = matches.Count == 1 ? matches[0].Versions.SingleOrDefault(v => v.EffectiveFrom == version.EffectiveFrom) : null;
                 if (match is not null)
                 {
+                    // Rounds keep their hole results, so the target version must have every hole number they played.
+                    var targetNumbers = match.Holes.Select(h => h.Number).ToList();
+                    var missing = await db.HoleResults
+                        .AnyAsync(h => h.Round.TeeVersionId == version.Id && !targetNumbers.Contains(h.HoleNumber), ct);
+                    if (missing)
+                    {
+                        unmatched.Add(Unmatched(tee, version, used.Count, "MissingHoles"));
+                        continue;
+                    }
+
                     moves[version.Id] = match.Id;
                     continue;
                 }
@@ -171,6 +182,8 @@ public sealed class CourseMerger(AppDbContext db, RoundRederiver rederiver, Time
 
         source.MergedIntoCourseId = target.Id;
         source.UpdatedAt = now;
+        // The target gained rounds (and maybe a home course), so sync re-sends it to golfers who already had it.
+        target.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
 
         // Shot-by-shot summaries depend on the hole data (par for GIR, driving holes), which the target may differ in.
@@ -187,6 +200,6 @@ public sealed class CourseMerger(AppDbContext db, RoundRederiver rederiver, Time
 
     private Task<Course?> LoadAsync(Guid id, CancellationToken ct) =>
         db.Courses.AsSplitQuery()
-            .Include(c => c.Tees).ThenInclude(t => t.Versions)
+            .Include(c => c.Tees).ThenInclude(t => t.Versions).ThenInclude(v => v.Holes)
             .SingleOrDefaultAsync(c => c.Id == id, ct);
 }

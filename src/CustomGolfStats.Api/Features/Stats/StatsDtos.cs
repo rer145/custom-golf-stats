@@ -74,6 +74,10 @@ public sealed record ScorecardHoleResultDto(int EntrySequence, int Score, int Pu
     bool TeeShotLeft, bool TeeShotRight, bool TeeShotLong, bool TeeShotShort, bool Gir,
     int PenaltyStrokes, int GreensideSandShots, int FairwaySandShots);
 
+/// <summary>
+/// A scorecard row. Played holes come first in the order they were played (a hole played twice has two rows), then the
+/// tee's holes that were not played, by number.
+/// </summary>
 /// <param name="Result">Null when the hole was not played in this round (for example a nine-hole round).</param>
 public sealed record ScorecardHoleDto(int Number, int Par, int Yardage, int StrokeIndex, ScorecardHoleResultDto? Result);
 

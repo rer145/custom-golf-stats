@@ -381,6 +381,7 @@ public static class CourseEndpoints
                 title: "Tee version is in use",
                 detail: "Rounds have been played on this tee version, so it can't be edited in place. "
                     + "Create a new version with the date the change took effect, or ask an admin to correct this version."),
+            TeeVersionEditOutcome.RemovesPlayedHoles => RemovesPlayedHolesProblem(result.RemovedPlayedHoles!),
             TeeVersionEditOutcome.DuplicateEffectiveFrom => DuplicateEffectiveFrom(request.EffectiveFrom),
             TeeVersionEditOutcome.Invalid => TypedResults.ValidationProblem(result.Errors!),
             _ => TypedResults.NotFound(),
@@ -481,6 +482,15 @@ public static class CourseEndpoints
             .Select(v => new { v.Id, v.EffectiveFrom }).ToListAsync(ct);
         return CourseRules.VersionInEffect(versions.Select(v => (v.Id, v.EffectiveFrom)), Today(time)) == version.Id;
     }
+
+    /// <summary>409: the edit drops hole numbers that rounds on the version have played.</summary>
+    internal static ProblemHttpResult RemovesPlayedHolesProblem(IReadOnlyList<int> holeNumbers) =>
+        TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Played holes can't be removed",
+            detail: "Rounds on this tee version have played holes the change removes. Keep those holes, or create a new "
+                + "version with the date the change took effect.",
+            extensions: new Dictionary<string, object?> { ["holeNumbers"] = holeNumbers });
 
     private static ValidationProblem DuplicateEffectiveFrom(DateOnly? effectiveFrom) =>
         TypedResults.ValidationProblem(new Dictionary<string, string[]>

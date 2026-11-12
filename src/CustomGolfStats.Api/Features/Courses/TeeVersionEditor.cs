@@ -17,14 +17,22 @@ public enum TeeVersionEditOutcome
 
     /// <summary>The tee already has another version with the requested EffectiveFrom.</summary>
     DuplicateEffectiveFrom,
+
+    /// <summary>
+    /// The change drops hole numbers that rounds on the version (soft-deleted ones included) have played; they are in
+    /// <see cref="TeeVersionEditResult.RemovedPlayedHoles"/>.
+    /// </summary>
+    RemovesPlayedHoles,
 }
 
 /// <param name="Version">The saved version (tracked, with holes and tee.course loaded) when applied.</param>
 /// <param name="Errors">Validation errors keyed by field when <see cref="TeeVersionEditOutcome.Invalid"/>.</param>
+/// <param name="RemovedPlayedHoles">The played hole numbers the change would drop, when <see cref="TeeVersionEditOutcome.RemovesPlayedHoles"/>.</param>
 public sealed record TeeVersionEditResult(
     TeeVersionEditOutcome Outcome,
     TeeVersion? Version = null,
-    IDictionary<string, string[]>? Errors = null);
+    IDictionary<string, string[]>? Errors = null,
+    IReadOnlyList<int>? RemovedPlayedHoles = null);
 
 /// <summary>
 /// Creates and edits tee versions. In-place edits change the stats of every round on that version, so they are
@@ -64,6 +72,17 @@ public sealed class TeeVersionEditor(AppDbContext db, TimeProvider time)
         if (!allowWhenUsed && await IsUsedAsync(versionId, ct))
         {
             return new TeeVersionEditResult(TeeVersionEditOutcome.InUse, version);
+        }
+
+        // Rounds keep their hole results, so a played hole number must stay on the version (stats, re-derivation and
+        // later pushes all look holes up by number).
+        var keptNumbers = changes.Holes!.Select(h => h.Number).ToList();
+        var removedPlayed = await db.HoleResults
+            .Where(h => h.Round.TeeVersionId == versionId && !keptNumbers.Contains(h.HoleNumber))
+            .Select(h => h.HoleNumber).Distinct().OrderBy(n => n).ToListAsync(ct);
+        if (removedPlayed.Count > 0)
+        {
+            return new TeeVersionEditResult(TeeVersionEditOutcome.RemovesPlayedHoles, version, RemovedPlayedHoles: removedPlayed);
         }
 
         if (changes.EffectiveFrom is { } effectiveFrom && effectiveFrom != version.EffectiveFrom

@@ -111,8 +111,12 @@ public static class AdminCourseEndpoints
     /// bumped so sync sends them. Quick rounds keep the values the golfer entered; only stats computed from the version
     /// (par, to par, rating, slope) change for them.
     /// </para>
+    /// <para>
+    /// 409 when the correction drops hole numbers that rounds on the version have played (the problem's
+    /// <c>holeNumbers</c> lists them); nothing changes then.
+    /// </para>
     /// </summary>
-    internal static async Task<Results<Ok<TeeVersionDto>, ValidationProblem, NotFound>> CorrectVersionAsync(
+    internal static async Task<Results<Ok<TeeVersionDto>, ValidationProblem, NotFound, ProblemHttpResult>> CorrectVersionAsync(
         Guid id, Guid teeId, Guid versionId, TeeVersionInput request, ClaimsPrincipal user, AppDbContext db, TeeVersionEditor editor,
         RoundRederiver rederiver, TimeProvider time, CancellationToken ct)
     {
@@ -135,6 +139,8 @@ public static class AdminCourseEndpoints
                 return TypedResults.Ok(result.Version!.ToDto(current == versionId));
             case TeeVersionEditOutcome.Invalid:
                 return TypedResults.ValidationProblem(result.Errors!);
+            case TeeVersionEditOutcome.RemovesPlayedHoles:
+                return CourseEndpoints.RemovesPlayedHolesProblem(result.RemovedPlayedHoles!);
             case TeeVersionEditOutcome.DuplicateEffectiveFrom:
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]>
                 {
@@ -168,7 +174,8 @@ public static class AdminCourseEndpoints
     /// <see cref="CourseMerger"/> for the matching rules. 400 when the target is missing, the course itself or already
     /// merged; 404 when the course doesn't exist; 409 when it was already merged, or when some used tee versions have no
     /// single match (the problem's <c>unmatched</c> lists them as <see cref="UnmatchedTeeVersionDto"/>, with a reason:
-    /// NoMatchingTee, AmbiguousTee or NoMatchingVersion) or rounds kept arriving during the merge; nothing changes then.
+    /// NoMatchingTee, AmbiguousTee, NoMatchingVersion, or MissingHoles when the matching version lacks hole numbers the rounds
+    /// played) or rounds kept arriving during the merge; nothing changes then.
     /// </summary>
     internal static async Task<Results<Ok<CourseMergeResultDto>, ValidationProblem, NotFound, ProblemHttpResult>> MergeAsync(
         Guid id, MergeCourseRequest request, CourseMerger merger, CancellationToken ct)

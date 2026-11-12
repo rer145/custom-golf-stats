@@ -6,11 +6,12 @@ using Microsoft.EntityFrameworkCore;
 namespace CustomGolfStats.Api.Features.Stats;
 
 /// <summary>Loads a golfer's rounds as domain <see cref="RoundData"/> for the stats engine.</summary>
-public sealed class RoundDataLoader(AppDbContext db)
+public sealed partial class RoundDataLoader(AppDbContext db, ILogger<RoundDataLoader> logger)
 {
     /// <summary>
     /// All of the golfer's rounds that are not soft-deleted. Course and tee names come from the current entities;
-    /// par for each hole comes from the round's own tee version.
+    /// par for each hole comes from the round's own tee version. A hole result whose hole number the version doesn't have
+    /// (which edits and merges guard against) is skipped and logged rather than failing every stats request.
     /// </summary>
     public async Task<IReadOnlyList<RoundData>> LoadAsync(Guid accountId, CancellationToken ct = default)
     {
@@ -28,13 +29,25 @@ public sealed class RoundDataLoader(AppDbContext db)
         {
             var tee = r.TeeVersion.Tee;
             var parByHole = r.TeeVersion.Holes.ToDictionary(h => h.Number, h => h.Par);
-            var holes = r.HoleResults
-                .OrderBy(h => h.EntrySequence)
-                .Select(h => new HoleSummary(h.HoleNumber, h.EntrySequence, parByHole[h.HoleNumber], h.Score, h.Putts,
+            var holes = new List<HoleSummary>();
+            foreach (var h in r.HoleResults.OrderBy(h => h.EntrySequence))
+            {
+                if (!parByHole.TryGetValue(h.HoleNumber, out var par))
+                {
+                    LogHoleMissing(r.Id, h.HoleNumber, r.TeeVersionId);
+                    continue;
+                }
+
+                holes.Add(new HoleSummary(h.HoleNumber, h.EntrySequence, par, h.Score, h.Putts,
                     h.FairwayHit, h.TeeShotLeft, h.TeeShotRight, h.TeeShotLong, h.TeeShotShort,
-                    h.Gir, h.PenaltyStrokes, h.GreensideSandShots, h.FairwaySandShots))
-                .ToList();
+                    h.Gir, h.PenaltyStrokes, h.GreensideSandShots, h.FairwaySandShots));
+            }
+
             return new RoundData(r.Id, r.PlayedOn, tee.CourseId, tee.Course.Name, tee.Id, tee.Name, holes);
         }).ToList();
     }
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Round {RoundId} has a result for hole {HoleNumber}, which tee version {TeeVersionId} lacks; skipped in stats.")]
+    private partial void LogHoleMissing(Guid roundId, int holeNumber, Guid teeVersionId);
 }

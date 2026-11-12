@@ -178,14 +178,25 @@ public static class StatsFeature
         }
 
         var version = round.TeeVersion;
-        var results = round.HoleResults.ToDictionary(h => h.HoleNumber);
-        var holes = version.Holes.OrderBy(h => h.Number).Select(h => new ScorecardHoleDto(
-            h.Number, h.Par, h.Yardage, h.StrokeIndex,
-            results.TryGetValue(h.Number, out var r)
-                ? new ScorecardHoleResultDto(r.EntrySequence, r.Score, r.Putts, r.FairwayHit, r.TeeShotLeft,
-                    r.TeeShotRight, r.TeeShotLong, r.TeeShotShort, r.Gir, r.PenaltyStrokes,
-                    r.GreensideSandShots, r.FairwaySandShots)
-                : null)).ToList();
+        // Rows follow the order the holes were played (a hole played twice gets two rows), each with its tee-hole data;
+        // tee holes never played come after, without a result. A result whose hole the version lacks is left out.
+        var teeHoles = version.Holes.ToDictionary(h => h.Number);
+        var playedRows = round.HoleResults
+            .OrderBy(r => r.EntrySequence)
+            .Where(r => teeHoles.ContainsKey(r.HoleNumber))
+            .Select(r =>
+            {
+                var h = teeHoles[r.HoleNumber];
+                return new ScorecardHoleDto(h.Number, h.Par, h.Yardage, h.StrokeIndex,
+                    new ScorecardHoleResultDto(r.EntrySequence, r.Score, r.Putts, r.FairwayHit, r.TeeShotLeft,
+                        r.TeeShotRight, r.TeeShotLong, r.TeeShotShort, r.Gir, r.PenaltyStrokes,
+                        r.GreensideSandShots, r.FairwaySandShots));
+            })
+            .ToList();
+        var playedNumbers = round.HoleResults.Select(r => r.HoleNumber).ToHashSet();
+        var unplayedRows = version.Holes.Where(h => !playedNumbers.Contains(h.Number)).OrderBy(h => h.Number)
+            .Select(h => new ScorecardHoleDto(h.Number, h.Par, h.Yardage, h.StrokeIndex, null));
+        var holes = playedRows.Concat(unplayedRows).ToList();
 
         var played = holes.Where(h => h.Result is not null).ToList();
         var score = played.Sum(h => h.Result!.Score);
