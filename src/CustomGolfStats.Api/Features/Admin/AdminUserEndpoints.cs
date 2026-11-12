@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
-using CustomGolfStats.Api.Features.Courses;
 using CustomGolfStats.Api.Infrastructure;
 using CustomGolfStats.Domain;
 using Microsoft.AspNetCore.Http.HttpResults;

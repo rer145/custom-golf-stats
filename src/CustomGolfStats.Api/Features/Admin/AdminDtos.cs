@@ -45,14 +45,19 @@ public sealed record MergeCourseRequest(Guid? IntoCourseId);
 /// <param name="FlagsMoved">Open flags moved to the target.</param>
 public sealed record CourseMergeResultDto(Guid CourseId, Guid IntoCourseId, int RoundsMoved, int FlagsMoved);
 
-/// <summary>A used source tee version with no target version of the same tee (name and gender) and EffectiveFrom.</summary>
+/// <summary>
+/// A used source tee version that can't be moved. <see cref="Reason"/>: <c>NoMatchingTee</c> (no target tee with the
+/// same name and gender), <c>AmbiguousTee</c> (more than one), or <c>NoMatchingVersion</c> (the matching tee has no
+/// version with the same EffectiveFrom).
+/// </summary>
 public sealed record UnmatchedTeeVersionDto(
     Guid TeeId,
     string TeeName,
     [property: JsonConverter(typeof(JsonStringEnumConverter<Gender>))] Gender Gender,
     Guid VersionId,
     DateOnly EffectiveFrom,
-    int Rounds);
+    int Rounds,
+    string Reason);
 
 public sealed record AdminFlagDto(
     Guid Id,

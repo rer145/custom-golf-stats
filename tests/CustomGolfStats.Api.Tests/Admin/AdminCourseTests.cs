@@ -5,6 +5,7 @@ using CustomGolfStats.Api.Features.Admin;
 using CustomGolfStats.Api.Features.Courses;
 using CustomGolfStats.Api.Features.Stats;
 using CustomGolfStats.Api.Tests.Infrastructure;
+using CustomGolfStats.Api.Tests.Rounds;
 using Microsoft.EntityFrameworkCore;
 using static CustomGolfStats.Api.Tests.Courses.CourseTestHelpers;
 
@@ -85,6 +86,39 @@ public sealed class AdminCourseTests(ApiFactory factory) : IClassFixture<ApiFact
             Assert.Equal(adminId, version.ChangedByAccountId);
             Assert.Equal(CourseStatus.Verified, version.Tee.Course.Status);
         });
+    }
+
+    [Fact]
+    public async Task Correcting_a_used_version_rederives_shot_by_shot_hole_summaries()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "rederive-admin@example.com");
+        var golfer = await TestAuth.RegisterAsync(factory, "rederive-golfer@example.com");
+        var seeded = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Rederive Hills", status: CourseStatus.Verified));
+        var roundId = Guid.NewGuid();
+        var push = await RoundRequests.PutAsync(golfer, roundId, RoundRequests.ShotByShot(seeded.Tee.Id, ApiFactory.StartTime, RoundRequests.ShotHole(1, 1)));
+        Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync(Ct));
+        var before = await golfer.GetFromJsonAsync<ScorecardResponse>($"/rounds/{roundId}/scorecard", Ct);
+        Assert.True(before!.Holes[0].Result!.Gir); // par 4: on the green in two
+        Assert.True(before.Holes[0].Result!.FairwayHit);
+        var versionBefore = await factory.WithDbAsync(db => db.Rounds.Where(r => r.Id == roundId).Select(r => r.Version).SingleAsync(Ct));
+        factory.Time.Advance(TimeSpan.FromMinutes(1));
+
+        var pars = (int[])TestData.DefaultPars.Clone();
+        pars[0] = 3; // hole 1 was really a par 3
+        await (await admin.PutAsJsonAsync(
+                $"/admin/courses/{seeded.Course.Id}/tees/{seeded.Tee.Id}/versions/{seeded.Version.Id}", VersionBody(pars: pars), Ct))
+            .ReadAsync<TeeVersionDto>(HttpStatusCode.OK);
+
+        var after = await golfer.GetFromJsonAsync<ScorecardResponse>($"/rounds/{roundId}/scorecard", Ct);
+        Assert.False(after!.Holes[0].Result!.Gir); // par 3: green in one needed
+        Assert.False(after.Holes[0].Result!.FairwayHit); // a par 3 isn't a driving hole
+        var (modifiedAt, version) = await factory.WithDbAsync(async db =>
+        {
+            var r = await db.Rounds.SingleAsync(x => x.Id == roundId, Ct);
+            return (r.ModifiedAt, r.Version);
+        });
+        Assert.Equal(factory.Time.GetUtcNow(), modifiedAt);
+        Assert.Equal(versionBefore + 1, version);
     }
 
     [Fact]

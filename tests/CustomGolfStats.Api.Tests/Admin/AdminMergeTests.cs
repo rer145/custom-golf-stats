@@ -4,9 +4,13 @@ using System.Text.Json;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Admin;
 using CustomGolfStats.Api.Features.Courses;
+using CustomGolfStats.Api.Features.Rounds;
+using CustomGolfStats.Api.Features.Stats;
 using CustomGolfStats.Api.Tests.Infrastructure;
+using CustomGolfStats.Api.Tests.Rounds;
 using Microsoft.EntityFrameworkCore;
 using static CustomGolfStats.Api.Tests.Courses.CourseTestHelpers;
+using static CustomGolfStats.Api.Tests.Rounds.RoundRequests;
 
 namespace CustomGolfStats.Api.Tests.Admin;
 
@@ -117,13 +121,13 @@ public sealed class AdminMergeTests(ApiFactory factory) : IClassFixture<ApiFacto
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement;
         var unmatched = body.GetProperty("unmatched").EnumerateArray()
-            .Select(u => (u.GetProperty("teeName").GetString(), u.GetProperty("gender").GetString(), u.GetProperty("versionId").GetGuid()))
-            .OrderBy(u => u.Item1).ThenBy(u => u.Item3)
+            .Select(u => (u.GetProperty("teeName").GetString(), u.GetProperty("gender").GetString(), u.GetProperty("versionId").GetGuid(),
+                u.GetProperty("reason").GetString()))
             .ToList();
         Assert.Equal(3, unmatched.Count);
-        Assert.Contains(("Blue", "Male", source.Version.Id), unmatched);
-        Assert.Contains(("Red", "Female", redTee.Versions.Single().Id), unmatched);
-        Assert.Contains(("White", "Male", sourceLater.Id), unmatched);
+        Assert.Contains(("Blue", "Male", source.Version.Id, "NoMatchingTee"), unmatched);
+        Assert.Contains(("Red", "Female", redTee.Versions.Single().Id, "NoMatchingTee"), unmatched);
+        Assert.Contains(("White", "Male", sourceLater.Id, "NoMatchingVersion"), unmatched);
         await factory.WithDbAsync(async db =>
         {
             Assert.Null((await db.Courses.SingleAsync(c => c.Id == source.Course.Id, Ct)).MergedIntoCourseId);
@@ -176,4 +180,105 @@ public sealed class AdminMergeTests(ApiFactory factory) : IClassFixture<ApiFacto
             db.Courses.Where(c => c.Id == older.Course.Id).Select(c => c.MergedIntoCourseId).SingleAsync(Ct));
         Assert.Equal(final.Course.Id, mergedInto);
     }
+
+    [Fact]
+    public async Task Merge_rederives_shot_by_shot_rounds_on_the_target_holes()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "rederive-merge-admin@example.com");
+        var golfer = await TestAuth.RegisterAsync(factory, "rederive-merge-golfer@example.com");
+        var targetPars = (int[])TestData.DefaultPars.Clone();
+        targetPars[0] = 3; // the target has hole 1 right: a par 3
+        var source = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Rederive Dup"));
+        var target = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Rederive Real", pars: targetPars));
+        var roundId = Guid.NewGuid();
+        await PushAsync(golfer, roundId, ShotByShot(source.Tee.Id, ApiFactory.StartTime, ShotHole(1, 1)));
+        Assert.True((await ScorecardAsync(golfer, roundId)).Holes[0].Result!.Gir);
+
+        await (await admin.PostAsJsonAsync($"/admin/courses/{source.Course.Id}/merge", new { intoCourseId = target.Course.Id }, Ct))
+            .ReadAsync<CourseMergeResultDto>(HttpStatusCode.OK);
+
+        var card = await ScorecardAsync(golfer, roundId);
+        Assert.Equal(target.Course.Id, card.CourseId);
+        Assert.False(card.Holes[0].Result!.Gir);
+        Assert.False(card.Holes[0].Result!.FairwayHit);
+    }
+
+    [Fact]
+    public async Task Merge_into_a_course_with_two_matching_tees_is_409_ambiguous()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "ambiguous-admin@example.com");
+        await TestAuth.RegisterAsync(factory, "ambiguous-golfer@example.com");
+        var golferId = await TestAuth.GetAccountIdAsync(factory, "ambiguous-golfer@example.com");
+        var source = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Ambiguous Dup"));
+        var target = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Ambiguous Real"));
+        await factory.WithDbAsync(async db =>
+        {
+            var twin = new Tee { CourseId = target.Course.Id, Name = "white", Gender = Gender.Male };
+            db.Tees.Add(twin);
+            await db.SaveChangesAsync(Ct);
+            await TestData.AddTeeVersionAsync(db, twin, TestData.DefaultEffectiveFrom);
+            await TestData.SeedQuickRoundAsync(db, golferId, source.Version, new DateOnly(2025, 6, 1), [4]);
+        });
+
+        var response = await admin.PostAsJsonAsync($"/admin/courses/{source.Course.Id}/merge", new { intoCourseId = target.Course.Id }, Ct);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var unmatched = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement.GetProperty("unmatched");
+        Assert.Equal("AmbiguousTee", Assert.Single(unmatched.EnumerateArray()).GetProperty("reason").GetString());
+        Assert.Null(await factory.WithDbAsync(db =>
+            db.Courses.Where(c => c.Id == source.Course.Id).Select(c => c.MergedIntoCourseId).SingleAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Pushes_with_a_merged_courses_tee_land_on_the_surviving_course()
+    {
+        var admin = await TestAuth.RegisterAdminAsync(factory, "redirect-admin@example.com");
+        var golfer = await TestAuth.RegisterAsync(factory, "redirect-golfer@example.com");
+        var source = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Redirect Dup"));
+        var target = await factory.WithDbAsync(db => TestData.SeedCourseAsync(db, "Redirect Real", teeName: " WHITE"));
+        var gold = await factory.WithDbAsync(async db =>
+        {
+            var tee = new Tee { CourseId = source.Course.Id, Name = "Gold", Gender = Gender.Male };
+            db.Tees.Add(tee);
+            await db.SaveChangesAsync(Ct);
+            await TestData.AddTeeVersionAsync(db, tee, TestData.DefaultEffectiveFrom);
+            return tee;
+        });
+        var offlineRound = Guid.NewGuid();
+        await PushAsync(golfer, offlineRound, Quick(source.Tee.Id, ApiFactory.StartTime, QuickHole(1, 5)));
+
+        await (await admin.PostAsJsonAsync($"/admin/courses/{source.Course.Id}/merge", new { intoCourseId = target.Course.Id }, Ct))
+            .ReadAsync<CourseMergeResultDto>(HttpStatusCode.OK);
+        // A re-rating on the surviving course after the merge, in effect on the date played.
+        var rerated = await factory.WithDbAsync(async db =>
+            await TestData.AddTeeVersionAsync(db, await db.Tees.SingleAsync(t => t.Id == target.Tee.Id, Ct), new DateOnly(2026, 5, 1)));
+
+        // A device that hasn't synced edits its round with the old tee id: it stays on the target, on its version.
+        await PushAsync(golfer, offlineRound, Quick(source.Tee.Id, ApiFactory.StartTime.AddMinutes(5), QuickHole(1, 6)));
+        // A new round started offline on the old course lands on the target tee's version in effect.
+        var newRound = Guid.NewGuid();
+        await PushAsync(golfer, newRound, Quick(source.Tee.Id, ApiFactory.StartTime.AddMinutes(6), QuickHole(1, 4)));
+        // A tee with no match on the target can't be used any more.
+        var unmatched = await (await RoundRequests.PutAsync(golfer, Guid.NewGuid(), Quick(gold.Id, ApiFactory.StartTime, QuickHole(1, 4))))
+            .ReadValidationErrorsAsync();
+
+        await factory.WithDbAsync(async db =>
+        {
+            var rounds = await db.Rounds.Include(r => r.HoleResults).Where(r => r.Id == offlineRound || r.Id == newRound)
+                .ToDictionaryAsync(r => r.Id, Ct);
+            Assert.Equal(target.Version.Id, rounds[offlineRound].TeeVersionId);
+            Assert.Equal(6, rounds[offlineRound].HoleResults.Single().Score);
+            Assert.Equal(rerated.Id, rounds[newRound].TeeVersionId);
+        });
+        Assert.Equal(["MergedTeeUnmatched"], unmatched["teeId"]);
+    }
+
+    private static async Task PushAsync(HttpClient client, Guid roundId, UpsertRoundRequest request)
+    {
+        var response = await RoundRequests.PutAsync(client, roundId, request);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    private static async Task<ScorecardResponse> ScorecardAsync(HttpClient client, Guid roundId) =>
+        (await client.GetFromJsonAsync<ScorecardResponse>($"/rounds/{roundId}/scorecard", Ct))!;
 }

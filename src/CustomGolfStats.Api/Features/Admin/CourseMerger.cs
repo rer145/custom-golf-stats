@@ -1,5 +1,7 @@
 using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
+using CustomGolfStats.Api.Features.Courses;
+using CustomGolfStats.Api.Features.Rounds;
 using Microsoft.EntityFrameworkCore;
 
 namespace CustomGolfStats.Api.Features.Admin;
@@ -17,8 +19,11 @@ public enum CourseMergeOutcome
     /// <summary>The source was already merged.</summary>
     AlreadyMerged,
 
-    /// <summary>Some used source tee versions have no matching target version; nothing changed.</summary>
+    /// <summary>Some used source tee versions have no single matching target version; nothing changed.</summary>
     Unmatched,
+
+    /// <summary>Rounds kept arriving on the source while merging; nothing changed, try again.</summary>
+    Busy,
 }
 
 public sealed record CourseMergeResult(
@@ -29,16 +34,19 @@ public sealed record CourseMergeResult(
 /// <summary>
 /// Merges a duplicate course into another, in one transaction:
 /// <list type="bullet">
-/// <item>Each source tee matches the target tee with the same name (trimmed, case-insensitive) and gender.</item>
+/// <item>Each source tee matches the target tee with the same name (trimmed, case-insensitive) and gender
+/// (<see cref="TeeMatching"/>); two such target tees are ambiguous.</item>
 /// <item>Each source version that rounds use (soft-deleted rounds included) matches the matched tee's version with the
-/// same EffectiveFrom. If any used version has no match, nothing changes and the unmatched ones are returned.</item>
+/// same EffectiveFrom. If any used version has no single match, nothing changes and the unmatched ones are returned.</item>
 /// <item>Otherwise those rounds move to the matching target versions (ModifiedAt and Version bumped, so sync sends the
-/// new course and tee); open flags move to the target (their tee mapped, or cleared when it has no match); home courses
-/// and courses previously merged into the source point at the target; the source gets MergedIntoCourseId.</item>
+/// new course and tee) and shot-by-shot ones are re-derived on the target's holes (<see cref="RoundRederiver"/>); open
+/// flags move to the target (their tee mapped, or cleared when it has no single match); home courses and courses
+/// previously merged into the source point at the target; the source gets MergedIntoCourseId.</item>
 /// </list>
-/// Unused source tees and versions are left on the (now hidden) source course.
+/// Unused source tees and versions are left on the (now hidden) source course. Later pushes with a source tee id are
+/// redirected by <see cref="MergedTeeRedirector"/>.
 /// </summary>
-public sealed class CourseMerger(AppDbContext db, TimeProvider time)
+public sealed class CourseMerger(AppDbContext db, RoundRederiver rederiver, TimeProvider time)
 {
     private const int MaxPasses = 3;
 
@@ -77,16 +85,12 @@ public sealed class CourseMerger(AppDbContext db, TimeProvider time)
             return new CourseMergeResult(CourseMergeOutcome.TargetMerged);
         }
 
-        var teeMap = source.Tees.ToDictionary(t => t.Id, t => target.Tees
-            .Where(candidate => candidate.Gender == t.Gender && SameName(candidate.Name, t.Name))
-            .OrderBy(candidate => candidate.Id)
-            .FirstOrDefault());
-
+        var teeMatches = source.Tees.ToDictionary(t => t.Id, t => TeeMatching.Matches(t, target.Tees));
         var now = time.GetUtcNow();
-        var roundsMoved = 0;
+        var movedRoundIds = new List<Guid>();
 
-        // A second pass picks up rounds saved on a source version while the first pass ran; normally it finds none.
-        for (var pass = 0; pass < MaxPasses; pass++)
+        // Later passes pick up rounds saved on a source version while the previous pass ran; normally there are none.
+        for (var pass = 0; ; pass++)
         {
             var usage = await db.Rounds.IgnoreQueryFilters()
                 .Where(r => r.TeeVersion.Tee.CourseId == courseId)
@@ -98,21 +102,36 @@ public sealed class CourseMerger(AppDbContext db, TimeProvider time)
                 break;
             }
 
+            if (pass == MaxPasses)
+            {
+                await transaction.RollbackAsync(ct);
+                return new CourseMergeResult(CourseMergeOutcome.Busy);
+            }
+
             var moves = new Dictionary<Guid, Guid>();
             var unmatched = new List<UnmatchedTeeVersionDto>();
             foreach (var used in usage)
             {
-                var tee = source.Tees.Single(t => t.Versions.Any(v => v.Id == used.VersionId));
-                var version = tee.Versions.Single(v => v.Id == used.VersionId);
-                var match = teeMap[tee.Id]?.Versions.SingleOrDefault(v => v.EffectiveFrom == version.EffectiveFrom);
-                if (match is null)
+                var version = source.Tees.SelectMany(t => t.Versions).SingleOrDefault(v => v.Id == used.VersionId);
+                if (version is null)
                 {
-                    unmatched.Add(new UnmatchedTeeVersionDto(tee.Id, tee.Name, tee.Gender, version.Id, version.EffectiveFrom, used.Count));
+                    // A version added to the source after it was loaded: report it rather than guess.
+                    var added = await db.TeeVersions.AsNoTracking().Include(v => v.Tee).SingleAsync(v => v.Id == used.VersionId, ct);
+                    unmatched.Add(Unmatched(added.Tee, added, used.Count, "NoMatchingVersion"));
+                    continue;
                 }
-                else
+
+                var tee = version.Tee;
+                var matches = teeMatches[tee.Id];
+                var match = matches.Count == 1 ? matches[0].Versions.SingleOrDefault(v => v.EffectiveFrom == version.EffectiveFrom) : null;
+                if (match is not null)
                 {
                     moves[version.Id] = match.Id;
+                    continue;
                 }
+
+                var reason = matches.Count switch { 0 => "NoMatchingTee", 1 => "NoMatchingVersion", _ => "AmbiguousTee" };
+                unmatched.Add(Unmatched(tee, version, used.Count, reason));
             }
 
             if (unmatched.Count > 0)
@@ -126,13 +145,13 @@ public sealed class CourseMerger(AppDbContext db, TimeProvider time)
 
             foreach (var (from, to) in moves)
             {
-                roundsMoved += await db.Rounds.IgnoreQueryFilters()
-                    .Where(r => r.TeeVersionId == from)
-                    .ExecuteUpdateAsync(
-                        s => s.SetProperty(r => r.TeeVersionId, to)
-                            .SetProperty(r => r.ModifiedAt, now)
-                            .SetProperty(r => r.Version, r => r.Version + 1),
-                        ct);
+                var rounds = db.Rounds.IgnoreQueryFilters().Where(r => r.TeeVersionId == from);
+                movedRoundIds.AddRange(await rounds.Select(r => r.Id).ToListAsync(ct));
+                await rounds.ExecuteUpdateAsync(
+                    s => s.SetProperty(r => r.TeeVersionId, to)
+                        .SetProperty(r => r.ModifiedAt, now)
+                        .SetProperty(r => r.Version, r => r.Version + 1),
+                    ct);
             }
         }
 
@@ -140,7 +159,9 @@ public sealed class CourseMerger(AppDbContext db, TimeProvider time)
         foreach (var flag in openFlags)
         {
             flag.CourseId = target.Id;
-            flag.TeeId = flag.TeeId is { } teeId && teeMap.TryGetValue(teeId, out var targetTee) ? targetTee?.Id : null;
+            flag.TeeId = flag.TeeId is { } teeId && teeMatches.TryGetValue(teeId, out var matches) && matches.Count == 1
+                ? matches[0].Id
+                : null;
         }
 
         await db.Users.Where(a => a.HomeCourseId == courseId)
@@ -151,17 +172,21 @@ public sealed class CourseMerger(AppDbContext db, TimeProvider time)
         source.MergedIntoCourseId = target.Id;
         source.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
+
+        // Shot-by-shot summaries depend on the hole data (par for GIR, driving holes), which the target may differ in.
+        await rederiver.RederiveRoundsAsync(movedRoundIds, ct);
         await transaction.CommitAsync(ct);
 
         return new CourseMergeResult(
             CourseMergeOutcome.Merged,
-            new CourseMergeResultDto(courseId, intoCourseId, roundsMoved, openFlags.Count));
+            new CourseMergeResultDto(courseId, intoCourseId, movedRoundIds.Distinct().Count(), openFlags.Count));
     }
+
+    private static UnmatchedTeeVersionDto Unmatched(Tee tee, TeeVersion version, int rounds, string reason) =>
+        new(tee.Id, tee.Name, tee.Gender, version.Id, version.EffectiveFrom, rounds, reason);
 
     private Task<Course?> LoadAsync(Guid id, CancellationToken ct) =>
         db.Courses.AsSplitQuery()
             .Include(c => c.Tees).ThenInclude(t => t.Versions)
             .SingleOrDefaultAsync(c => c.Id == id, ct);
-
-    private static bool SameName(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 }

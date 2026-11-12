@@ -2,6 +2,7 @@ using System.Security.Claims;
 using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Features.Courses;
+using CustomGolfStats.Api.Features.Rounds;
 using CustomGolfStats.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -104,20 +105,30 @@ public static class AdminCourseEndpoints
     /// use it, so the correction changes those rounds' stats. Body as <c>PUT /courses/.../versions/{versionId}</c>
     /// (null <c>effectiveFrom</c> keeps the date). Records the admin as the changer; the course status is unchanged
     /// when Verified, otherwise UserEdited.
+    /// <para>
+    /// Shot-by-shot rounds on the version (soft-deleted included) get their hole summaries re-derived from their shots
+    /// with the corrected holes (so GIR, fairway and similar stats follow a par change) and their ModifiedAt and Version
+    /// bumped so sync sends them. Quick rounds keep the values the golfer entered; only stats computed from the version
+    /// (par, to par, rating, slope) change for them.
+    /// </para>
     /// </summary>
     internal static async Task<Results<Ok<TeeVersionDto>, ValidationProblem, NotFound>> CorrectVersionAsync(
         Guid id, Guid teeId, Guid versionId, TeeVersionInput request, ClaimsPrincipal user, AppDbContext db, TeeVersionEditor editor,
-        TimeProvider time, CancellationToken ct)
+        RoundRederiver rederiver, TimeProvider time, CancellationToken ct)
     {
         if (!await db.TeeVersions.AnyAsync(v => v.Id == versionId && v.TeeId == teeId && v.Tee.CourseId == id, ct))
         {
             return TypedResults.NotFound();
         }
 
+        // The correction and the re-derived summaries commit together.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var result = await editor.ApplyAsync(versionId, request, allowWhenUsed: true, user.GetAccountId(), ct);
         switch (result.Outcome)
         {
             case TeeVersionEditOutcome.Applied:
+                await rederiver.RederiveForVersionsAsync([versionId], ct);
+                await transaction.CommitAsync(ct);
                 var siblings = await db.TeeVersions.AsNoTracking().Where(v => v.TeeId == teeId)
                     .Select(v => new { v.Id, v.EffectiveFrom }).ToListAsync(ct);
                 var current = CourseRules.VersionInEffect(siblings.Select(v => (v.Id, v.EffectiveFrom)), AdminQueries.Today(time));
@@ -156,7 +167,8 @@ public static class AdminCourseEndpoints
     /// <c>POST /admin/courses/{id}/merge {"intoCourseId"}</c>: merges a duplicate course into another. See
     /// <see cref="CourseMerger"/> for the matching rules. 400 when the target is missing, the course itself or already
     /// merged; 404 when the course doesn't exist; 409 when it was already merged, or when some used tee versions have no
-    /// match (the problem's <c>unmatched</c> lists them as <see cref="UnmatchedTeeVersionDto"/>) and nothing changes.
+    /// single match (the problem's <c>unmatched</c> lists them as <see cref="UnmatchedTeeVersionDto"/>, with a reason:
+    /// NoMatchingTee, AmbiguousTee or NoMatchingVersion) or rounds kept arriving during the merge; nothing changes then.
     /// </summary>
     internal static async Task<Results<Ok<CourseMergeResultDto>, ValidationProblem, NotFound, ProblemHttpResult>> MergeAsync(
         Guid id, MergeCourseRequest request, CourseMerger merger, CancellationToken ct)
@@ -179,6 +191,10 @@ public static class AdminCourseEndpoints
                 statusCode: StatusCodes.Status409Conflict,
                 title: "Course already merged",
                 detail: "This course has already been merged into another course."),
+            CourseMergeOutcome.Busy => TypedResults.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Course is busy",
+                detail: "Rounds kept being saved on this course while merging. Nothing was changed; try again."),
             _ => TypedResults.Problem(
                 statusCode: StatusCodes.Status409Conflict,
                 title: "Tee versions don't match",

@@ -8,6 +8,7 @@ public static class CoursesFeature
             GolfCourseApiProvider.Configure(client, provider.GetRequiredService<IConfiguration>()[GolfCourseApiProvider.ApiKeySetting]));
         services.AddScoped<TeeVersionService>();
         services.AddScoped<TeeVersionEditor>();
+        services.AddScoped<MergedTeeRedirector>();
         return services;
     }
 
