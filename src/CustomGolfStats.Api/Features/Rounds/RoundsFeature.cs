@@ -4,15 +4,20 @@ public static class RoundsFeature
 {
     public static IServiceCollection AddRoundsFeature(this IServiceCollection services)
     {
-        // Task 5 registers the real IWeatherProvider here.
+        services.AddOptions<SyncOptions>().BindConfiguration(SyncOptions.SectionName)
+            .Validate(o => o.CursorMargin >= TimeSpan.Zero, "Sync:CursorMargin must not be negative.");
+        services.AddOptions<OpenMeteoOptions>().BindConfiguration(OpenMeteoOptions.SectionName);
+        services.AddHttpClient<IWeatherProvider, OpenMeteoWeatherProvider>(client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddScoped<RoundWeatherFiller>();
+        services.AddScoped<RoundUpsertService>();
         return services;
     }
 
     public static IEndpointRouteBuilder MapRoundsEndpoints(this IEndpointRouteBuilder app)
     {
-        // Task 5 also adds /sync and /weather groups here, each with RequireAuthorization().
-        var group = app.MapGroup("/rounds").WithTags("Rounds").RequireAuthorization();
-        _ = group;
+        RoundsEndpoints.Map(app.MapGroup("/rounds").WithTags("Rounds").RequireAuthorization());
+        SyncEndpoints.Map(app.MapGroup("/sync").WithTags("Sync").RequireAuthorization());
+        WeatherEndpoints.Map(app.MapGroup("/weather").WithTags("Weather").RequireAuthorization());
         return app;
     }
 }
