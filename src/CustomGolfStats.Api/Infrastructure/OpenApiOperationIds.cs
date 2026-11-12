@@ -50,6 +50,32 @@ public static class OpenApiOperationIds
             return Task.CompletedTask;
         });
 
+    /// <summary>
+    /// The Identity routes' metadata comes from the ASP.NET Core shared framework, so it can change with the runtime patch
+    /// the document is generated on: from 10.0.x (seen on 10.0.15, absent on 10.0.0) resendConfirmationEmail also
+    /// declares a 400 validation problem. Declaring it here keeps the document the same whichever runtime builds it.
+    /// </summary>
+    private static void AddValidationProblemResponse(OpenApiOperation operation, OpenApiDocument? document)
+    {
+        operation.Responses ??= new OpenApiResponses();
+        if (operation.Responses.ContainsKey("400"))
+        {
+            return;
+        }
+
+        operation.Responses["400"] = new OpenApiResponse
+        {
+            Description = "Bad Request",
+            Content = new Dictionary<string, OpenApiMediaType>
+            {
+                ["application/problem+json"] = new()
+                {
+                    Schema = new OpenApiSchemaReference("HttpValidationProblemDetails", document),
+                },
+            },
+        };
+    }
+
     /// <summary>Adds the operation transformer to the document options (<c>AddOpenApi(options =&gt; ...)</c>).</summary>
     public static OpenApiOptions AddOperationIds(this OpenApiOptions options) =>
         options.AddOperationTransformer((operation, context, _) =>
@@ -59,6 +85,10 @@ public static class OpenApiOperationIds
             if (IdentityOperations.TryGetValue((method.ToUpperInvariant(), path), out var id))
             {
                 operation.OperationId = id;
+                if (id == "AuthResendConfirmationEmail")
+                {
+                    AddValidationProblemResponse(operation, context.Document);
+                }
             }
 
             return Task.CompletedTask;
