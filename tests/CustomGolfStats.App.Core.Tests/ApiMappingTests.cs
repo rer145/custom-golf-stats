@@ -102,7 +102,7 @@ public class ApiMappingTests
         var local = Samples.FullShotRound();
 
         var req = ApiMapper.ToUpsertRequest(local);
-        var dto = new RoundDto { Id = local.Round.Id, TeeId = req.TeeId, Holes = [.. req.Holes!.Select(h => new HoleResultDto { HoleNumber = h.HoleNumber, Shots = h.Shots! })] };
+        var dto = new RoundDto { Id = local.Round.Id, TeeId = req.TeeId, Holes = [.. req.Holes!.Select(h => new HoleResultDto { HoleNumber = h.HoleNumber, EntrySequence = h.EntrySequence, Shots = h.Shots! })] };
         var back = ApiMapper.ToRecord(dto);
 
         Assert.Equal(local.Holes[0].Shots.Select(s => s.ToShot()), back.Holes[0].Shots.Select(s => s.ToShot()));

@@ -55,9 +55,9 @@ public sealed class RoundRow
 public sealed class HoleRow
 {
     [PrimaryKey, AutoIncrement] public int Id { get; set; }
-    [Indexed("IX_HoleRow_Round_Number", 0, Unique = true)] public Guid RoundId { get; set; }
-    [Indexed("IX_HoleRow_Round_Number", 1, Unique = true)] public int HoleNumber { get; set; }
-    public int EntrySequence { get; set; }
+    [Indexed("IX_HoleRow_Round_Sequence", 0, Unique = true)] public Guid RoundId { get; set; }
+    [Indexed("IX_HoleRow_Round_Sequence", 1, Unique = true)] public int EntrySequence { get; set; }
+    public int HoleNumber { get; set; }
     public int Par { get; set; }
     public int Score { get; set; }
     public int Putts { get; set; }
@@ -91,8 +91,8 @@ public sealed class HoleRow
 public sealed class ShotRow
 {
     [PrimaryKey, AutoIncrement] public int Id { get; set; }
-    [Indexed("IX_ShotRow_Round_Hole", 0)] public Guid RoundId { get; set; }
-    [Indexed("IX_ShotRow_Round_Hole", 1)] public int HoleNumber { get; set; }
+    [Indexed("IX_ShotRow_Round_Sequence", 0)] public Guid RoundId { get; set; }
+    [Indexed("IX_ShotRow_Round_Sequence", 1)] public int EntrySequence { get; set; }
     public int Sequence { get; set; }
     public Lie StartLie { get; set; }
     public int StartDistance { get; set; }
@@ -108,9 +108,9 @@ public sealed class ShotRow
 
     public Shot ToShot() => new(Sequence, StartLie, StartDistance, Club, ShotType, EndLie, EndDistance, Direction, Shape, PenaltyStrokes);
 
-    public static ShotRow FromShot(Guid roundId, int holeNumber, Shot s) => new()
+    public static ShotRow FromShot(Guid roundId, int entrySequence, Shot s) => new()
     {
-        RoundId = roundId, HoleNumber = holeNumber, Sequence = s.Sequence, StartLie = s.StartLie, StartDistance = s.StartDistance,
+        RoundId = roundId, EntrySequence = entrySequence, Sequence = s.Sequence, StartLie = s.StartLie, StartDistance = s.StartDistance,
         Club = s.Club, ShotType = s.Type, EndLie = s.EndLie, EndDistance = s.EndDistance, Direction = s.Direction, Shape = s.Shape,
         PenaltyStrokes = s.PenaltyStrokes,
     };

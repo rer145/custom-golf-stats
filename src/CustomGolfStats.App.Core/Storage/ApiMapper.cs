@@ -26,7 +26,7 @@ public static class ApiMapper
         if (dto.DeletedAt is not null)
             return new RoundRecord(round, []);
 
-        var holes = (dto.Holes ?? []).OrderBy(h => h.HoleNumber).Select(h =>
+        var holes = (dto.Holes ?? []).OrderBy(h => h.EntrySequence).Select(h =>
         {
             var row = new HoleRow
             {
@@ -35,7 +35,7 @@ public static class ApiMapper
                 TeeShotShort = h.TeeShotShort, Gir = h.Gir, PenaltyStrokes = h.PenaltyStrokes, GreensideSandShots = h.GreensideSandShots,
                 FairwaySandShots = h.FairwaySandShots, IsDerived = h.IsDerived,
             };
-            var shots = (h.Shots ?? []).OrderBy(s => s.Sequence).Select(s => ToRow(dto.Id, h.HoleNumber, s)).ToList();
+            var shots = (h.Shots ?? []).OrderBy(s => s.Sequence).Select(s => ToRow(dto.Id, h.EntrySequence, s)).ToList();
             return new HoleRecord(row, shots);
         }).ToList();
         return new RoundRecord(round, holes);
@@ -52,7 +52,7 @@ public static class ApiMapper
             Notes = r.Notes, WeatherConditions = r.WeatherConditions, TemperatureF = r.TemperatureF, WindSpeedMph = r.WindSpeedMph,
             WindDirectionDegrees = r.WindDirectionDegrees, DurationMinutes = r.DurationMinutes, DistanceMiles = r.DistanceMiles,
             StepCount = r.StepCount, ClientUpdatedAt = r.ClientUpdatedAt,
-            Holes = record.Holes.OrderBy(h => h.Hole.HoleNumber).Select(h => new ApiClient.UpsertHoleRequest
+            Holes = record.Holes.OrderBy(h => h.Hole.EntrySequence).Select(h => new ApiClient.UpsertHoleRequest
             {
                 HoleNumber = h.Hole.HoleNumber, EntrySequence = h.Hole.EntrySequence, Score = h.Hole.Score, Putts = h.Hole.Putts,
                 FairwayHit = h.Hole.FairwayHit, TeeShotLeft = h.Hole.TeeShotLeft, TeeShotRight = h.Hole.TeeShotRight,
@@ -63,9 +63,9 @@ public static class ApiMapper
         };
     }
 
-    private static ShotRow ToRow(Guid roundId, int holeNumber, ApiClient.ShotDto s) => new()
+    private static ShotRow ToRow(Guid roundId, int entrySequence, ApiClient.ShotDto s) => new()
     {
-        RoundId = roundId, HoleNumber = holeNumber, Sequence = s.Sequence, StartLie = Convert<Dom.Lie>(s.StartLie), StartDistance = s.StartDistance,
+        RoundId = roundId, EntrySequence = entrySequence, Sequence = s.Sequence, StartLie = Convert<Dom.Lie>(s.StartLie), StartDistance = s.StartDistance,
         Club = Convert<Dom.Club>(s.Club), ShotType = Convert<Dom.ShotType>(s.ShotType), EndLie = Convert<Dom.Lie>(s.EndLie),
         EndDistance = s.EndDistance, Direction = Convert<Dom.Direction>(s.Direction),
         Shape = s.Shape is { } shape ? Convert<Dom.Shape>(shape) : null, PenaltyStrokes = s.PenaltyStrokes,

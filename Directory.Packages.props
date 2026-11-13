@@ -28,6 +28,7 @@
   </ItemGroup>
 
   <ItemGroup Label="App">
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="sqlite-net-pcl" Version="1.9.172" />
     <!-- sqlite-net-pcl 1.9.172 brings SQLitePCLRaw 2.1.2, whose native e_sqlite3 has a known high severity vulnerability (GHSA-2m69-gcr7-jv3q). -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />

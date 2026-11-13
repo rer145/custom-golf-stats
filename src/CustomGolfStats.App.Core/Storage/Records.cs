@@ -14,7 +14,7 @@ public sealed record HoleRecord(HoleRow Hole, IReadOnlyList<ShotRow> Shots)
     public static HoleRecord FromShots(Guid roundId, HoleInfo info, int entrySequence, IReadOnlyList<Shot> shots)
     {
         var summary = HoleSummaryDeriver.Derive(info, entrySequence, shots);
-        var rows = shots.OrderBy(s => s.Sequence).Select(s => ShotRow.FromShot(roundId, info.Number, s)).ToList();
+        var rows = shots.OrderBy(s => s.Sequence).Select(s => ShotRow.FromShot(roundId, entrySequence, s)).ToList();
         return new HoleRecord(HoleRow.FromSummary(roundId, summary, isDerived: true), rows);
     }
 }

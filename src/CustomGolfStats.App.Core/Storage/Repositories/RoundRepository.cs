@@ -73,15 +73,33 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
     public Task SaveHoleAsync(Guid roundId, HoleRecord hole) => db.RunInTransactionAsync(c =>
     {
         var round = RequireLive(c, roundId);
-        DeleteHole(c, roundId, hole.Hole.HoleNumber);
+        DeleteHole(c, roundId, hole.Hole.EntrySequence);
         InsertHole(c, roundId, hole);
         Touch(c, round);
     });
 
-    public Task DeleteHoleAsync(Guid roundId, int holeNumber) => db.RunInTransactionAsync(c =>
+    /// <summary>Changes header fields of a live round (extras, notes, finish time...) and marks it dirty. Returns false when the round is
+    /// missing or deleted. The round id cannot be changed.</summary>
+    public async Task<bool> UpdateHeaderAsync(Guid roundId, Action<RoundRow> mutate)
+    {
+        var updated = false;
+        await db.RunInTransactionAsync(c =>
+        {
+            var round = c.Find<RoundRow>(roundId);
+            if (round is null || round.DeletedAt is not null)
+                return;
+            mutate(round);
+            round.Id = roundId;
+            Touch(c, round);
+            updated = true;
+        });
+        return updated;
+    }
+
+    public Task DeleteHoleAsync(Guid roundId, int entrySequence) => db.RunInTransactionAsync(c =>
     {
         var round = RequireLive(c, roundId);
-        DeleteHole(c, roundId, holeNumber);
+        DeleteHole(c, roundId, entrySequence);
         Touch(c, round);
     });
 
@@ -160,10 +178,10 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         var result = new List<RoundRecord>(rounds.Count);
         foreach (var round in rounds)
         {
-            var holes = await db.Table<HoleRow>().Where(h => h.RoundId == round.Id).OrderBy(h => h.HoleNumber).ToListAsync();
-            var shots = await db.Table<ShotRow>().Where(s => s.RoundId == round.Id).OrderBy(s => s.HoleNumber).ThenBy(s => s.Sequence).ToListAsync();
-            var byHole = shots.ToLookup(s => s.HoleNumber);
-            result.Add(new RoundRecord(round, holes.Select(h => new HoleRecord(h, byHole[h.HoleNumber].ToList())).ToList()));
+            var holes = await db.Table<HoleRow>().Where(h => h.RoundId == round.Id).OrderBy(h => h.EntrySequence).ToListAsync();
+            var shots = await db.Table<ShotRow>().Where(s => s.RoundId == round.Id).OrderBy(s => s.EntrySequence).ThenBy(s => s.Sequence).ToListAsync();
+            var byHole = shots.ToLookup(s => s.EntrySequence);
+            result.Add(new RoundRecord(round, holes.Select(h => new HoleRecord(h, byHole[h.EntrySequence].ToList())).ToList()));
         }
         return result;
     }
@@ -175,7 +193,7 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         DeleteChildren(c, id);
         if (record.Round.DeletedAt is not null)
             return;
-        foreach (var hole in record.Holes.OrderBy(h => h.Hole.HoleNumber))
+        foreach (var hole in record.Holes.OrderBy(h => h.Hole.EntrySequence))
             InsertHole(c, id, hole);
     }
 
@@ -190,15 +208,15 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             var shot = source.Clone();
             shot.Id = 0;
             shot.RoundId = roundId;
-            shot.HoleNumber = holeRow.HoleNumber;
+            shot.EntrySequence = holeRow.EntrySequence;
             c.Insert(shot);
         }
     }
 
-    private static void DeleteHole(SQLiteConnection c, Guid roundId, int holeNumber)
+    private static void DeleteHole(SQLiteConnection c, Guid roundId, int entrySequence)
     {
-        c.Execute("DELETE FROM ShotRow WHERE RoundId = ? AND HoleNumber = ?", roundId, holeNumber);
-        c.Execute("DELETE FROM HoleRow WHERE RoundId = ? AND HoleNumber = ?", roundId, holeNumber);
+        c.Execute("DELETE FROM ShotRow WHERE RoundId = ? AND EntrySequence = ?", roundId, entrySequence);
+        c.Execute("DELETE FROM HoleRow WHERE RoundId = ? AND EntrySequence = ?", roundId, entrySequence);
     }
 
     private static void DeleteChildren(SQLiteConnection c, Guid roundId)
