@@ -4,12 +4,13 @@ import StatsShell from '../../components/stats/StatsShell.astro';
 import SummaryTable, { type SummaryRow } from '../../components/stats/SummaryTable.astro';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { firstProblem, pickYear, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
 
 const api = Astro.locals.api;
 const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/career'))]);
 if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
 const problem = firstProblem(yearsR, r);
-if (problem) Astro.response.status = problem.status;
+if (problem) Astro.response.status = pageStatus(problem.status);
 const years = yearsFrom(yearsR);
 // The year the season tabs lead back to.
 const year = pickYear(years, Astro.url.searchParams.get('year'));

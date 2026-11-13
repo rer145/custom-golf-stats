@@ -4,29 +4,31 @@ import Chart from '../../components/stats/Chart.astro';
 import StatTile from '../../components/stats/StatTile.astro';
 import StatTiles from '../../components/stats/StatTiles.astro';
 import StatsShell from '../../components/stats/StatsShell.astro';
+import { todayIso } from '../../components/courses/dates';
 import { chartValue } from '../../lib/chart-spec';
-import { formatHandicap, formatInteger } from '../../lib/format';
+import { formatDate, formatHandicap, formatInteger } from '../../lib/format';
 import { endSession, isSessionEnded } from '../../lib/guard';
-import { firstProblem, formatDate, pickYear, yearsFrom } from '../../lib/stats';
+import { currentHandicap, firstProblem, pickYear, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
 
 const api = Astro.locals.api;
 const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/handicap'))]);
 if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
 const problem = firstProblem(yearsR, r);
-if (problem) Astro.response.status = problem.status;
+if (problem) Astro.response.status = pageStatus(problem.status);
 const years = yearsFrom(yearsR);
 const year = pickYear(years, Astro.url.searchParams.get('year'));
 const entries = r.ok ? r.data.entries : null;
-const latest = entries?.at(-1);
+const latest = entries ? currentHandicap(entries, todayIso()) : undefined;
 ---
 
 <StatsShell section="handicap" year={year} years={years} lede="Your handicap index as it has moved." problem={problem}>
   {entries && entries.length === 0 && <p class="lede">No handicap index recorded yet.</p>}
   {
-    entries && latest && (
+    entries && entries.length > 0 && (
       <>
         <StatTiles columns={2}>
-          <StatTile label="Current index" value={formatHandicap(latest.index)} caption={`As of ${formatDate(latest.effectiveOn)}`} accent size="l" />
+          <StatTile label="Current index" value={formatHandicap(latest?.index)} caption={latest ? `As of ${formatDate(latest.effectiveOn)}` : 'Not in effect yet'} accent size="l" />
           <StatTile label="Entries" value={formatInteger(entries.length)} caption={`Since ${formatDate(entries[0]!.effectiveOn)}`} size="l" />
         </StatTiles>
         <Chart
@@ -36,7 +38,7 @@ const latest = entries?.at(-1);
           spec={{
             kind: 'line',
             format: 'handicap',
-            highlight: entries.length - 1,
+            highlight: latest ? entries.indexOf(latest) : undefined,
             labels: entries.map((e) => formatDate(e.effectiveOn)),
             series: [{ name: 'Index', values: entries.map((e) => chartValue(e.index)) }],
           }}

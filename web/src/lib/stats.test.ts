@@ -1,18 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { formatDecimal } from './format';
-import { bucketLabel, firstProblem, yearsFrom, formatDate, formatShortDate, parseYear, pickYear, sectionHref, STATS_SECTIONS } from './stats';
+import { bucketLabel, currentHandicap, firstProblem, yearsFrom, formatShortDate, parseYear, pickYear, sectionHref, STATS_SECTIONS } from './stats';
 
-describe('formatDecimal and dates', () => {
-  it('formats handicap indexes to 1 dp with a real minus', () => {
-    expect(formatDecimal(11.8)).toBe('11.8');
-    expect(formatDecimal('12')).toBe('12.0');
-    expect(formatDecimal(-1.24)).toBe('−1.2');
-    expect(formatDecimal(-0.04)).toBe('0.0');
-    expect(formatDecimal(null)).toBe('–');
-  });
-
+describe('short dates', () => {
   it('formats calendar dates without a time-zone shift', () => {
-    expect(formatDate('2025-06-14')).toBe('Jun 14, 2025');
     expect(formatShortDate('2025-01-01')).toBe('Jan 1');
   });
 });
@@ -73,5 +63,17 @@ describe('sectionHref', () => {
   it('has a unique slug per section', () => {
     const slugs = STATS_SECTIONS.map((s) => s.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
+  });
+});
+
+describe('currentHandicap', () => {
+  const e = (effectiveOn: string) => ({ effectiveOn });
+  it('is the newest entry on or before today, in any order', () => {
+    expect(currentHandicap([e('2026-01-01'), e('2026-06-01'), e('2027-01-01')], '2026-11-12')).toEqual(e('2026-06-01'));
+    expect(currentHandicap([e('2027-01-01'), e('2026-11-12'), e('2026-01-01')], '2026-11-12')).toEqual(e('2026-11-12'));
+  });
+  it('is undefined when every entry is in the future or there are none', () => {
+    expect(currentHandicap([e('2027-01-01')], '2026-11-12')).toBeUndefined();
+    expect(currentHandicap([], '2026-11-12')).toBeUndefined();
   });
 });

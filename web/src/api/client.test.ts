@@ -91,4 +91,28 @@ describe('createApi + call', () => {
       expect(r.problem.message).toMatch(/Can.t reach/);
     }
   });
+
+  it('abandons a call that outlives the timeout and maps it to the same 503 problem', async () => {
+    const api = createApi({
+      baseUrl: 'http://api.test',
+      timeoutMs: 20,
+      // Like a real fetch: never answers, rejects when the request is aborted.
+      fetch: (req: Request) =>
+        new Promise<Response>((_, reject) => {
+          req.signal.addEventListener('abort', () => reject(req.signal.reason));
+        }),
+    });
+    const r = await call(api.GET('/stats/years'));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.problem.status).toBe(503);
+      expect(r.problem.message).toMatch(/Can.t reach/);
+    }
+  });
+
+  it('still passes a fast response through under the timeout', async () => {
+    const api = createApi({ baseUrl: 'http://api.test', fetch: async () => jsonResponse(200, { years: [2025] }) });
+    const r = await call(api.GET('/stats/years'));
+    expect(r.ok).toBe(true);
+  });
 });

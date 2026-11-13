@@ -8,8 +8,9 @@ import DetailsFields from '../../../components/courses/DetailsFields.astro';
 import { call, type ApiProblem } from '../../../api/client';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { notAForm, readForm } from '../../../lib/forms';
-import { DETAIL_FIELDS, buildDetails, detailsFromCourse, localProblem, readDetails, type DetailsValues } from '../../../components/courses/course-form';
+import { DETAIL_FIELDS, buildDetails, detailsFromCourse, readDetails, type DetailsValues } from '../../../components/courses/course-form';
 import { fields, formProblem } from '../../../components/courses/problems';
+import { localProblem, pageStatus } from '../../../lib/problems';
 
 const id = Astro.params.id ?? '';
 const r = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id } } }));
@@ -17,7 +18,7 @@ if (isSessionEnded(r)) return endSession(Astro);
 const course = r.ok ? r.data : null;
 let values: DetailsValues | null = course ? detailsFromCourse(course) : null;
 let problem: ApiProblem | null = r.ok ? null : r.problem;
-if (!r.ok) Astro.response.status = r.problem.status === 404 ? 404 : 502;
+if (!r.ok) Astro.response.status = pageStatus(r.problem.status);
 
 if (course && Astro.request.method === 'POST') {
   const form = await readForm(Astro.request);
@@ -31,7 +32,7 @@ if (course && Astro.request.method === 'POST') {
     if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=details'}`, 303);
     problem = saved.problem;
   }
-  Astro.response.status = problem.status >= 500 ? 502 : problem.status === 404 ? 404 : 400;
+  Astro.response.status = pageStatus(problem.status);
 }
 
 const isAdmin = Astro.locals.session?.role === 'Admin';

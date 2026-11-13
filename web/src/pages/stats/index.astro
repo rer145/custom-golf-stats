@@ -5,6 +5,7 @@ import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { isSectionSlug, pickYear, sectionHref, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
 
 const r = await call(Astro.locals.api.GET('/stats/years'));
 if (isSessionEnded(r)) return endSession(Astro);
@@ -17,7 +18,7 @@ if (r.ok && years.length > 0) {
   const year = pickYear(years, query.get('year'));
   return Astro.redirect(sectionHref(section, year), 303);
 }
-if (!r.ok) Astro.response.status = r.problem.status;
+if (!r.ok) Astro.response.status = pageStatus(r.problem.status);
 ---
 
 <AppLayout title="Stats">

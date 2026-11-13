@@ -7,9 +7,10 @@ import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
 import { chartValue, ratioChartValue } from '../../../lib/chart-spec';
-import { formatAverage, formatHandicap, formatInteger, formatToPar } from '../../../lib/format';
+import { formatAverage, formatDate, formatHandicap, formatInteger, formatToPar } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
-import { firstProblem, formatDate, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
 
 const year = parseYear(Astro.params.year);
 if (year === null) return Astro.rewrite('/404');
@@ -28,7 +29,7 @@ const [yearsR, overallR, teeR, approachR, scoringR, puttingR, handicapR] = await
 const all = [yearsR, overallR, teeR, approachR, scoringR, puttingR, handicapR];
 if (all.some(isSessionEnded)) return endSession(Astro);
 const problem = firstProblem(...all);
-if (problem) Astro.response.status = problem.status;
+if (problem) Astro.response.status = pageStatus(problem.status);
 const years = yearsFrom(yearsR);
 
 const o = overallR.ok ? overallR.data : null;

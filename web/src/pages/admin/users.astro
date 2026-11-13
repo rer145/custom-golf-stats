@@ -1,13 +1,14 @@
 ---
 import AdminNav from '../../components/admin/AdminNav.astro';
-import Notice from '../../components/admin/Notice.astro';
+import Notice from '../../components/Notice.astro';
 import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
 import { call, fieldErrors, type ApiProblem } from '../../api/client';
-import { isoDate, pageStatus } from '../../lib/admin';
+import { isoDate } from '../../lib/admin';
 import { formatInteger } from '../../lib/format';
 import { formText, notAForm, readForm } from '../../lib/forms';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { pageStatus } from '../../lib/problems';
 
 const api = Astro.locals.api;
 const query = (Astro.url.searchParams.get('query') ?? '').trim();
@@ -54,7 +55,7 @@ const messagesFor = (id: string) => (id === failedId ? ['tier', 'role', 'disable
       <p class="lede">Find a golfer, then set their tier and role or disable the account.</p>
     </div>
     <AdminNav />
-    <Notice text={saved ? `Saved changes for ${saved}.` : null} />
+    <Notice spaced message={saved ? `Saved changes for ${saved}.` : null} />
     <Problem problem={problem} heading={failedId ? 'Not saved' : undefined} />
 
     <form class="search" method="get" action="/admin/users" role="search">

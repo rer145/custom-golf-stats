@@ -1,14 +1,15 @@
 ---
 import AdminNav from '../../../../components/admin/AdminNav.astro';
-import Notice from '../../../../components/admin/Notice.astro';
+import Notice from '../../../../components/Notice.astro';
 import Field from '../../../../components/Field.astro';
 import Problem from '../../../../components/Problem.astro';
 import AppLayout from '../../../../layouts/AppLayout.astro';
 import { call, type ApiProblem } from '../../../../api/client';
-import { isoDate, localProblem, pageStatus, parseDecimal } from '../../../../lib/admin';
-import { formatAverage, formatInteger } from '../../../../lib/format';
+import { isoDate, parseDecimal } from '../../../../lib/admin';
+import { formatInteger, formatRating } from '../../../../lib/format';
 import { formText, notAForm, readForm } from '../../../../lib/forms';
 import { endSession, isSessionEnded } from '../../../../lib/guard';
+import { localProblem, pageStatus } from '../../../../lib/problems';
 
 const { id = '' } = Astro.params;
 const api = Astro.locals.api;
@@ -98,7 +99,7 @@ const STATUS_LABELS: Record<string, string> = { Imported: 'Imported', UserEdited
       <p class="lede">Edit details, verify the course, correct tee versions or merge it into another course.</p>
     </div>
     <AdminNav />
-    <Notice text={saved ? NOTICES[saved] : null} />
+    <Notice spaced message={saved ? NOTICES[saved] : null} />
     <Problem problem={loadProblem} />
 
     {
@@ -181,7 +182,7 @@ const STATUS_LABELS: Record<string, string> = { Imported: 'Imported', UserEdited
                           {v.isCurrent && <span class="caption"> current</span>}
                         </th>
                         <td class="num">{formatInteger(v.par)}</td>
-                        <td class="num">{formatAverage(v.rating)}</td>
+                        <td class="num">{formatRating(v.rating)}</td>
                         <td class="num">{formatInteger(v.slope)}</td>
                         <td>
                           <a class="btn btn-secondary" href={`/admin/courses/${course.id}/tees/${tee.id}/versions/${v.id}`} aria-label={`Correct ${tee.name} version from ${v.effectiveFrom}`}>

@@ -12,23 +12,9 @@ import TeeFields from '../../components/courses/TeeFields.astro';
 import { call, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { formText, notAForm, readForm } from '../../lib/forms';
-import {
-  DETAIL_FIELDS,
-  MAX_TEES,
-  buildDetails,
-  buildTee,
-  emptyDetails,
-  emptyTee,
-  errorsUnder,
-  localProblem,
-  postedTeeCount,
-  readDetails,
-  readTee,
-  remapHoleErrors,
-  type Errors,
-  type TeeValues,
-} from '../../components/courses/course-form';
+import { DETAIL_FIELDS, MAX_TEES, buildDetails, buildTee, emptyDetails, emptyTee, errorsUnder, postedTeeCount, readDetails, readTee, remapHoleErrors, type Errors, type TeeValues } from '../../components/courses/course-form';
 import { fields, formProblem, isTeeField } from '../../components/courses/problems';
+import { localProblem, pageStatus } from '../../lib/problems';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const idOr = (value: string): string => (UUID.test(value) ? value : randomUUID());
@@ -77,7 +63,7 @@ if (Astro.request.method === 'POST') {
         problem = { ...problem, message: `${r.problem.message} Save again to add it as a new course.` };
       }
     }
-    if (problem) Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : 400;
+    if (problem) Astro.response.status = pageStatus(problem.status);
   }
 }
 

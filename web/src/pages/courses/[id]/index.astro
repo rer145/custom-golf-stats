@@ -5,15 +5,16 @@ import AppLayout from '../../../layouts/AppLayout.astro';
 import Field from '../../../components/Field.astro';
 import Problem from '../../../components/Problem.astro';
 import BackLink from '../../../components/courses/BackLink.astro';
-import Notice from '../../../components/courses/Notice.astro';
+import Notice from '../../../components/Notice.astro';
 import Scorecard from '../../../components/courses/Scorecard.astro';
 import StatusBadge from '../../../components/courses/StatusBadge.astro';
 import { call, fieldErrors, type ApiProblem, type Schemas } from '../../../api/client';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { formText, notAForm, readForm } from '../../../lib/forms';
-import { formatInteger, formatTenths } from '../../../lib/format';
-import { formatDate, formatEffectiveFrom } from '../../../components/courses/dates';
+import { formatDate, formatInteger, formatRating } from '../../../lib/format';
+import { formatEffectiveFrom } from '../../../components/courses/dates';
 import { fields, formProblem } from '../../../components/courses/problems';
+import { pageStatus } from '../../../lib/problems';
 
 const id = Astro.params.id ?? '';
 let flagProblem: ApiProblem | null = null;
@@ -40,7 +41,7 @@ if (Astro.request.method === 'POST') {
     } else {
       homeProblem = me.problem;
     }
-    Astro.response.status = homeProblem.status >= 500 ? 502 : 400;
+    Astro.response.status = pageStatus(homeProblem.status);
   } else {
     flagValues.teeId = formText(form, 'teeId');
     flagValues.holeNumber = formText(form, 'holeNumber').trim();
@@ -59,7 +60,7 @@ if (Astro.request.method === 'POST') {
       if (r.ok) return Astro.redirect(`/courses/${id}?flagged=1#report`, 303);
       flagProblem = r.problem;
     }
-    Astro.response.status = flagProblem.status >= 500 ? 502 : flagProblem.status === 404 ? 404 : 400;
+    Astro.response.status = pageStatus(flagProblem.status);
   }
 }
 
@@ -69,7 +70,7 @@ const [courseResult, meResult] = await Promise.all([
 ]);
 if (isSessionEnded(courseResult) || isSessionEnded(meResult)) return endSession(Astro);
 const course = courseResult.ok ? courseResult.data : null;
-if (!courseResult.ok) Astro.response.status = courseResult.problem.status === 404 ? 404 : 502;
+if (!courseResult.ok) Astro.response.status = pageStatus(courseResult.problem.status);
 const isHome = meResult.ok && meResult.data.homeCourseId === id;
 const isAdmin = Astro.locals.session?.role === 'Admin';
 const reviewed = course?.status === 'Verified' && !isAdmin;
@@ -208,7 +209,7 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
                           </div>
                           <div>
                             <dt>Rating</dt>
-                            <dd class="stat stat-m">{formatTenths(v.rating)}</dd>
+                            <dd class="stat stat-m">{formatRating(v.rating)}</dd>
                           </div>
                           <div>
                             <dt>Slope</dt>
@@ -218,7 +219,7 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
                             <div class="split">
                               <dt>Front</dt>
                               <dd class="stat stat-s">
-                                {formatTenths(v.frontRating)} / {formatInteger(v.frontSlope)}
+                                {formatRating(v.frontRating)} / {formatInteger(v.frontSlope)}
                               </dd>
                             </div>
                           )}
@@ -226,7 +227,7 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
                             <div class="split">
                               <dt>Back</dt>
                               <dd class="stat stat-s">
-                                {formatTenths(v.backRating)} / {formatInteger(v.backSlope)}
+                                {formatRating(v.backRating)} / {formatInteger(v.backSlope)}
                               </dd>
                             </div>
                           )}
@@ -259,7 +260,7 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
                                   {version.isCurrent && <span class="current">In use today</span>}
                                 </th>
                                 <td class="num">{formatInteger(version.par)}</td>
-                                <td class="num">{formatTenths(version.rating)}</td>
+                                <td class="num">{formatRating(version.rating)}</td>
                                 <td class="num">{formatInteger(version.slope)}</td>
                                 <td>{sourceLabel(version.source)}</td>
                                 <td>{formatDate(version.changedAt)}</td>

@@ -294,12 +294,6 @@ export function remapHoleErrors(fieldErrors: Errors, prefix: string, holeRows: n
   return out;
 }
 
-/** A 400-style problem for errors found before calling the API. */
-export function localProblem(errors: Errors): ApiProblem | null {
-  if (Object.keys(errors).length === 0) return null;
-  return { status: 400, message: 'Check the highlighted fields.', fieldErrors: errors };
-}
-
 /** Every validation message under a key prefix (for a tee's summary, e.g. errors on hidden fields). */
 export function errorsUnder(problem: ApiProblem | null | undefined, prefix: string): string[] {
   if (!problem) return [];

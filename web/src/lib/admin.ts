@@ -1,5 +1,5 @@
 /** Helpers for the /admin pages: form number parsing, display bits, and the 409 problem extensions. */
-import { toProblem, type ApiProblem } from '../api/client';
+import { type ApiProblem } from '../api/client';
 import { DASH } from './format';
 
 export const ADMIN_SECTIONS = [
@@ -28,17 +28,6 @@ export const parseWholeNumber = (text: string): Parsed => parse(text, true);
 /** `2026-11-01T09:30:00+00:00` becomes `2026-11-01`. */
 export function isoDate(value: string | null | undefined): string {
   return value ? value.slice(0, 10) : DASH;
-}
-
-/** A 400 raised by the page itself (unparsable numbers), shaped like the API's so Field shows it. */
-export function localProblem(errors: Record<string, string[]>): ApiProblem {
-  return toProblem(400, { errors });
-}
-
-/** The status to answer a page request with when an API call failed. */
-export function pageStatus(apiStatus: number): number {
-  if (apiStatus === 400 || apiStatus === 403 || apiStatus === 404 || apiStatus === 409 || apiStatus === 503) return apiStatus;
-  return apiStatus >= 500 ? 502 : 400;
 }
 
 export interface UnmatchedVersion {

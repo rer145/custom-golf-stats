@@ -8,10 +8,11 @@ import TeeFields from '../../../../../../components/courses/TeeFields.astro';
 import { call, type ApiProblem } from '../../../../../../api/client';
 import { endSession, isSessionEnded } from '../../../../../../lib/guard';
 import { notAForm, readForm } from '../../../../../../lib/forms';
-import { formatInteger, formatTenths } from '../../../../../../lib/format';
+import { formatInteger, formatRating } from '../../../../../../lib/format';
 import { formatEffectiveFrom } from '../../../../../../components/courses/dates';
-import { buildTee, localProblem, readTee, remapHoleErrors, teeFromVersion, versionRequest, type TeeValues } from '../../../../../../components/courses/course-form';
+import { buildTee, readTee, remapHoleErrors, teeFromVersion, versionRequest, type TeeValues } from '../../../../../../components/courses/course-form';
 import { formProblem, isTeeField } from '../../../../../../components/courses/problems';
+import { localProblem, pageStatus } from '../../../../../../lib/problems';
 
 const id = Astro.params.id ?? '';
 const teeId = Astro.params.teeId ?? '';
@@ -21,7 +22,7 @@ const course = r.ok ? r.data : null;
 const tee = course?.tees.find((t) => t.id === teeId) ?? null;
 const current = tee ? (tee.versions.find((v) => v.isCurrent) ?? tee.versions[tee.versions.length - 1]) : undefined;
 let problem: ApiProblem | null = r.ok ? (tee ? null : { status: 404, message: 'That tee isn’t on this course.', fieldErrors: {} }) : r.problem;
-if (problem) Astro.response.status = problem.status === 404 ? 404 : 502;
+if (problem) Astro.response.status = pageStatus(problem.status);
 let values: TeeValues | null = tee ? teeFromVersion(tee, current) : null;
 
 if (tee && Astro.request.method === 'POST') {
@@ -38,7 +39,7 @@ if (tee && Astro.request.method === 'POST') {
     if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=version'}`, 303);
     problem = { ...saved.problem, fieldErrors: remapHoleErrors(saved.problem.fieldErrors, '', built.holeRows) };
   }
-  Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : problem.status === 404 ? 404 : 400;
+  Astro.response.status = pageStatus(problem.status);
 }
 
 const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !== 'Admin';
@@ -59,7 +60,7 @@ const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !==
           {current && (
             <p class="caption">
               In use today: version from {formatEffectiveFrom(current.effectiveFrom)} – par <span class="num">{formatInteger(current.par)}</span>, rating{' '}
-              <span class="num">{formatTenths(current.rating)}</span>, slope <span class="num">{formatInteger(current.slope)}</span>. The form starts from its numbers.
+              <span class="num">{formatRating(current.rating)}</span>, slope <span class="num">{formatInteger(current.slope)}</span>. The form starts from its numbers.
             </p>
           )}
           <div class="card">

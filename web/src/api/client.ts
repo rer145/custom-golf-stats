@@ -20,10 +20,22 @@ export interface ApiProblem {
 
 export type ApiResult<T> = { ok: true; status: number; data: T } | { ok: false; problem: ApiProblem };
 
-export function createApi(options: { baseUrl: string; accessToken?: string | undefined; fetch?: (request: Request) => Promise<Response> }): Api {
+/** How long a server-side API call may take before it is abandoned (and shown as "API unreachable"). */
+export const API_TIMEOUT_MS = 10_000;
+
+export function createApi(options: {
+  baseUrl: string;
+  accessToken?: string | undefined;
+  fetch?: (request: Request) => Promise<Response>;
+  /** Defaults to {@link API_TIMEOUT_MS}. */
+  timeoutMs?: number;
+}): Api {
+  const send = options.fetch ?? ((request: Request) => fetch(request));
+  const timeoutMs = options.timeoutMs ?? API_TIMEOUT_MS;
   const client = createClient<paths>({
     baseUrl: options.baseUrl.replace(/\/+$/, ''),
-    ...(options.fetch ? { fetch: options.fetch } : {}),
+    // A timeout aborts the request; `call` turns the resulting rejection into the same 503 as any network failure.
+    fetch: (request) => send(new Request(request, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)]) })),
   });
   const token = options.accessToken;
   if (token) {

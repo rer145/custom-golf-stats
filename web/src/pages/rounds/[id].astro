@@ -3,9 +3,9 @@ import { call } from '../../api/client';
 import Problem from '../../components/Problem.astro';
 import Scorecard from '../../components/rounds/Scorecard.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
-import { formatDecimal, formatInteger, formatToPar } from '../../lib/format';
+import { formatDate, formatInteger, formatRating, formatToPar } from '../../lib/format';
 import { endSession, isSessionEnded } from '../../lib/guard';
-import { formatDate } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const id = Astro.params.id ?? '';
@@ -14,7 +14,7 @@ if (!GUID.test(id)) return Astro.rewrite('/404');
 const r = await call(Astro.locals.api.GET('/rounds/{id}/scorecard', { params: { path: { id } } }));
 if (isSessionEnded(r)) return endSession(Astro);
 if (!r.ok && r.problem.status === 404) return Astro.rewrite('/404');
-if (!r.ok) Astro.response.status = r.problem.status;
+if (!r.ok) Astro.response.status = pageStatus(r.problem.status);
 const card = r.ok ? r.data : null;
 const year = card ? card.playedOn.slice(0, 4) : null;
 ---
@@ -31,7 +31,7 @@ const year = card ? card.playedOn.slice(0, 4) : null;
             <h1 id="round-title" class="display">{card.courseName}</h1>
             <p class="round-meta">
               {card.teeName} tees, par <span class="num">{formatInteger(card.par)}</span>, rating{' '}
-              <span class="num">{formatDecimal(card.rating)}</span> / slope <span class="num">{formatInteger(card.slope)}</span>
+              <span class="num">{formatRating(card.rating)}</span> / slope <span class="num">{formatInteger(card.slope)}</span>
             </p>
           </div>
           <dl class="round-numbers">

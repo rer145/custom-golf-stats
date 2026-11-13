@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DASH, formatAverage, formatHandicap, formatInteger, formatRatio, formatToPar } from '../../src/lib/format';
-import { STATS_SECTIONS, formatDate, sectionHref, threePuttAvoidance } from '../../src/lib/stats';
+import { DASH, formatAverage, formatDate, formatHandicap, formatInteger, formatRatio, formatToPar } from '../../src/lib/format';
+import { STATS_SECTIONS, sectionHref, threePuttAvoidance } from '../../src/lib/stats';
 import y from '../fixtures/stats-2025.json' with { type: 'json' };
 import c from '../fixtures/stats-career.json' with { type: 'json' };
 import { USER, signIn } from './support';

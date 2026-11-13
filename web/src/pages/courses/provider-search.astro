@@ -9,6 +9,7 @@ import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/clie
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { formText, notAForm, readForm } from '../../lib/forms';
 import { fields, formProblem } from '../../components/courses/problems';
+import { pageStatus } from '../../lib/problems';
 
 let q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 let importProblem: ApiProblem | null = null;
@@ -23,7 +24,7 @@ if (Astro.request.method === 'POST') {
   if (isSessionEnded(r)) return endSession(Astro);
   if (r.ok) return Astro.redirect(`/courses/${r.data.id}?imported=1`, 303);
   importProblem = r.problem;
-  Astro.response.status = r.problem.status >= 500 ? 502 : r.problem.status === 404 ? 404 : 400;
+  Astro.response.status = pageStatus(r.problem.status);
 }
 
 let results: Schemas['ProviderSearchResultDto'][] | null = null;
@@ -34,7 +35,7 @@ if (q) {
   if (r.ok) results = r.data;
   else {
     problem = r.problem;
-    if (Astro.request.method !== 'POST') Astro.response.status = r.problem.status === 400 ? 400 : 502;
+    if (Astro.request.method !== 'POST') Astro.response.status = pageStatus(r.problem.status);
   }
 }
 

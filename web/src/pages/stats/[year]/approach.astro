@@ -10,6 +10,7 @@ import { ratioChartValue } from '../../../lib/chart-spec';
 import { formatRatio } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
 
 const year = parseYear(Astro.params.year);
 if (year === null) return Astro.rewrite('/404');
@@ -18,7 +19,7 @@ const api = Astro.locals.api;
 const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/approach', { params: { path: { year } } }))]);
 if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
 const problem = firstProblem(yearsR, r);
-if (problem) Astro.response.status = problem.status;
+if (problem) Astro.response.status = pageStatus(problem.status);
 const years = yearsFrom(yearsR);
 const a = r.ok ? r.data : null;
 ---

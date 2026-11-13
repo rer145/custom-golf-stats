@@ -57,8 +57,8 @@ export function formatSigned(value: Numeric, digits = 1): string {
   return n > 0 ? `+${s}` : s;
 }
 
-/** One decimal place, no forced sign: course ratings (`72.1`), distances. */
-export function formatTenths(value: Numeric): string {
+/** One decimal place, no forced sign: course ratings (`72.1`), distances, `−1.2`. */
+export function formatRating(value: Numeric): string {
   const n = toNumber(value);
   return n === null ? DASH : fixed(n, 1);
 }
@@ -77,11 +77,11 @@ export function formatHandicap(value: Numeric): string {
   return n < 0 && Number(s) !== 0 ? `+${s}` : s;
 }
 
-/** Same as {@link formatHandicap}; kept for the course and profile pages. */
-export const formatHandicapIndex = formatHandicap;
+const dateFormat = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-/** Plain decimals, sign only when negative (a real minus): course ratings, `−1.2`. */
-export function formatDecimal(value: Numeric, digits = 1): string {
-  const n = toNumber(value);
-  return n === null ? DASH : fixed(n, digits);
+/** `2026-04-01` or an ISO timestamp → `Apr 1, 2026` (UTC, so a date-only value never shifts a day). {@link DASH} for null or unparsable input. */
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return DASH;
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value);
+  return Number.isNaN(date.getTime()) ? DASH : dateFormat.format(date);
 }

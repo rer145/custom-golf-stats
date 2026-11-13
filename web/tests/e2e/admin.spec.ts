@@ -31,12 +31,12 @@ test.describe('every admin route is closed to a non-admin', () => {
   });
 
   for (const { file, path } of adminPaths) {
-    test(`${file} (${path}): GET and POST are 403 and reach no admin API`, async ({ page }) => {
+    test(`${file} (${path}): GET and POST are 403 and reach no admin API`, async ({ page, baseURL }) => {
       await signIn(page, USER);
       const get = await page.request.get(path, { maxRedirects: 0 });
       expect(get.status(), `GET ${path}`).toBe(403);
       expect(await get.text()).toContain('No access');
-      const post = await page.request.post(path, { form: { id: 'x', decision: 'resolve', action: 'verify' }, maxRedirects: 0, headers: { origin: 'http://127.0.0.1:4321' } });
+      const post = await page.request.post(path, { form: { id: 'x', decision: 'resolve', action: 'verify' }, maxRedirects: 0, headers: { origin: baseURL! } });
       expect(post.status(), `POST ${path}`).toBe(403);
       const adminApi = (await fakeCalls(USER)).filter((c) => c.path.startsWith('/admin'));
       expect(adminApi).toEqual([]);

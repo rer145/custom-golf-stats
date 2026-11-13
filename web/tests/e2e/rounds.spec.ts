@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { DASH, formatInteger, formatToPar } from '../../src/lib/format';
-import { formatDate } from '../../src/lib/stats';
+import { formatDate } from '../../src/lib/format';
 import list from '../fixtures/rounds-list.json' with { type: 'json' };
 import cards from '../fixtures/rounds-scorecards.json' with { type: 'json' };
 import { USER, signIn } from './support';

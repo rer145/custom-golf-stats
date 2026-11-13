@@ -3,9 +3,10 @@ import { call } from '../../api/client';
 import AppLayout from '../../layouts/AppLayout.astro';
 import Problem from '../../components/Problem.astro';
 import YearPicker from '../../components/stats/YearPicker.astro';
-import { formatInteger, formatToPar } from '../../lib/format';
+import { formatDate, formatInteger, formatToPar } from '../../lib/format';
 import { endSession, isSessionEnded } from '../../lib/guard';
-import { firstProblem, formatDate, parseYear, yearsFrom } from '../../lib/stats';
+import { firstProblem, parseYear, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
 
 const api = Astro.locals.api;
 const yearsR = await call(api.GET('/stats/years'));
@@ -20,7 +21,7 @@ const year = all ? null : (parseYear(requested) ?? years[0]!);
 const r = await call(api.GET('/rounds', year === null ? {} : { params: { query: { year } } }));
 if (isSessionEnded(r)) return endSession(Astro);
 const problem = firstProblem(yearsR, r);
-if (problem) Astro.response.status = problem.status;
+if (problem) Astro.response.status = pageStatus(problem.status);
 const rounds = r.ok ? r.data : null;
 const entryLabel = { Quick: 'Quick', ShotByShot: 'Shot by shot' } as const;
 ---

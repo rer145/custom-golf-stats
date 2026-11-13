@@ -1,4 +1,4 @@
-import { formatAverage, formatDecimal, formatHandicap, formatInteger, formatPercent, formatToPar, type Numeric } from './format';
+import { formatAverage, formatHandicap, formatInteger, formatPercent, formatRating, formatToPar, type Numeric } from './format';
 
 /** How a chart's values are written (axis ticks, tooltips and the fallback table all use format.ts). */
 export type ValueFormat = 'percent' | 'average' | 'integer' | 'toPar' | 'decimal' | 'handicap';
@@ -32,7 +32,7 @@ export function formatValue(format: ValueFormat, value: Numeric): string {
     case 'toPar':
       return formatToPar(value);
     case 'decimal':
-      return formatDecimal(value);
+      return formatRating(value);
     case 'handicap':
       return formatHandicap(value);
   }

@@ -1,13 +1,14 @@
 ---
 import AdminNav from '../../components/admin/AdminNav.astro';
-import Notice from '../../components/admin/Notice.astro';
+import Notice from '../../components/Notice.astro';
 import Field from '../../components/Field.astro';
 import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
 import { call, type ApiProblem } from '../../api/client';
-import { localProblem, pageStatus, parseWholeNumber } from '../../lib/admin';
+import { parseWholeNumber } from '../../lib/admin';
 import { formText, notAForm, readForm } from '../../lib/forms';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { localProblem, pageStatus } from '../../lib/problems';
 
 const api = Astro.locals.api;
 const saved = Astro.url.searchParams.has('saved');
@@ -29,7 +30,7 @@ if (Astro.request.method === 'POST') {
     if (result.ok) return Astro.redirect('/admin/settings?saved=1', 303);
     problem = result.problem;
   }
-  Astro.response.status = pageStatus(problem.status);
+  if (problem) Astro.response.status = pageStatus(problem.status);
 }
 
 const current = await call(api.GET('/admin/settings'));
@@ -46,7 +47,7 @@ const shown = posted ?? (current.ok ? String(current.data.trialShotRounds) : '')
       <p class="lede">App-wide settings.</p>
     </div>
     <AdminNav />
-    <Notice text={saved ? 'Settings saved.' : null} />
+    <Notice spaced message={saved ? 'Settings saved.' : null} />
     <Problem problem={loadProblem} />
 
     <section class="card stack panel" aria-labelledby="trial-h">

@@ -1,12 +1,13 @@
 ---
 import AdminNav from '../../components/admin/AdminNav.astro';
-import Notice from '../../components/admin/Notice.astro';
+import Notice from '../../components/Notice.astro';
 import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
 import { call, type ApiProblem } from '../../api/client';
-import { isoDate, pageStatus } from '../../lib/admin';
+import { isoDate } from '../../lib/admin';
 import { formText, notAForm, readForm } from '../../lib/forms';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { pageStatus } from '../../lib/problems';
 
 const STATUSES = ['Open', 'Resolved', 'Dismissed'] as const;
 const requested = Astro.url.searchParams.get('status') ?? 'Open';
@@ -60,7 +61,7 @@ if (!list.ok) {
       <p class="lede">Reports and proposed changes from golfers. Resolve a flag once it is dealt with, or dismiss it.</p>
     </div>
     <AdminNav />
-    <Notice text={done === 'resolved' ? 'Flag resolved.' : done === 'dismissed' ? 'Flag dismissed.' : null} />
+    <Notice spaced message={done === 'resolved' ? 'Flag resolved.' : done === 'dismissed' ? 'Flag dismissed.' : null} />
     <Problem problem={problem} heading={failedId ? 'Flag not updated' : undefined} />
 
     <nav class="chips" aria-label="Flag status">

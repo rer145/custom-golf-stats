@@ -4,14 +4,16 @@
 import AppLayout from '../../layouts/AppLayout.astro';
 import Field from '../../components/Field.astro';
 import Problem from '../../components/Problem.astro';
-import Notice from '../../components/courses/Notice.astro';
+import Notice from '../../components/Notice.astro';
 import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { formText, notAForm, readForm } from '../../lib/forms';
-import { formatHandicapIndex } from '../../lib/format';
-import { formatDate, todayIso } from '../../components/courses/dates';
+import { formatDate, formatHandicap } from '../../lib/format';
+import { currentHandicap } from '../../lib/stats';
+import { todayIso } from '../../components/courses/dates';
 import { parseHandicapIndex } from '../../components/profile/handicap';
 import { fields, formProblem } from '../../components/courses/problems';
+import { localProblem, pageStatus } from '../../lib/problems';
 
 const GENDERS = [
   { value: 'Unspecified', label: 'Prefer not to say' },
@@ -64,7 +66,7 @@ if (Astro.request.method === 'POST') {
     if (isSessionEnded(r)) return endSession(Astro);
     if (r.ok) return Astro.redirect('/profile?saved=profile', 303);
     profileProblem = r.problem;
-    Astro.response.status = r.problem.status >= 500 ? 502 : 400;
+    Astro.response.status = pageStatus(r.problem.status);
   } else if (intent === 'add-handicap') {
     handicapValues.effectiveOn = formText(form, 'effectiveOn').trim();
     handicapValues.index = formText(form, 'index').trim();
@@ -72,15 +74,14 @@ if (Astro.request.method === 'POST') {
     const local: Record<string, string[]> = {};
     if (!handicapValues.effectiveOn) local.effectiveOn = ['A date is required.'];
     if (parsed.error) local.index = [parsed.error];
-    if (Object.keys(local).length > 0) {
-      handicapProblem = { status: 400, message: 'Check the highlighted fields.', fieldErrors: local };
-    } else {
+    handicapProblem = localProblem(local);
+    if (!handicapProblem) {
       const r = await call(Astro.locals.api.POST('/me/handicap', { body: { effectiveOn: handicapValues.effectiveOn, index: parsed.value } }));
       if (isSessionEnded(r)) return endSession(Astro);
       if (r.ok) return Astro.redirect('/profile?saved=handicap#handicap', 303);
       handicapProblem = r.problem;
     }
-    Astro.response.status = handicapProblem.status >= 500 ? 502 : 400;
+    if (handicapProblem) Astro.response.status = pageStatus(handicapProblem.status);
   } else if (intent === 'delete-handicap') {
     const entryId = formText(form, 'id');
     const r = await call(Astro.locals.api.DELETE('/me/handicap/{id}', { params: { path: { id: entryId } } }));
@@ -88,7 +89,7 @@ if (Astro.request.method === 'POST') {
     // Already gone (404) is what the golfer wanted too.
     if (r.ok || r.problem.status === 404) return Astro.redirect('/profile?saved=deleted#handicap', 303);
     deleteProblem = r.problem;
-    Astro.response.status = 502;
+    Astro.response.status = pageStatus(r.problem.status);
   }
 }
 
@@ -117,8 +118,7 @@ if (values?.homeCourseId) {
 
 const entries = handicap.ok ? handicap.data : [];
 // The index in effect today: the newest entry dated on or before today (a future-dated entry isn't current yet).
-const today = todayIso();
-const latest = entries.find((e) => e.effectiveOn <= today);
+const latest = currentHandicap(entries, todayIso());
 const email = profile?.email ?? Astro.locals.session?.email ?? '';
 const saved = Astro.url.searchParams.get('saved');
 const profileNotice = saved === 'profile' ? 'Profile saved.' : null;
@@ -220,7 +220,7 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
           {
             latest && (
               <div class="current">
-                <span class="stat stat-xl">{formatHandicapIndex(latest.index)}</span>
+                <span class="stat stat-xl">{formatHandicap(latest.index)}</span>
                 <span class="caption">Since {formatDate(latest.effectiveOn)}</span>
               </div>
             )
@@ -282,13 +282,13 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
                   {entries.map((e) => (
                     <tr>
                       <th scope="row">{formatDate(e.effectiveOn)}</th>
-                      <td class="num">{formatHandicapIndex(e.index)}</td>
+                      <td class="num">{formatHandicap(e.index)}</td>
                       <td class="row-action">
                         <form method="post" action="/profile#handicap">
                           <input type="hidden" name="intent" value="delete-handicap" />
                           <input type="hidden" name="id" value={e.id} />
                           <button class="btn btn-secondary btn-small" type="submit">
-                            Delete<span class="visually-hidden"> index {formatHandicapIndex(e.index)} from {formatDate(e.effectiveOn)}</span>
+                            Delete<span class="visually-hidden"> index {formatHandicap(e.index)} from {formatDate(e.effectiveOn)}</span>
                           </button>
                         </form>
                       </td>

@@ -50,21 +50,29 @@ describe('format', () => {
   });
 });
 
-describe('formatTenths and formatHandicapIndex', () => {
+describe('formatRating, formatHandicap and formatDate', () => {
   it('ratings to 1 dp', async () => {
-    const { formatTenths } = await import('./format');
-    expect(formatTenths(null)).toBe(DASH);
-    expect(formatTenths(72.1)).toBe('72.1');
-    expect(formatTenths('69')).toBe('69.0');
-    expect(formatTenths(-1.25)).toBe('−1.3');
+    const { formatRating } = await import('./format');
+    expect(formatRating(null)).toBe(DASH);
+    expect(formatRating(72.1)).toBe('72.1');
+    expect(formatRating('69')).toBe('69.0');
+    expect(formatRating(-1.25)).toBe('−1.3');
   });
 
   it('handicap indexes: below zero is a plus handicap', async () => {
-    const { formatHandicapIndex } = await import('./format');
-    expect(formatHandicapIndex(null)).toBe(DASH);
-    expect(formatHandicapIndex(12.4)).toBe('12.4');
-    expect(formatHandicapIndex('0')).toBe('0.0');
-    expect(formatHandicapIndex(-2.1)).toBe('+2.1');
-    expect(formatHandicapIndex(-0.01)).toBe('0.0');
+    const { formatHandicap } = await import('./format');
+    expect(formatHandicap(null)).toBe(DASH);
+    expect(formatHandicap(12.4)).toBe('12.4');
+    expect(formatHandicap('0')).toBe('0.0');
+    expect(formatHandicap(-2.1)).toBe('+2.1');
+    expect(formatHandicap(-0.01)).toBe('0.0');
+  });
+
+  it('dates in UTC, DASH for null or bad input', async () => {
+    const { formatDate } = await import('./format');
+    expect(formatDate('2026-04-01')).toBe('Apr 1, 2026');
+    expect(formatDate('2026-04-03T23:30:00Z')).toBe('Apr 3, 2026');
+    expect(formatDate(null)).toBe(DASH);
+    expect(formatDate('nope')).toBe(DASH);
   });
 });

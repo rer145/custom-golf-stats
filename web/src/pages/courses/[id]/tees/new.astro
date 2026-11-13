@@ -9,8 +9,9 @@ import TeeFields from '../../../../components/courses/TeeFields.astro';
 import { call, type ApiProblem } from '../../../../api/client';
 import { endSession, isSessionEnded } from '../../../../lib/guard';
 import { notAForm, readForm } from '../../../../lib/forms';
-import { buildTee, emptyTee, localProblem, readTee, remapHoleErrors, teeFromVersion, type TeeValues } from '../../../../components/courses/course-form';
+import { buildTee, emptyTee, readTee, remapHoleErrors, teeFromVersion, type TeeValues } from '../../../../components/courses/course-form';
 import { formProblem, isTeeField } from '../../../../components/courses/problems';
+import { localProblem, pageStatus } from '../../../../lib/problems';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const id = Astro.params.id ?? '';
@@ -18,7 +19,7 @@ const r = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { i
 if (isSessionEnded(r)) return endSession(Astro);
 const course = r.ok ? r.data : null;
 let problem: ApiProblem | null = r.ok ? null : r.problem;
-if (!r.ok) Astro.response.status = r.problem.status === 404 ? 404 : 502;
+if (!r.ok) Astro.response.status = pageStatus(r.problem.status);
 
 // Par and stroke index usually match across tees: start from the first tee's current holes.
 const firstTee = course?.tees[0];
@@ -43,7 +44,7 @@ if (course && Astro.request.method === 'POST') {
       problem = { ...problem, message: `${saved.problem.message} Save again to add it as a new tee.` };
     }
   }
-  Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : problem.status === 404 ? 404 : 400;
+  Astro.response.status = pageStatus(problem.status);
 }
 
 const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !== 'Admin';

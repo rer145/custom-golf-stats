@@ -94,16 +94,16 @@ export function ratioCounts(r: Schemas['RatioDto']): string {
   return `${r.numerator}/${r.denominator}`;
 }
 
-/** `2025-06-14` → `Jun 14, 2025` (dates are calendar dates: no time zone shift). */
-export function formatDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-}
-
 /** `2025-06-14` → `Jun 14` (within a year's table). */
 export function formatShortDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   if (!y || !m || !d) return iso;
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+/** The handicap entry in effect on `today` (`YYYY-MM-DD`): the newest dated on or before it. A future-dated entry isn't current yet. */
+export function currentHandicap<T extends { effectiveOn: string }>(entries: readonly T[], today: string): T | undefined {
+  let current: T | undefined;
+  for (const e of entries) if (e.effectiveOn <= today && (!current || e.effectiveOn > current.effectiveOn)) current = e;
+  return current;
 }

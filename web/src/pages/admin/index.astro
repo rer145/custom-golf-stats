@@ -3,9 +3,9 @@ import AdminNav from '../../components/admin/AdminNav.astro';
 import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
 import { call } from '../../api/client';
-import { pageStatus } from '../../lib/admin';
 import { DASH, formatInteger } from '../../lib/format';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { pageStatus } from '../../lib/problems';
 
 // The middleware has already checked role === 'Admin' live; the API enforces it again on every call.
 const api = Astro.locals.api;

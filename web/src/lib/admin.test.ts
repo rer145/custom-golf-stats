@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toProblem } from '../api/client';
-import { ADMIN_SECTIONS, isoDate, localProblem, pageStatus, parseDecimal, parseWholeNumber, playedHoleNumbers, unmatchedReason, unmatchedVersions } from './admin';
+import { ADMIN_SECTIONS, isoDate, parseDecimal, parseWholeNumber, playedHoleNumbers, unmatchedReason, unmatchedVersions } from './admin';
 
 describe('parseDecimal / parseWholeNumber', () => {
   it('treats blank as null and parses numbers', () => {
@@ -19,28 +19,6 @@ describe('isoDate', () => {
   it('keeps the date part of a timestamp', () => {
     expect(isoDate('2026-11-01T09:30:00+00:00')).toBe('2026-11-01');
     expect(isoDate(null)).toBe('–');
-  });
-});
-
-describe('localProblem', () => {
-  it('builds a 400 whose field errors show next to the fields', () => {
-    const p = localProblem({ rating: ['Enter a number.'] });
-    expect(p.status).toBe(400);
-    expect(p.fieldErrors).toEqual({ rating: ['Enter a number.'] });
-  });
-});
-
-describe('pageStatus', () => {
-  it.each([
-    [400, 400],
-    [403, 403],
-    [404, 404],
-    [409, 409],
-    [503, 503],
-    [500, 502],
-    [502, 502],
-  ])('API %i shows as %i', (api, shown) => {
-    expect(pageStatus(api)).toBe(shown);
   });
 });
 

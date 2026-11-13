@@ -8,6 +8,7 @@ import StatusBadge from '../../components/courses/StatusBadge.astro';
 import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { fields, formProblem } from '../../components/courses/problems';
+import { pageStatus } from '../../lib/problems';
 
 const q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 let results: Schemas['CourseSummaryDto'][] | null = null;
@@ -19,7 +20,7 @@ if (q) {
   if (r.ok) results = r.data;
   else {
     problem = r.problem;
-    Astro.response.status = r.problem.status === 400 ? 400 : 502;
+    Astro.response.status = pageStatus(r.problem.status);
   }
 }
 
