@@ -32,6 +32,8 @@ permissions:
 env:
   API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/' }}
   DOTNET_NOLOGO: true
+  DOTNET_SDK: 10.0.101
+  WORKLOAD_SET: 10.0.101
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
@@ -44,8 +46,10 @@ jobs:
           xcode-version: latest-stable
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
-      - run: dotnet workload install ios android  # restore evaluates every target framework
+          dotnet-version: ${{ env.DOTNET_SDK }}
+      # Pinned to the same SDK and workload set as the development Mac, so the iOS SDK matches an Xcode 26.x
+      # (the newest workloads need an Xcode the runners may not have yet). Restore evaluates every target framework.
+      - run: dotnet workload install ios android --version ${{ env.WORKLOAD_SET }}
       - name: Build iOS (Release, device, unsigned)
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
@@ -69,8 +73,10 @@ jobs:
           java-version: '17'
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
-      - run: dotnet workload install ios android  # restore evaluates every target framework
+          dotnet-version: ${{ env.DOTNET_SDK }}
+      # Pinned to the same SDK and workload set as the development Mac, so the iOS SDK matches an Xcode 26.x
+      # (the newest workloads need an Xcode the runners may not have yet). Restore evaluates every target framework.
+      - run: dotnet workload install ios android --version ${{ env.WORKLOAD_SET }}
       - name: Build Android (Release AAB, debug-signed)
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
