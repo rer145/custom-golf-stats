@@ -63,7 +63,7 @@ public sealed partial class StartRoundViewModel(
         foreach (var tee in _course.Tees.OrderBy(t => t.Tee.Name, StringComparer.OrdinalIgnoreCase))
         {
             var version = tee.Versions.OrderByDescending(v => v.Version.EffectiveFrom).FirstOrDefault()?.Version;
-            var description = version is null ? tee.Tee.Name : $"Par {version.Par} · {version.Rating:0.0}/{version.Slope}";
+            var description = version is null ? tee.Tee.Name : UiText.TeeDescription(version.Par, version.Rating, version.Slope);
             Tees.Add(new TeeOption(tee.Tee.Id, tee.Tee.Name, description));
         }
         SelectedTee = Tees.Count == 1 ? Tees[0] : null;
@@ -73,25 +73,25 @@ public sealed partial class StartRoundViewModel(
         await RefreshEntitlementsAsync();
     }
 
-    /// <summary>Re-reads the cached entitlements and sets the shot-by-shot gate.</summary>
+    /// <summary>Re-reads the cached entitlements and sets the shot-by-shot gate. The cache holds the trial rounds remaining, so the domain
+    /// is asked with "none used of what is left": paid golfers get null (unlimited), free golfers the count, never negative.</summary>
     public async Task RefreshEntitlementsAsync()
     {
         var row = await db.Entitlements.GetAsync();
-        TrialRoundsText = row is { Tier: Tier.Free, TrialShotRoundsRemaining: > 0 and var left } ? UiText.TrialRoundsLeft(left) : null;
-
         if (row is null)
         {
             ShotByShotAllowed = false;
             ShotByShotDisabledReason = UiText.ShotByShotNeedsAccount;
+            TrialRoundsText = null;
         }
         else
         {
-            // The cache holds the remaining count, so ask the domain with "none used of what is left".
-            var allowed = row.ShotByShotEntry && Entitlements.CanUse(Feature.ShotByShotEntry, row.Tier, 0, row.TrialShotRoundsRemaining ?? 0);
+            var allowance = row.TrialShotRoundsRemaining ?? 0;
+            var remaining = Entitlements.TrialRoundsRemaining(row.Tier, 0, allowance);
+            var allowed = row.ShotByShotEntry && Entitlements.CanUse(Feature.ShotByShotEntry, row.Tier, 0, allowance);
             ShotByShotAllowed = allowed;
-            ShotByShotDisabledReason = allowed ? null
-                : row.Tier == Tier.Free && row.TrialShotRoundsRemaining is 0 ? UiText.ShotByShotTrialUsedUp
-                : UiText.ShotByShotNotAvailable;
+            ShotByShotDisabledReason = allowed ? null : remaining == 0 ? UiText.ShotByShotTrialUsedUp : UiText.ShotByShotNotAvailable;
+            TrialRoundsText = remaining is > 0 and var left ? UiText.TrialRoundsLeft(left) : null;
         }
 
         if (!ShotByShotAllowed && Mode == DomEntryMode.ShotByShot)
@@ -123,29 +123,29 @@ public sealed partial class StartRoundViewModel(
         }
 
         IsBusy = true;
-        var consumedTrial = false;
+        var trialUsed = false;
         try
         {
-            if (Mode == DomEntryMode.ShotByShot)
-            {
-                await RefreshEntitlementsAsync();
-                if (!ShotByShotAllowed || !await db.Entitlements.TryConsumeTrialRoundAsync())
-            {
-                    ErrorMessage = ShotByShotDisabledReason ?? UiText.ShotByShotNotAvailable;
-                    return;
-                }
-                consumedTrial = (await db.Entitlements.GetAsync()) is { Tier: Tier.Free };
-            }
-
+            // Everything that can fail for a reason of the golfer's choices is resolved before a trial round is spent.
             var tee = _course.Tees.First(t => t.Tee.Id == SelectedTee.TeeId);
-            var version = await db.Courses.GetVersionInEffectAsync(tee.Tee.Id, PlayedOn.Date)
-                ?? tee.Versions.OrderBy(v => v.Version.EffectiveFrom).FirstOrDefault()?.Version; // played before the first recorded version
+            var version = await db.Courses.GetVersionInEffectAsync(tee.Tee.Id, PlayedOn.Date);
             if (version is null)
             {
                 ErrorMessage = UiText.CourseHasNoTees;
-                if (consumedTrial)
-                    await db.Entitlements.RefundTrialRoundAsync();
                 return;
+            }
+
+            if (Mode == DomEntryMode.ShotByShot)
+            {
+                await RefreshEntitlementsAsync();
+                var use = ShotByShotAllowed ? await db.Entitlements.TryUseShotByShotAsync() : default;
+                if (!use.Allowed)
+                {
+                    await RefreshEntitlementsAsync();
+                    ErrorMessage = ShotByShotDisabledReason ?? UiText.ShotByShotNotAvailable;
+                    return;
+                }
+                trialUsed = use.CountDropped;
             }
 
             var now = clock.UtcNow;
@@ -161,7 +161,8 @@ public sealed partial class StartRoundViewModel(
             }
             catch
             {
-                if (consumedTrial)
+                // Only a failed save needs the trial round back.
+                if (trialUsed)
                     await db.Entitlements.RefundTrialRoundAsync();
                 throw;
             }

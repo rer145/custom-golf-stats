@@ -11,7 +11,18 @@ namespace CustomGolfStats.App.Core.ViewModels;
 /// <summary>Yards everywhere except feet on the green.</summary>
 public static class DistanceUnits
 {
-    public static string For(Lie lie) => lie == Lie.Green ? "ft" : "yd";
+    public static string For(Lie lie) => lie == Lie.Green ? UiText.UnitFeet : UiText.UnitYards;
+
+    /// <summary>The same physical distance in the unit of the new lie: yards to feet (x3) or feet to yards (rounded) when the lie
+    /// moves on or off the green; unchanged otherwise.</summary>
+    public static int Convert(int distance, Lie from, Lie to)
+    {
+        var fromFeet = from == Lie.Green;
+        var toFeet = to == Lie.Green;
+        if (fromFeet == toFeet)
+            return distance;
+        return toFeet ? distance * 3 : (int)Math.Round(distance / 3.0, MidpointRounding.AwayFromZero);
+    }
 }
 
 /// <summary>One recorded shot with the unit its distances are in.</summary>
@@ -244,11 +255,15 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
         }
     }
 
-    partial void OnStartLieChanged(Lie value)
+    partial void OnStartLieChanged(Lie oldValue, Lie newValue)
     {
         OnPropertyChanged(nameof(StartUnit));
-        if (!_loading && !_applyingDefaults)
-            ApplyDefaultsForStartLie();
+        if (_loading || _applyingDefaults)
+            return;
+        // Moving on or off the green changes the unit. Keep the physical distance (15 yd becomes 45 ft) rather than the digits,
+        // so a distance typed before choosing the lie is not silently wrong and nothing the golfer typed is thrown away.
+        StartDistance = DistanceUnits.Convert(StartDistance, oldValue, newValue);
+        ApplyDefaultsForStartLie();
     }
 
     partial void OnClubChanged(Club value)
@@ -263,17 +278,19 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
             _typeTouched = true;
     }
 
-    partial void OnEndLieChanged(Lie value)
+    partial void OnEndLieChanged(Lie oldValue, Lie newValue)
     {
         OnPropertyChanged(nameof(EndUnit));
         OnPropertyChanged(nameof(IsHoled));
-        if (value == Lie.Holed)
+        if (newValue == Lie.Holed)
             EndDistance = null;
         if (_loading || _applyingDefaults)
             return;
+        if (EndDistance is { } typed && newValue != Lie.Holed && oldValue != Lie.Holed)
+            EndDistance = DistanceUnits.Convert(typed, oldValue, newValue); // same physical distance in the new unit
 
         // Into a penalty area or out of bounds costs a stroke by default; the golfer can change it.
-        if (value is Lie.PenaltyArea or Lie.OutOfBounds)
+        if (newValue is Lie.PenaltyArea or Lie.OutOfBounds)
         {
             if (PenaltyStrokes == 0)
             {
@@ -341,6 +358,8 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
             var s = item.Shot;
             StartLie = s.StartLie; StartDistance = s.StartDistance; Club = s.Club; ShotType = s.Type; EndLie = s.EndLie;
             EndDistance = s.EndDistance; Direction = s.Direction; Shape = s.Shape; PenaltyStrokes = s.PenaltyStrokes;
+            // The golfer's recorded club and type are explicit, so later changes to the lie must not suggest over them.
+            _clubTouched = _typeTouched = true;
             _penaltyAutoSet = false;
             EditingIndex = index;
         }
@@ -387,7 +406,7 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
     private void Recompute()
     {
         var shots = Shots.Select(s => s.Shot).ToList();
-        RunningScore = shots.Sum(s => 1 + s.PenaltyStrokes);
+        RunningScore = HoleSummaryDeriver.Strokes(shots);
 
         Errors.Clear();
         var errors = shots.Count == 0 ? [] : ShotValidator.Validate(shots);

@@ -16,7 +16,7 @@ namespace CustomGolfStats.App.Core.ViewModels;
 /// course provider are searched too (the provider's results are imported one at a time, only when the golfer picks one). A
 /// course can also be added by hand, which works offline.
 /// </summary>
-public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsApiClient api, IConnectivity connectivity, INavigator navigator) : ViewModelBase
+public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsApiClient api, IConnectivity connectivity, IClock clock, INavigator navigator) : ViewModelBase
 {
     public ObservableCollection<CourseRow> LocalResults { get; } = [];
 
@@ -93,7 +93,7 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
         await RunOnlineAsync(async () =>
         {
             var detail = await api.CoursesImportAsync(new CustomGolfStats.Api.Client.ImportCourseRequest { ProviderCourseId = result.ProviderCourseId });
-            await db.Courses.SaveFromServerAsync(ApiMapper.ToRecord(detail));
+            await db.Courses.SaveFromServerAsync(ApiMapper.ToRecord(detail, clock.UtcNow));
             await navigator.NavigateAsync(Route.StartRound, new CourseArgs(detail.Id));
         });
     }
@@ -101,7 +101,7 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
     private Task FetchAndSelectAsync(Guid courseId) => RunOnlineAsync(async () =>
     {
         var detail = await api.CoursesGetAsync(courseId);
-        await db.Courses.SaveFromServerAsync(ApiMapper.ToRecord(detail));
+        await db.Courses.SaveFromServerAsync(ApiMapper.ToRecord(detail, clock.UtcNow));
         await navigator.NavigateAsync(Route.StartRound, new CourseArgs(detail.Id));
     });
 

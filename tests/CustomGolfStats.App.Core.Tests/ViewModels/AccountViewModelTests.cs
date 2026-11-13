@@ -242,6 +242,37 @@ public class HomeViewModelTests
         Assert.Equal(Route.SignIn, rig.Vm.Nav.Last.Route);
     }
 
+    [Fact]
+    public async Task Reloading_recomputes_the_status_from_what_is_pending_now()
+    {
+        await using var rig = await CreateAsync();
+        await rig.Vm.Db.Courses.SaveFromServerAsync(Samples.Course());
+        await rig.Vm.Db.Rounds.SaveAsync(Samples.FullShotRound());
+        await rig.Home.SyncCommand.ExecuteAsync(null);
+        Assert.Equal(UiText.StatusSynced, rig.Home.SyncStatus);
+
+        await rig.Vm.Db.Rounds.SaveAsync(Samples.FullShotRound()); // the golfer logs another round
+        await rig.Home.LoadAsync();
+
+        Assert.Equal(UiText.StatusWaiting(1), rig.Home.SyncStatus);
+    }
+
+    [Fact]
+    public async Task An_unexpected_sync_error_is_reported_without_crashing_and_the_pending_work_stays()
+    {
+        await using var rig = await CreateAsync();
+        await rig.Vm.Db.Courses.SaveFromServerAsync(Samples.Course());
+        await rig.Vm.Db.Rounds.SaveAsync(Samples.FullShotRound());
+        rig.PutRound = _ => throw new InvalidOperationException("boom");
+
+        await rig.Home.SyncCommand.ExecuteAsync(null);
+
+        Assert.Equal(UiText.SyncFailedUnexpectedly, rig.Home.ErrorMessage);
+        Assert.False(rig.Home.IsSyncing);
+        Assert.Equal(1, rig.Home.PendingCount);
+        Assert.Equal(UiText.StatusWaiting(1), rig.Home.SyncStatus);
+    }
+
     // ---- notices: once each until the condition clears ----
 
     [Fact]
@@ -317,7 +348,7 @@ public class CoursePickerViewModelTests
         var rig = await VmRig.CreateAsync();
         var stub = new StubHandler(respond ?? (_ => StubHandler.Status(HttpStatusCode.NotFound)));
         var net = new FakeConnectivity();
-        return (rig, new CoursePickerViewModel(rig.Db, stub.Client(), net, rig.Nav), stub, net);
+        return (rig, new CoursePickerViewModel(rig.Db, stub.Client(), net, rig.Temp.Clock, rig.Nav), stub, net);
     }
 
     private static Client.CourseDetailDto Detail(Guid id, string name) => new()
@@ -487,6 +518,8 @@ public class ManualCourseViewModelTests
         vm.Slope = 125;
     }
 
+    private static string Msg(CustomGolfStats.Domain.Courses.CourseError error) => UiText.Describe(error);
+
     [Fact]
     public async Task An_empty_form_lists_what_is_missing()
     {
@@ -498,43 +531,123 @@ public class ManualCourseViewModelTests
 
         Assert.Contains(UiText.CourseNameMissing, vm.Errors);
         Assert.Contains(UiText.TeeNameMissing, vm.Errors);
-        Assert.Contains(UiText.RatingInvalid, vm.Errors);
-        Assert.Contains(UiText.SlopeInvalid, vm.Errors);
+        Assert.Contains(Msg(CustomGolfStats.Domain.Courses.CourseError.RatingMissing), vm.Errors);
+        Assert.Contains(Msg(CustomGolfStats.Domain.Courses.CourseError.SlopeMissing), vm.Errors);
         Assert.Empty(await rig.Db.Courses.GetPendingAsync());
         Assert.Empty(rig.Nav.Visits);
     }
 
-    [Fact]
-    public async Task Holes_are_checked_for_par_yardage_and_stroke_index()
+    // The limits are the domain's CourseLimits, the same ones the API enforces: a course accepted here is accepted on sync.
+
+    [Theory]
+    [InlineData(1.0, true)]
+    [InlineData(99.9, true)]
+    [InlineData(0.9, false)]
+    [InlineData(100.0, false)]
+    public async Task Rating_boundaries_match_the_API(double rating, bool valid)
     {
         var (rig, vm) = await BuildAsync(9);
         await using var _r = rig;
         Fill(vm);
-        vm.Holes[0].Par = 6;
-        vm.Holes[1].Yardage = 0;
+        vm.Rating = rating;
+
+        Assert.Equal(valid, vm.Validate().Count == 0);
+    }
+
+    [Theory]
+    [InlineData(55, true)]
+    [InlineData(155, true)]
+    [InlineData(54, false)]
+    [InlineData(156, false)]
+    public async Task Slope_boundaries_match_the_API(int slope, bool valid)
+    {
+        var (rig, vm) = await BuildAsync(9);
+        await using var _r = rig;
+        Fill(vm);
+        vm.Slope = slope;
+
+        Assert.Equal(valid, vm.Validate().Count == 0);
+    }
+
+    [Theory]
+    [InlineData(3, true)]
+    [InlineData(6, true)]   // the API accepts par 6
+    [InlineData(2, false)]
+    [InlineData(7, false)]
+    public async Task Par_boundaries_match_the_API(int par, bool valid)
+    {
+        var (rig, vm) = await BuildAsync(9);
+        await using var _r = rig;
+        Fill(vm);
+        vm.Holes[0].Par = par;
+
+        Assert.Equal(valid, vm.Validate().Count == 0);
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1000, true)]
+    [InlineData(-1, false)]
+    [InlineData(1001, false)]
+    public async Task Yardage_boundaries_match_the_API(int yardage, bool valid)
+    {
+        var (rig, vm) = await BuildAsync(9);
+        await using var _r = rig;
+        Fill(vm);
+        vm.Holes[0].Yardage = yardage;
+
+        Assert.Equal(valid, vm.Validate().Count == 0);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(18, true)]
+    [InlineData(0, false)]
+    [InlineData(19, false)]
+    public async Task Hole_count_boundaries_match_the_API(int count, bool valid)
+    {
+        var (rig, vm) = await BuildAsync(count);
+        await using var _r = rig;
+        Fill(vm);
+
+        Assert.Equal(valid, vm.Validate().Count == 0);
+    }
+
+    [Fact]
+    public async Task Stroke_indexes_must_use_1_to_n_once()
+    {
+        var (rig, vm) = await BuildAsync(9);
+        await using var _r = rig;
+        Fill(vm);
         vm.Holes[2].StrokeIndex = 1; // duplicates hole 1's
 
         var errors = vm.Validate();
 
-        Assert.Contains(UiText.ParInvalid, errors);
-        Assert.Contains(UiText.YardageInvalid, errors);
-        Assert.Contains(UiText.StrokeIndexInvalid, errors);
+        Assert.Contains(Msg(CustomGolfStats.Domain.Courses.CourseError.StrokeIndexRepeated), errors);
     }
 
     [Fact]
-    public async Task The_hole_count_is_9_or_18()
+    public async Task The_messages_quote_the_domains_limits()
     {
-        var (rig, vm) = await BuildAsync(12);
+        Assert.Contains("3 and 6", Msg(CustomGolfStats.Domain.Courses.CourseError.ParOutOfRange));
+        Assert.Contains("0 and 1000", Msg(CustomGolfStats.Domain.Courses.CourseError.YardageOutOfRange));
+        Assert.Contains("55 and 155", Msg(CustomGolfStats.Domain.Courses.CourseError.SlopeOutOfRange));
+        Assert.Contains("1.0 and 99.9", Msg(CustomGolfStats.Domain.Courses.CourseError.RatingOutOfRange));
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Changing_the_hole_count_keeps_what_was_typed()
+    {
+        var (rig, vm) = await BuildAsync(9);
         await using var _r = rig;
-        Fill(vm);
+        vm.Holes[0].Yardage = 410;
 
-        Assert.Contains(UiText.HoleCountInvalid, vm.Validate());
-
-        vm.SetHoleCountCommand.Execute(9);
-        Assert.Equal(9, vm.Holes.Count);
         vm.SetHoleCountCommand.Execute(18);
         Assert.Equal(18, vm.Holes.Count);
-        Assert.DoesNotContain(UiText.HoleCountInvalid, vm.Validate());
+        Assert.Equal(410, vm.Holes[0].Yardage);
+        vm.SetHoleCountCommand.Execute(9);
+        Assert.Equal(9, vm.Holes.Count);
     }
 
     [Fact]
@@ -630,6 +743,38 @@ public class ProfileViewModelTests
         Assert.Equal(Home, body.RootElement.GetProperty("homeCourseId").GetGuid());
         Assert.Equal("Imperial", body.RootElement.GetProperty("units").GetString());
         Assert.True(vm.IsSaved);
+    }
+
+    [Fact]
+    public async Task Saving_is_not_possible_until_the_profile_has_loaded()
+    {
+        var (rig, vm, stub, net, _) = await BuildAsync(_ => Profile());
+        await using var _r = rig;
+        net.IsOnline = false;
+
+        await vm.LoadAsync();
+        Assert.False(vm.IsLoaded);
+        Assert.False(vm.SaveProfileCommand.CanExecute(null));
+        await vm.SaveProfileCommand.ExecuteAsync(null);
+        Assert.Empty(stub.Requests);                 // nothing blanked on the server
+
+        net.IsOnline = true;
+        await vm.LoadAsync();
+        Assert.True(vm.IsLoaded);
+        Assert.True(vm.SaveProfileCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_failed_load_leaves_saving_disabled()
+    {
+        var (rig, vm, _, _, _) = await BuildAsync(_ => StubHandler.Status(HttpStatusCode.InternalServerError));
+        await using var _r = rig;
+
+        await vm.LoadAsync();
+
+        Assert.False(vm.IsLoaded);
+        Assert.Equal(UiText.ProfileLoadFailed, vm.ErrorMessage);
+        Assert.False(vm.SaveProfileCommand.CanExecute(null));
     }
 
     [Fact]

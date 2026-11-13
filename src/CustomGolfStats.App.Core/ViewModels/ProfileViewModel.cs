@@ -36,12 +36,17 @@ public sealed partial class ProfileViewModel(
 
     [ObservableProperty] private bool _isSaved;
 
+    /// <summary>The profile was read from the server. Saving is only possible then, because <c>PUT /me</c> replaces everything and
+    /// saving fields that were never loaded would blank the account.</summary>
+    [ObservableProperty] private bool _isLoaded;
+
     public async Task LoadAsync()
     {
         NewHandicapDate = clock.UtcNow.LocalDateTime.Date;
         await ReloadHandicapAsync();
 
         ErrorMessage = null;
+        IsLoaded = false;
         if (!connectivity.IsOnline)
         {
             ErrorMessage = UiText.ProfileLoadFailed;
@@ -53,12 +58,15 @@ public sealed partial class ProfileViewModel(
             Email = profile.Email; FirstName = profile.FirstName; LastName = profile.LastName; GhinNumber = profile.GhinNumber; Units = profile.Units;
             _gender = profile.Gender;
             _homeCourseId = profile.HomeCourseId;
+            IsLoaded = true;
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
         {
             ErrorMessage = UiText.ProfileLoadFailed;
         }
     }
+
+    partial void OnIsLoadedChanged(bool value) => SaveProfileCommand.NotifyCanExecuteChanged();
 
     private async Task ReloadHandicapAsync()
     {
@@ -68,11 +76,13 @@ public sealed partial class ProfileViewModel(
         LatestHandicapIndex = HandicapHistory.Count > 0 ? HandicapHistory[0].Index : null;
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsLoaded))]
     private async Task SaveProfileAsync()
     {
         ErrorMessage = null;
         IsSaved = false;
+        if (!IsLoaded)
+            return;
         if (!connectivity.IsOnline)
         {
             ErrorMessage = UiText.NeedConnection;

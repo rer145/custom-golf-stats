@@ -208,23 +208,6 @@ public class RoundViewModelTests
     }
 
     [Fact]
-    public async Task Finishing_again_only_reopens_the_summary()
-    {
-        var (rig, vm, _, roundId) = await OpenAsync();
-        await using var _r = rig;
-        await AddQuickHoleAsync(rig, roundId, 1);
-        await vm.ReloadAsync();
-        await vm.FinishRoundCommand.ExecuteAsync(null);
-        var finishedAt = (await rig.Db.Rounds.GetAsync(roundId))!.Round.FinishedAt;
-        rig.Temp.Clock.Advance(TimeSpan.FromHours(1));
-
-        await vm.FinishRoundCommand.ExecuteAsync(null);
-
-        Assert.Equal(finishedAt, (await rig.Db.Rounds.GetAsync(roundId))!.Round.FinishedAt);
-        Assert.Equal(2, rig.Nav.Visits.Count(v => v.Route == Route.RoundSummary));
-    }
-
-    [Fact]
     public async Task A_missing_round_is_reported()
     {
         await using var rig = await VmRig.CreateAsync();

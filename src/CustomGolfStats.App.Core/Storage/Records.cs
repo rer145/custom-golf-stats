@@ -19,7 +19,7 @@ public sealed record HoleRecord(HoleRow Hole, IReadOnlyList<ShotRow> Shots)
     }
 }
 
-/// <summary>A round with its holes (ordered by hole number) and their shots.</summary>
+/// <summary>A round with its holes (ordered by entry sequence) and their shots.</summary>
 public sealed record RoundRecord(RoundRow Round, IReadOnlyList<HoleRecord> Holes)
 {
     public RoundData ToRoundData() => new(Round.Id, DateOnly.FromDateTime(Round.PlayedOn), Round.CourseId, Round.CourseName,

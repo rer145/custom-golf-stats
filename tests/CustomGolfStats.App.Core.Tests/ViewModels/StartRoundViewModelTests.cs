@@ -312,4 +312,65 @@ public class StartRoundViewModelTests
         Assert.Null((await s.Rig.Db.Rounds.GetAsync(id))!.Round.StartedAt);
         Assert.Empty(s.Server.To("GET", "/weather"));
     }
+
+    // ---- the trial is only spent when the round can actually be created ----
+
+    [Fact]
+    public async Task A_failed_save_gives_the_trial_round_back()
+    {
+        var (s, _, _) = await OpenWithFakesAsync(Dom.Tier.Free, trialLeft: 2);
+        await using var _s = s;
+        s.Vm.Mode = Dom.EntryMode.ShotByShot;
+        await s.Rig.Db.Connection.ExecuteAsync("DROP TABLE RoundRow"); // make the save fail
+
+        await Assert.ThrowsAnyAsync<Exception>(() => s.Vm.StartCommand.ExecuteAsync(null));
+
+        var e = (await s.Rig.Db.Entitlements.GetAsync())!;
+        Assert.Equal(2, e.TrialShotRoundsRemaining);
+        Assert.True(e.ShotByShotEntry);
+        Assert.False(s.Vm.IsBusy);
+    }
+
+    [Fact]
+    public async Task A_failed_save_for_a_paid_golfer_changes_nothing()
+    {
+        var (s, _, _) = await OpenWithFakesAsync(Dom.Tier.Paid, trialLeft: null);
+        await using var _s = s;
+        s.Vm.Mode = Dom.EntryMode.ShotByShot;
+        await s.Rig.Db.Connection.ExecuteAsync("DROP TABLE RoundRow");
+
+        await Assert.ThrowsAnyAsync<Exception>(() => s.Vm.StartCommand.ExecuteAsync(null));
+
+        Assert.Null((await s.Rig.Db.Entitlements.GetAsync())!.TrialShotRoundsRemaining); // not "refunded" into a count
+    }
+
+    [Fact]
+    public async Task A_tee_without_versions_stops_before_any_trial_round_is_spent()
+    {
+        var (s, _, _) = await OpenWithFakesAsync(Dom.Tier.Free, trialLeft: 2);
+        await using var _s = s;
+        var bare = Samples.Course();
+        bare.Tees[0].Versions.Clear();
+        await s.Rig.Db.Courses.SaveFromServerAsync(bare);
+        await s.Vm.LoadAsync(new CourseArgs(Samples.CourseId));
+        s.Vm.Mode = Dom.EntryMode.ShotByShot;
+
+        await s.Vm.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal(UiText.CourseHasNoTees, s.Vm.ErrorMessage);
+        Assert.Equal(2, (await s.Rig.Db.Entitlements.GetAsync())!.TrialShotRoundsRemaining);
+        Assert.Empty(s.Rig.Nav.Visits);
+    }
+
+    [Fact]
+    public async Task A_date_before_the_first_version_uses_the_earliest_version()
+    {
+        var (s, _, _) = await OpenWithFakesAsync();
+        await using var _s = s;
+        s.Vm.PlayedOn = new DateTime(2010, 1, 1); // the sample version is effective 2020
+
+        var id = await StartedRoundIdAsync(s);
+
+        Assert.Equal(Samples.TeeVersionId, (await s.Rig.Db.Rounds.GetAsync(id))!.Round.TeeVersionId);
+    }
 }

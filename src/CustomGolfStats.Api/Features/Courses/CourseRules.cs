@@ -1,5 +1,6 @@
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Infrastructure;
+using CustomGolfStats.Domain.Courses;
 
 namespace CustomGolfStats.Api.Features.Courses;
 
@@ -9,18 +10,20 @@ public static class CourseRules
     /// <summary>Effective date of a tee's first version: before any round anyone could have played.</summary>
     public static readonly DateOnly DefaultEffectiveFrom = new(1900, 1, 1);
 
-    public const int MaxHoles = 18;
-    public const int MinPar = 3;
-    public const int MaxPar = 6;
-    public const decimal MinRating = 1.0m;
-    public const decimal MaxRating = 99.9m;
-    public const int MinSlope = 55;
-    public const int MaxSlope = 155;
-    public const int MaxYardage = 1000;
+    // The numeric limits live in the shared Domain so the app checks hand-made courses against exactly what the API accepts.
+    public const int MaxHoles = CourseLimits.MaxHoles;
+    public const int MinPar = CourseLimits.MinPar;
+    public const int MaxPar = CourseLimits.MaxPar;
+    public const decimal MinRating = CourseLimits.MinRating;
+    public const decimal MaxRating = CourseLimits.MaxRating;
+    public const int MinSlope = CourseLimits.MinSlope;
+    public const int MaxSlope = CourseLimits.MaxSlope;
+    public const int MinYardage = CourseLimits.MinYardage;
+    public const int MaxYardage = CourseLimits.MaxYardage;
     public const int MaxFlagNote = 4000;
 
     /// <summary>Slope of a course of standard difficulty; used when a provider tee has no slope.</summary>
-    public const int StandardSlope = 113;
+    public const int StandardSlope = CourseLimits.StandardSlope;
 
     public static void ValidateDetails(CourseDetailsRequest details, ValidationErrors errors, string prefix = "")
     {
@@ -122,9 +125,9 @@ public static class CourseRules
                 errors.Add(key + "par", $"Par must be between {MinPar} and {MaxPar}.");
             }
 
-            if (hole.Yardage < 0 || hole.Yardage > MaxYardage)
+            if (hole.Yardage < MinYardage || hole.Yardage > MaxYardage)
             {
-                errors.Add(key + "yardage", $"Yardage must be between 0 and {MaxYardage}.");
+                errors.Add(key + "yardage", $"Yardage must be between {MinYardage} and {MaxYardage}.");
             }
 
             if (hole.StrokeIndex < 1 || hole.StrokeIndex > holes.Count)

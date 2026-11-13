@@ -41,7 +41,7 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
     [ObservableProperty] private int _totalScore;
     [ObservableProperty] private int _totalPar;
     [ObservableProperty] private int _toPar;
-    [ObservableProperty] private string _toParText = "E";
+    [ObservableProperty] private string _toParText = UiText.ToPar(0);
     [ObservableProperty] private int _totalPutts;
     [ObservableProperty] private bool _isFinished;
 
@@ -122,12 +122,6 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
             ErrorMessage = UiText.CannotFinishEmptyRound;
             return;
         }
-        if (IsFinished)
-        {
-            await navigator.NavigateAsync(Route.RoundSummary, new RoundArgs(_roundId));
-            return;
-        }
-
         var finishedAt = clock.UtcNow;
         var current = await db.Rounds.GetAsync(_roundId);
         if (current is null)
@@ -152,7 +146,7 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
 
         await db.Rounds.UpdateHeaderAsync(_roundId, r =>
         {
-            r.FinishedAt = finishedAt;
+            r.FinishedAt ??= finishedAt;
             if (r.DurationMinutes is null && r.StartedAt is { } start)
                 r.DurationMinutes = Math.Max(0, (int)Math.Round((finishedAt - start).TotalMinutes));
             if (reading is not null)

@@ -20,8 +20,8 @@ public sealed partial class OverallStatsViewModel(LocalDb db, IClock clock) : Vi
     [ObservableProperty] private SeasonSection? _season;
 
     /// <summary>"84.2", or "-" when there are no 18-hole rounds.</summary>
-    [ObservableProperty] private string _scoringAverage18Text = "-";
-    [ObservableProperty] private string _toParText = "E";
+    [ObservableProperty] private string _scoringAverage18Text = UiText.NoValue;
+    [ObservableProperty] private string _toParText = UiText.ToPar(0);
     [ObservableProperty] private int _roundsInYear;
     [ObservableProperty] private double? _handicapIndex;
     [ObservableProperty] private DateTime? _handicapEffectiveOn;
@@ -55,7 +55,7 @@ public sealed partial class OverallStatsViewModel(LocalDb db, IClock clock) : Vi
         RoundsInYear = year.Count;
         Tiles = SeasonStats.Overall(year);
         Season = SeasonStats.Season(year);
-        ScoringAverage18Text = Tiles.ScoringAverage18.Value is { } avg ? avg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) : "-";
+        ScoringAverage18Text = Tiles.ScoringAverage18.Value is { } avg ? avg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) : UiText.NoValue;
         ToParText = UiText.ToPar(Tiles.ToPar);
         Results.Clear();
         foreach (var row in SeasonStats.Results(year))

@@ -195,3 +195,19 @@ public class HoleSummaryDeriverTests
         Assert.Equal(3, result.Par);
     }
 }
+
+public class HoleStrokesTests
+{
+    [Fact]
+    public void Strokes_counts_each_shot_and_every_penalty_stroke_even_before_the_hole_is_finished()
+    {
+        var shots = new[]
+        {
+            ShotBuilders.Shot(1, Lie.Tee, 400, Lie.PenaltyArea, 250, penalties: 1),
+            ShotBuilders.Shot(2, Lie.Rough, 250, Lie.Fairway, 100, penalties: 2),
+        };
+
+        Assert.Equal(5, HoleSummaryDeriver.Strokes(shots));
+        Assert.Equal(0, HoleSummaryDeriver.Strokes([]));
+    }
+}

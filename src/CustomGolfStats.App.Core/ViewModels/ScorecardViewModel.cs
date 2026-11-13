@@ -23,7 +23,7 @@ public sealed partial class ScorecardViewModel(LocalDb db) : ViewModelBase
     [ObservableProperty] private int _totalScore;
     [ObservableProperty] private int _totalPar;
     [ObservableProperty] private int _toPar;
-    [ObservableProperty] private string _toParText = "E";
+    [ObservableProperty] private string _toParText = UiText.ToPar(0);
     [ObservableProperty] private int _totalPutts;
     [ObservableProperty] private int _totalYardage;
 

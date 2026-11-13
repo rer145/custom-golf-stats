@@ -409,4 +409,106 @@ public class ShotEntryViewModelTests
         await other.LoadAsync(new HoleArgs(shots, HoleNumber: 99));
         Assert.Equal(UiText.HoleNotOnCourse, other.ErrorMessage);
     }
+
+    [Fact]
+    public async Task Editing_a_shot_in_the_middle_of_the_hole_updates_it_and_keeps_the_rest()
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        Shoot(vm, Lie.Fairway, 150);
+        Shoot(vm, Lie.Green, 25);
+        Shoot(vm, Lie.Green, 4);
+        Shoot(vm, Lie.Holed);
+
+        vm.EditShotCommand.Execute(vm.Shots[0]);
+        vm.PenaltyStrokes = 1;
+        vm.EndDistance = 140;
+        vm.AddShotCommand.Execute(null);
+
+        Assert.Equal(4, vm.Shots.Count);
+        Assert.Equal((140, 1), (vm.Shots[0].Shot.EndDistance, vm.Shots[0].Shot.PenaltyStrokes));
+        Assert.Equal([1, 2, 3, 4], vm.Shots.Select(s => s.Shot.Sequence));
+        Assert.True(vm.IsComplete);
+        Assert.Equal(5, vm.RunningScore);
+        Assert.Equal(HoleSummaryDeriver.Derive(new HoleInfo(1, 4, 120, 1), 1, ShotsOf(vm)), vm.Summary);
+    }
+
+    [Fact]
+    public async Task Editing_keeps_the_recorded_club_and_type_when_the_lie_is_changed()
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        vm.Club = Club.Wood3;
+        Shoot(vm, Lie.Fairway, 150);
+        Shoot(vm, Lie.Holed);
+
+        vm.EditShotCommand.Execute(vm.Shots[0]);
+        vm.StartLie = Lie.Rough;
+
+        Assert.Equal((Club.Wood3, ShotType.Tee), (vm.Club, vm.ShotType));
+    }
+
+    [Fact]
+    public async Task A_putt_that_rolls_off_the_green_continues_from_where_it_ended_in_yards()
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        Shoot(vm, Lie.Fairway, 150);
+        Shoot(vm, Lie.Green, 30);
+
+        Shoot(vm, Lie.Rough, 5); // a long putt off the green, 5 yards from the hole
+
+        Assert.Equal((Lie.Rough, 5, "yd", ShotType.Approach), (vm.StartLie, vm.StartDistance, vm.StartUnit, vm.ShotType));
+        Assert.Equal("ft", vm.Shots[2].StartUnit);
+        Assert.Equal("yd", vm.Shots[2].EndUnit);
+    }
+
+    [Fact]
+    public async Task A_holed_bunker_shot_counts_the_sand_shot_with_no_putts()
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        Shoot(vm, Lie.Fairway, 150);
+        Shoot(vm, Lie.GreensideSand, 12);
+
+        Shoot(vm, Lie.Holed);
+
+        Assert.Equal((ShotType.Bunker, Club.SandWedge), (vm.Shots[2].Shot.Type, vm.Shots[2].Shot.Club));
+        Assert.Equal(1, vm.Summary!.GreensideSandShots);
+        Assert.Equal(0, vm.Summary.Putts);
+        Assert.Equal(HoleSummaryDeriver.Derive(new HoleInfo(1, 4, 120, 1), 1, ShotsOf(vm)), vm.Summary);
+    }
+
+    [Theory]
+    [InlineData(Lie.Fairway, Lie.Green, 15, 45)]   // yards to feet
+    [InlineData(Lie.Green, Lie.Rough, 45, 15)]     // feet to yards
+    [InlineData(Lie.Green, Lie.Rough, 10, 3)]      // rounds to the nearest yard
+    [InlineData(Lie.Fairway, Lie.Rough, 15, 15)]   // same unit: unchanged
+    public async Task Moving_the_start_lie_on_or_off_the_green_keeps_the_physical_distance(Lie from, Lie to, int typed, int expected)
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        vm.StartLie = from;
+        vm.StartDistance = typed;
+
+        vm.StartLie = to;
+
+        Assert.Equal(expected, vm.StartDistance);
+    }
+
+    [Fact]
+    public async Task Moving_the_end_lie_on_or_off_the_green_converts_a_typed_distance_and_holed_clears_it()
+    {
+        var (rig, vm, _) = await OpenAsync();
+        await using var _r = rig;
+        vm.EndLie = Lie.Rough;
+        vm.EndDistance = 20;
+
+        vm.EndLie = Lie.Green;
+        Assert.Equal(60, vm.EndDistance);
+        vm.EndLie = Lie.Fairway;
+        Assert.Equal(20, vm.EndDistance);
+        vm.EndLie = Lie.Holed;
+        Assert.Null(vm.EndDistance);
+    }
 }

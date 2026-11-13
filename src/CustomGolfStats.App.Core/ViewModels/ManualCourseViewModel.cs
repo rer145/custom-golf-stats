@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using CustomGolfStats.App.Core.Platform;
 using CustomGolfStats.App.Core.Storage;
 using CustomGolfStats.App.Core.Storage.Rows;
+using CustomGolfStats.Domain.Courses;
 using CustomGolfStats.Domain.Holes;
 using CourseSource = CustomGolfStats.Api.Client.CourseSource;
 using CourseStatus = CustomGolfStats.Api.Client.CourseStatus;
@@ -28,7 +29,7 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
     [ObservableProperty] private string? _city;
     [ObservableProperty] private string? _region;
     [ObservableProperty] private string? _country;
-    [ObservableProperty] private string _teeName = "White";
+    [ObservableProperty] private string _teeName = UiText.DefaultTeeName;
     [ObservableProperty] private Gender _gender = Gender.Unspecified;
     [ObservableProperty] private double? _rating;
     [ObservableProperty] private int? _slope;
@@ -50,7 +51,8 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
             Holes.Add(new ManualHoleEntry(Holes.Count + 1));
     }
 
-    /// <summary>The problems with what was entered, in the golfer's words. Empty means it can be saved.</summary>
+    /// <summary>The problems with what was entered, in the golfer's words. Empty means it can be saved. The limits are the domain's
+    /// <see cref="CourseValidator"/>, the same ones the API applies, so a course accepted here is accepted on sync.</summary>
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
@@ -58,18 +60,9 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
             errors.Add(UiText.CourseNameMissing);
         if (string.IsNullOrWhiteSpace(TeeName))
             errors.Add(UiText.TeeNameMissing);
-        if (RoundLengthRule.Classify(Holes.Count) is null)
-            errors.Add(UiText.HoleCountInvalid);
-        if (Rating is not > 0)
-            errors.Add(UiText.RatingInvalid);
-        if (Slope is not (>= 55 and <= 155))
-            errors.Add(UiText.SlopeInvalid);
-        if (Holes.Any(h => h.Par is < 3 or > 5))
-            errors.Add(UiText.ParInvalid);
-        if (Holes.Any(h => h.Yardage <= 0))
-            errors.Add(UiText.YardageInvalid);
-        if (!Holes.Select(h => h.StrokeIndex).Order().SequenceEqual(Enumerable.Range(1, Holes.Count)))
-            errors.Add(UiText.StrokeIndexInvalid);
+
+        var layout = Holes.Select(h => new HoleInfo(h.Number, h.Par, h.Yardage, h.StrokeIndex)).ToList();
+        errors.AddRange(CourseValidator.Validate((decimal?)Rating, Slope, layout).Select(UiText.Describe));
         return errors;
     }
 

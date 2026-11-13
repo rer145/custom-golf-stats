@@ -24,7 +24,7 @@ public sealed partial class RoundSummaryViewModel(LocalDb db, INavigator navigat
     [ObservableProperty] private int _score;
     [ObservableProperty] private int _par;
     [ObservableProperty] private int _toPar;
-    [ObservableProperty] private string _toParText = "E";
+    [ObservableProperty] private string _toParText = UiText.ToPar(0);
     [ObservableProperty] private int _putts;
     [ObservableProperty] private bool _isFinished;
 

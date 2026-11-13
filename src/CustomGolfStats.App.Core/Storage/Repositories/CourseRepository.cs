@@ -72,12 +72,16 @@ public sealed class CourseRepository(SQLiteAsyncConnection db)
         await db.UpdateAsync(row);
     }
 
-    /// <summary>The tee version in effect on <paramref name="asOf"/> (latest one effective on or before it), or null.</summary>
+    /// <summary>The tee version in effect on <paramref name="asOf"/>: the latest one effective on or before it, or, for a date before
+    /// the first version, the earliest one (the same rule as the API's tee version resolution). Null only when the tee has no versions.</summary>
     public async Task<TeeVersionRow?> GetVersionInEffectAsync(Guid teeId, DateTime asOf)
     {
-        var versions = await db.Table<TeeVersionRow>().Where(v => v.TeeId == teeId && v.EffectiveFrom <= asOf)
+        var inEffect = await db.Table<TeeVersionRow>().Where(v => v.TeeId == teeId && v.EffectiveFrom <= asOf)
             .OrderByDescending(v => v.EffectiveFrom).Take(1).ToListAsync();
-        return versions.FirstOrDefault();
+        if (inEffect.Count > 0)
+            return inEffect[0];
+        var earliest = await db.Table<TeeVersionRow>().Where(v => v.TeeId == teeId).OrderBy(v => v.EffectiveFrom).Take(1).ToListAsync();
+        return earliest.FirstOrDefault();
     }
 
     /// <summary>The hole layout of a tee version as domain <see cref="HoleInfo"/>, by hole number.</summary>

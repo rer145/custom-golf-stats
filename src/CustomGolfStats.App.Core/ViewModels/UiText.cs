@@ -1,4 +1,5 @@
 using CustomGolfStats.App.Core.Sync;
+using CustomGolfStats.Domain.Courses;
 using CustomGolfStats.Domain.Holes;
 using CustomGolfStats.Domain.Shots;
 
@@ -56,12 +57,29 @@ public static class UiText
     // ---- courses ----
     public const string CourseNameMissing = "Enter the course name.";
     public const string TeeNameMissing = "Enter the tee name.";
-    public const string HoleCountInvalid = "A course has 9 or 18 holes.";
-    public const string RatingInvalid = "Enter the course rating, for example 71.4.";
-    public const string SlopeInvalid = "Slope must be between 55 and 155.";
-    public const string ParInvalid = "Par must be 3, 4 or 5.";
-    public const string YardageInvalid = "Enter a yardage for every hole.";
-    public const string StrokeIndexInvalid = "Stroke index must use each number from 1 to the number of holes once.";
+    public const string DefaultTeeName = "White";
+
+    /// <summary>The message for a tee layout problem; every number comes from <see cref="CourseLimits"/>, the same limits the server enforces.</summary>
+    public static string Describe(CourseError error) => error switch
+    {
+        CourseError.RatingMissing => "Enter the course rating, for example 71.4.",
+        CourseError.RatingOutOfRange => $"The course rating must be between {CourseLimits.MinRating:0.0} and {CourseLimits.MaxRating:0.0}.",
+        CourseError.SlopeMissing => "Enter the slope rating, for example 125.",
+        CourseError.SlopeOutOfRange => $"Slope must be between {CourseLimits.MinSlope} and {CourseLimits.MaxSlope}.",
+        CourseError.NoHoles => "Add at least one hole.",
+        CourseError.TooManyHoles => $"A tee has at most {CourseLimits.MaxHoles} holes.",
+        CourseError.HoleNumberOutOfRange => $"Hole numbers are between 1 and {CourseLimits.MaxHoles}.",
+        CourseError.HoleNumberRepeated => "A hole number is used more than once.",
+        CourseError.ParOutOfRange => $"Par must be between {CourseLimits.MinPar} and {CourseLimits.MaxPar}.",
+        CourseError.YardageOutOfRange => $"Yardage must be between {CourseLimits.MinYardage} and {CourseLimits.MaxYardage}.",
+        CourseError.StrokeIndexOutOfRange => "Stroke index must be between 1 and the number of holes.",
+        CourseError.StrokeIndexRepeated => "Each stroke index from 1 to the number of holes must be used once.",
+        _ => error.ToString(),
+    };
+
+    public static string TeeDescription(int par, double rating, int slope) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Par {par} · {rating:0.0}/{slope}");
+
     public const string ProviderSearchOffline = "Online course search needs a connection. Your saved courses are shown below.";
     public const string ProviderSearchFailed = "Online course search is unavailable right now. Your saved courses are shown below.";
     public const string ImportFailed = "That course could not be imported right now. Try again later or add it by hand.";
@@ -77,7 +95,11 @@ public static class UiText
     public const string HandicapInvalid = "A handicap index is between -10.0 and 54.0.";
     public const string NeedConnection = "This needs a connection.";
     public const string ProfileSaveFailed = "Your profile could not be saved. Please try again.";
-    public const string ProfileLoadFailed = "Your profile could not be loaded. Showing what is saved on this device.";
+    public const string ProfileLoadFailed = "Your profile could not be loaded. Your handicap history below is saved on this device.";
+    public const string SyncFailedUnexpectedly = "Syncing stopped unexpectedly. Your changes are safe on this device; try again in a moment.";
+    public const string NoValue = "-";
+    public const string UnitFeet = "ft";
+    public const string UnitYards = "yd";
 
     // ---- sync status ----
     public const string StatusNeverSynced = "Not synced yet";

@@ -22,6 +22,8 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
     /// <summary>What the golfer should be told about, once each until the condition clears or they dismiss it.</summary>
     public ObservableCollection<SyncNotice> Notices { get; } = [];
 
+    private SyncResult? _lastResult;
+
     [ObservableProperty] private string _syncStatus = UiText.StatusNeverSynced;
     [ObservableProperty] private bool _isSyncing;
     [ObservableProperty] private int _pendingCount;
@@ -41,8 +43,19 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
             Rounds.Add(new RoundListItem(row.Id, row.CourseName, row.PlayedOn, data.Holes.Count, data.Score, data.ToPar, row.FinishedAt is not null, row.Dirty));
         }
         PendingCount = await db.Rounds.CountDirtyAsync();
-        if (!IsSyncing && !NeedsSignIn && SyncStatus is UiText.StatusNeverSynced or UiText.StatusSynced)
-            SyncStatus = PendingCount > 0 ? UiText.StatusWaiting(PendingCount) : SyncStatus;
+        RefreshStatus();
+    }
+
+    /// <summary>The status line from what is known now: the last sync result and how many changes are still waiting.</summary>
+    private void RefreshStatus()
+    {
+        SyncStatus = IsSyncing ? UiText.StatusSyncing
+            : _lastResult is { SignedOut: true } ? UiText.StatusSignedOut
+            : _lastResult is { Offline: true } ? UiText.StatusOffline
+            : _lastResult is { Failures.Count: > 0 } failed ? UiText.StatusProblems(failed.Failures.Count)
+            : PendingCount > 0 ? UiText.StatusWaiting(PendingCount)
+            : _lastResult is { PullCompleted: true } ? UiText.StatusSynced
+            : UiText.StatusNeverSynced;
     }
 
     [RelayCommand]
@@ -51,15 +64,20 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
         if (IsSyncing)
             return;
         IsSyncing = true;
-        SyncStatus = UiText.StatusSyncing;
+        ErrorMessage = null;
+        RefreshStatus();
         try
         {
-            var result = await sync.SyncAsync();
-            Apply(result);
+            Apply(await sync.SyncAsync());
         }
         catch (OperationCanceledException)
         {
-            SyncStatus = UiText.StatusOffline;
+            _lastResult = new SyncResult { Offline = true };
+        }
+        catch (Exception)
+        {
+            // Never let a sync problem take the home screen down; what is pending stays pending.
+            ErrorMessage = UiText.SyncFailedUnexpectedly;
         }
         finally
         {
@@ -71,12 +89,8 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
     /// <summary>Shows a sync result: the status line and any new notices.</summary>
     public void Apply(SyncResult result)
     {
+        _lastResult = result;
         NeedsSignIn = result.SignedOut;
-        SyncStatus = result.SignedOut ? UiText.StatusSignedOut
-            : result.Offline ? UiText.StatusOffline
-            : result.Failures.Count > 0 ? UiText.StatusProblems(result.Failures.Count)
-            : result.PullCompleted ? UiText.StatusSynced
-            : UiText.StatusOffline;
 
         var keys = new HashSet<(SyncNoticeKind, Guid?, Guid?)>();
         foreach (var notice in result.Notices)
@@ -90,6 +104,7 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
         // A sync that stopped early (offline, signed out) says nothing about whether a problem has cleared.
         if (!result.Offline && !result.SignedOut)
             _shown.IntersectWith(keys);
+        RefreshStatus();
     }
 
     /// <summary>Hides a notice. It stays suppressed while the same condition keeps being reported.</summary>
