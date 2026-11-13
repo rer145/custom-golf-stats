@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CustomGolfStats.App.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="sqlite-net-pcl" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CustomGolfStats.Domain\CustomGolfStats.Domain.csproj" />
+    <ProjectReference Include="..\CustomGolfStats.Api.Client\CustomGolfStats.Api.Client.csproj" />
+  </ItemGroup>
+
+</Project>
