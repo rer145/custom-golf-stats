@@ -55,6 +55,26 @@ export const routes: FakeRoute[] = [
     },
   },
   {
+    // DELETE /me: confirmed with the current password. The account goes, and with it every token it was issued (the
+    // fake's bearer and refresh checks look the user up, as the API checks the account and its security stamp).
+    method: 'DELETE',
+    path: '/me',
+    handler: (req) => {
+      const user = requireUser(req);
+      const b = (req.body ?? {}) as Partial<Schemas['DeleteAccountRequest']>;
+      if (!b.password && !b.externalIdToken) return problem(400, 'One or more validation errors occurred.', undefined, { password: ['Enter your password to confirm.'] });
+      if (b.password !== user.password) return problem(400, 'One or more validation errors occurred.', undefined, { password: ['The password is incorrect.'] });
+      const { state } = req;
+      if (user.role === 'Admin' && !state.users.some((u) => u !== user && u.role === 'Admin' && !u.disabled)) {
+        return problem(409, 'Conflict', 'You are the only admin. Make another account an admin before deleting yours.');
+      }
+      state.users.splice(state.users.indexOf(user), 1);
+      for (const [token, owner] of state.accessTokens) if (owner.email === user.email) state.accessTokens.delete(token);
+      for (const [token, owner] of state.refreshTokens) if (owner === user.email) state.refreshTokens.delete(token);
+      return { status: 204 };
+    },
+  },
+  {
     method: 'GET',
     path: '/me/handicap',
     handler: (req) => ok(sorted(history(req.state, requireUser(req).email))),

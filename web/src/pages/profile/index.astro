@@ -301,6 +301,14 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
         }
       </section>
     </div>
+
+    <section class="card account" aria-labelledby="account-heading">
+      <h2 id="account-heading" class="title">Delete account</h2>
+      <p class="muted">Permanently deletes your account, your rounds and your handicap history. You’ll confirm with your password.</p>
+      <div>
+        <a class="btn btn-secondary" href="/profile/delete">Delete account</a>
+      </div>
+    </section>
   </div>
 </AppLayout>
 
@@ -324,9 +332,14 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
     align-items: start;
   }
   .profile,
-  .handicap {
+  .handicap,
+  .account {
     display: grid;
     gap: var(--space-5);
+  }
+  .account {
+    margin-top: var(--space-6);
+    gap: var(--space-3);
   }
   .two {
     display: grid;
