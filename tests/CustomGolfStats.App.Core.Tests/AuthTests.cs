@@ -191,24 +191,52 @@ public class AuthTests
     }
 
     [Fact]
-    public async Task Tokens_never_reach_the_database_or_a_sync_result()
+    public async Task Tokens_never_reach_the_database_a_sync_result_its_failures_or_its_notices()
     {
-        await using var rig = await Sync.SyncRig.CreateAsync();
         var store = new FakeSecureStore();
-        var signIn = Build(_ => StubHandler.Json(HttpStatusCode.OK, Payloads.Tokens(Access1, Refresh1)));
-        await signIn.Session.Tokens.SignInAsync("a@b.c", "pw", TestContext.Current.CancellationToken);
-        rig.PutRound = _ => StubHandler.Status(HttpStatusCode.Unauthorized);
-        await rig.Temp.Db.Rounds.SaveAsync(Samples.FullShotRound());
+        store.Values[TokenService.AccessTokenKey] = Access1;
+        store.Values[TokenService.RefreshTokenKey] = Refresh1;
+        // The engine runs on the real authenticated client, so the bearer really travels with every request.
+        await using var rig = await Sync.SyncRig.CreateAsync(handler => ApiClientFactory.Create(StubHandler.BaseAddress, store, handler).Client);
+        var rejected = Samples.FullShotRound();
+        var broken = Samples.FullShotRound();
+        await rig.Temp.Db.Rounds.SaveAsync(rejected);
+        await rig.Temp.Db.Rounds.SaveAsync(broken);
+        rig.PutRound = r => SyncRigId(r) == rejected.Round.Id
+            ? StubHandler.Status(HttpStatusCode.BadRequest)
+            : StubHandler.Status(HttpStatusCode.InternalServerError);
 
         var result = await rig.SyncAsync();
 
-        Assert.DoesNotContain(Access1, result.ToString());
-        Assert.DoesNotContain(Refresh1, string.Join(' ', result.Failures));
-        var dbBytes = await File.ReadAllBytesAsync(rig.Temp.Path_, TestContext.Current.CancellationToken);
-        Assert.DoesNotContain(Access1, System.Text.Encoding.UTF8.GetString(dbBytes));
-        Assert.DoesNotContain(Refresh1, System.Text.Encoding.UTF8.GetString(dbBytes));
-        Assert.Empty(store.Values);
+        Assert.All(rig.Server.Requests, r => Assert.Equal(Access1, r.Bearer));
+        Assert.NotEmpty(result.Failures);
+        Assert.NotEmpty(result.Notices);
+        var everything = result + " " + string.Join(' ', result.Failures) + " " + string.Join(' ', result.Notices.Select(n => n.Message));
+        foreach (var token in new[] { Access1, Refresh1 })
+        {
+            Assert.DoesNotContain(token, everything);
+            var dbBytes = await File.ReadAllBytesAsync(rig.Temp.Path_, TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(token, System.Text.Encoding.UTF8.GetString(dbBytes));
+        }
+        Assert.Equal(Refresh1, store.Values[TokenService.RefreshTokenKey]); // still only in the secure store
     }
+
+    [Fact]
+    public async Task Only_the_credential_endpoints_skip_the_bearer()
+    {
+        var (session, stub, store) = Build(_ => StubHandler.Status(HttpStatusCode.OK));
+        store.Values[TokenService.AccessTokenKey] = Access1;
+        store.Values[TokenService.RefreshTokenKey] = Refresh1;
+        using var http = new HttpClient(new AuthHandler(session.Tokens) { InnerHandler = stub }) { BaseAddress = StubHandler.BaseAddress };
+
+        await http.GetAsync("/auth/manage/info", TestContext.Current.CancellationToken);
+        await http.PostAsync("/auth/login", new StringContent("{}"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(Access1, stub.Requests[0].Bearer);
+        Assert.Null(stub.Requests[1].Bearer);
+    }
+
+    private static Guid SyncRigId(Recorded r) => Guid.Parse(r.Path.Split('/')[2]);
 
     private static UpsertRoundRequest ApiMapperRequest() => new()
     {

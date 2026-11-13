@@ -1,9 +1,13 @@
 namespace CustomGolfStats.App.Core.Sync;
 
-public enum SyncNoticeKind { UpdatedFromAnotherDevice }
+public enum SyncNoticeKind { UpdatedFromAnotherDevice, CouldNotSync }
 
 /// <summary>Something the golfer should be told about. <see cref="Message"/> never contains tokens or server response text.</summary>
-public sealed record SyncNotice(SyncNoticeKind Kind, Guid? RoundId, string Message);
+public sealed record SyncNotice(SyncNoticeKind Kind, Guid? RoundId, string Message)
+{
+    /// <summary>Set when the notice is about a course (a manual course the server rejected).</summary>
+    public Guid? CourseId { get; init; }
+}
 
 /// <summary>The outcome of one <see cref="SyncEngine.SyncAsync"/> run.</summary>
 public sealed record SyncResult

@@ -48,11 +48,11 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             {
                 case ServerWriteMode.PullMode when local is { Dirty: true }:
                     return; // unsent local edit (or pending delete) wins until it is pushed
-                case ServerWriteMode.PushAcceptedMode when local is { DeletedAt: not null }:
+                case ServerWriteMode.GuardedMode when local is { DeletedAt: not null }:
                     return; // deleted locally: the DELETE is still to be sent, whatever the pushed clock value
-                case ServerWriteMode.PushAcceptedMode when local is null:
+                case ServerWriteMode.GuardedMode when local is null:
                     return; // the round was purged while its push was in flight: never bring it back
-                case ServerWriteMode.PushAcceptedMode accepted when local.ClientUpdatedAt != accepted.PushedClientUpdatedAt:
+                case ServerWriteMode.GuardedMode guarded when local.ClientUpdatedAt != guarded.PushedClientUpdatedAt:
                     // Edited (or deleted) during the push: keep the local round dirty, but record what the server now owns.
                     local.Version = record.Round.Version;
                     local.ModifiedAt = record.Round.ModifiedAt;
@@ -235,10 +235,17 @@ public abstract record ServerWriteMode
     /// local round exists and has not been edited since; otherwise the local round stays dirty (or stays gone).</summary>
     public static ServerWriteMode PushAccepted(DateTimeOffset pushedClientUpdatedAt) => new PushAcceptedMode(pushedClientUpdatedAt);
 
-    /// <summary>The 409 case: the server copy replaces the local round unconditionally.</summary>
-    public static ServerWriteMode ServerWins { get; } = new ServerWinsMode();
+    /// <summary>The 409 case for a push of the round as it was at <paramref name="pushedClientUpdatedAt"/>: the server copy replaces
+    /// the local round only if the local round has not been edited or deleted since the push started. Otherwise the local round
+    /// stays dirty (or a pending delete) and only the server-owned fields are recorded; its next push wins or gets a fresh 409.</summary>
+    public static ServerWriteMode ServerWins(DateTimeOffset pushedClientUpdatedAt) => new ServerWinsMode(pushedClientUpdatedAt);
+
+    /// <summary>Unconditional overwrite. Only for a deliberate "discard local changes"; sync must not use it.</summary>
+    public static ServerWriteMode Overwrite { get; } = new OverwriteMode();
 
     internal sealed record PullMode : ServerWriteMode;
-    internal sealed record PushAcceptedMode(DateTimeOffset PushedClientUpdatedAt) : ServerWriteMode;
-    internal sealed record ServerWinsMode : ServerWriteMode;
+    internal abstract record GuardedMode(DateTimeOffset PushedClientUpdatedAt) : ServerWriteMode;
+    internal sealed record PushAcceptedMode(DateTimeOffset PushedClientUpdatedAt) : GuardedMode(PushedClientUpdatedAt);
+    internal sealed record ServerWinsMode(DateTimeOffset PushedClientUpdatedAt) : GuardedMode(PushedClientUpdatedAt);
+    internal sealed record OverwriteMode : ServerWriteMode;
 }

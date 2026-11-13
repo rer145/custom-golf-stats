@@ -19,7 +19,7 @@ public sealed class SyncRig : IAsyncDisposable
     public Func<Recorded, HttpResponseMessage> PostCourse { get; set; } = _ => StubHandler.Json(HttpStatusCode.Created, new CourseDetailDto { Id = Samples.CourseId, Name = "x" });
     public Func<Recorded, HttpResponseMessage> Changes { get; set; } = _ => StubHandler.Json(HttpStatusCode.OK, Payloads.Changes(Cursor1));
 
-    public static async Task<SyncRig> CreateAsync()
+    public static async Task<SyncRig> CreateAsync(Func<StubHandler, ICustomGolfStatsApiClient>? clientFactory = null)
     {
         var temp = await TempDb.CreateAsync();
         SyncRig? rig = null;
@@ -27,7 +27,7 @@ public sealed class SyncRig : IAsyncDisposable
         rig = new SyncRig
         {
             Temp = temp, Server = handler,
-            Engine = new SyncEngine(temp.Db, handler.Client()),
+            Engine = new SyncEngine(temp.Db, clientFactory?.Invoke(handler) ?? handler.Client()),
         };
         await rig.SeedCourseAsync();
         return rig;

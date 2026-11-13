@@ -8,24 +8,33 @@ namespace CustomGolfStats.App.Core.Sync;
 
 /// <summary>
 /// Push then pull. Order: pending local courses (POST), dirty rounds (PUT) and tombstones (DELETE), then
-/// <c>GET /sync/changes</c>. One sync at a time: a call made while one is running returns that run's result.
+/// <c>GET /sync/changes</c>. One sync at a time: a call made while one is running joins that run and gets its result. The run
+/// uses an engine-owned cancellation token (cancelled only by <see cref="Dispose"/>), so a caller's token only stops that caller's
+/// wait, never the run another caller joined.
 /// Nothing here discards unsent local work: server copies are written through <see cref="ServerWriteMode"/>, a failed push leaves
 /// the round dirty, and the pull cursor is stored only after the whole pull was applied.
 /// </summary>
-public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
+public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDisposable
 {
     private readonly object _gate = new();
+    private readonly CancellationTokenSource _lifetime = new();
     private Task<SyncResult>? _running;
 
+    /// <param name="ct">Stops only this caller's wait; the run itself carries on for any other caller.</param>
     public Task<SyncResult> SyncAsync(CancellationToken ct = default)
     {
+        Task<SyncResult> run;
         lock (_gate)
         {
-            if (_running is { IsCompleted: false } running)
-                return running;
-            return _running = RunAsync(ct);
+            if (_running is not { IsCompleted: false })
+                _running = RunAsync(_lifetime.Token);
+            run = _running;
         }
+        return run.WaitAsync(ct);
     }
+
+    /// <summary>Cancels a run in progress (app shutdown). Unsent work stays dirty.</summary>
+    public void Dispose() => _lifetime.Cancel();
 
     private async Task<SyncResult> RunAsync(CancellationToken ct)
     {
@@ -79,6 +88,9 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
             catch (ApiException ex)
             {
                 run.Failures.Add($"POST /courses {course.Course.Id}: HTTP {ex.StatusCode}");
+                if (IsPermanentRejection(ex.StatusCode))
+                    run.Notices.Add(new SyncNotice(SyncNoticeKind.CouldNotSync, null,
+                        $"The course \"{course.Course.Name}\" could not be saved to your account (the server rejected it, HTTP {ex.StatusCode}).") { CourseId = course.Course.Id });
                 stillPending.Add(course.Course.Id);
             }
             catch (Exception ex) when (IsNetworkFailure(ex, ct))
@@ -113,6 +125,9 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
             catch (ApiException ex)
             {
                 run.Failures.Add($"round {id}: HTTP {ex.StatusCode}");
+                if (IsPermanentRejection(ex.StatusCode))
+                    run.Notices.Add(new SyncNotice(SyncNoticeKind.CouldNotSync, id,
+                        $"The round at {round.Round.CourseName} on {round.Round.PlayedOn:yyyy-MM-dd} could not be synced (the server rejected it, HTTP {ex.StatusCode}). It is still saved on this device."));
             }
             catch (Exception ex) when (IsNetworkFailure(ex, ct))
             {
@@ -146,11 +161,16 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
         }
         catch (ApiException<RoundDto> conflict) when (conflict.StatusCode == 409)
         {
-            // The server has a newer version of this round (another device): its copy wins.
-            await db.Rounds.SaveFromServerAsync(ApiMapper.ToRecord(conflict.Result), ServerWriteMode.ServerWins);
-            run.Conflicts++;
-            run.Notices.Add(new SyncNotice(SyncNoticeKind.UpdatedFromAnotherDevice, round.Round.Id,
-                $"The round at {round.Round.CourseName} on {round.Round.PlayedOn:yyyy-MM-dd} was updated from another device."));
+            // The server has a newer version of this round (another device): its copy wins, unless the golfer edited or
+            // deleted the round while the PUT was in flight, in which case the local change stays and is pushed next time.
+            var serverCopy = conflict.Result;
+            if (await db.Rounds.SaveFromServerAsync(ApiMapper.ToRecord(serverCopy), ServerWriteMode.ServerWins(pushed)))
+            {
+                run.Conflicts++;
+                var what = serverCopy.DeletedAt is not null ? "was deleted on another device" : "was updated from another device";
+                run.Notices.Add(new SyncNotice(SyncNoticeKind.UpdatedFromAnotherDevice, round.Round.Id,
+                    $"The round at {round.Round.CourseName} on {round.Round.PlayedOn:yyyy-MM-dd} {what}."));
+            }
         }
     }
 
@@ -163,35 +183,46 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
             var since = await db.SyncState.GetNextSinceAsync();
             var changes = await api.SyncChangesAsync(since?.ToString("O", CultureInfo.InvariantCulture), ct);
 
+            // A record that cannot be mapped is skipped and reported; one bad record must not block sync forever.
             // Courses first so rounds always find their course.
-            foreach (var course in changes.Courses ?? [])
+            foreach (var dto in changes.Courses ?? [])
             {
-                await db.Courses.SaveFromServerAsync(ApiMapper.ToRecord(course));
+                if (!TryMap(run, $"course {dto.Id}", () => ApiMapper.ToRecord(dto), out var course))
+                    continue;
+                await db.Courses.SaveFromServerAsync(course);
                 run.PulledCourses++;
             }
 
-            var handicap = (changes.HandicapEntries ?? []).Select(ApiMapper.ToRow).ToList();
+            var handicap = new List<HandicapRow>();
+            foreach (var dto in changes.HandicapEntries ?? [])
+                if (TryMap(run, $"handicap entry {dto.Id}", () => ApiMapper.ToRow(dto), out var row))
+                    handicap.Add(row);
             await db.Handicap.UpsertAsync(handicap);
             run.PulledHandicap += handicap.Count;
 
-            if (changes.Entitlements?.Tier is not null && changes.Entitlements.Role is not null)
-                await db.Entitlements.SaveAsync(ApiMapper.ToRow(changes.Entitlements));
+            // The server is the source of truth for entitlements. After an offline trial round that has not been pushed yet, this
+            // can restore a higher trial count than the local decrement left; spec section 2 tolerates that.
+            if (changes.Entitlements is { Tier: not null, Role: not null } entitlements
+                && TryMap(run, "entitlements", () => ApiMapper.ToRow(entitlements), out var entitlementsRow))
+                await db.Entitlements.SaveAsync(entitlementsRow);
 
             foreach (var dto in changes.Rounds ?? [])
             {
+                if (!TryMap(run, $"round {dto.Id}", () => ApiMapper.ToRecord(dto), out var record))
+                    continue;
                 var local = await db.Connection.FindAsync<RoundRow>(dto.Id);
                 if (local is not null && local.Version > dto.Version)
                 {
                     run.SkippedPulled++; // an older copy of what we already hold
                     continue;
                 }
-                if (await db.Rounds.SaveFromServerAsync(ApiMapper.ToRecord(dto), ServerWriteMode.Pull))
+                if (await db.Rounds.SaveFromServerAsync(record, ServerWriteMode.Pull))
                     run.PulledRounds++;
                 else
                     run.SkippedPulled++;
             }
 
-            // Only now, with everything applied, move the cursor.
+            // Only now, with everything applied (or reported), move the cursor.
             await db.SyncState.SetNextSinceAsync(changes.NextSince);
             run.PullCompleted = true;
         }
@@ -204,6 +235,24 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api)
             run.Failures.Add($"GET /sync/changes: HTTP {ex.StatusCode}");
         }
     }
+
+    private static bool TryMap<T>(Run run, string what, Func<T> map, out T value)
+    {
+        try
+        {
+            value = map();
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Failures.Add($"pulled {what} could not be read and was skipped");
+            value = default!;
+            return false;
+        }
+    }
+
+    /// <summary>A 4xx that retrying will not fix (not auth, timeout or rate limiting).</summary>
+    private static bool IsPermanentRejection(int status) => status is >= 400 and < 500 and not (401 or 408 or 429);
 
     private static bool IsNetworkFailure(Exception ex, CancellationToken ct) =>
         ex is HttpRequestException or IOException || (ex is TaskCanceledException && !ct.IsCancellationRequested);

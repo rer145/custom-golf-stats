@@ -3,12 +3,18 @@ using System.Net.Http.Headers;
 
 namespace CustomGolfStats.App.Core.ApiAccess;
 
-/// <summary>Attaches the bearer token; on a 401 refreshes once and retries the request once. /auth/* calls pass through untouched.</summary>
+/// <summary>Attaches the bearer token; on a 401 refreshes once and retries the request once. The credential endpoints (login, register, refresh, external) pass through untouched.</summary>
 public sealed class AuthHandler(TokenService tokens) : DelegatingHandler
 {
+    /// <summary>The credential endpoints, which never carry a bearer and never trigger a refresh. Other /auth/* calls (manage/2fa) need one.</summary>
+    private static readonly HashSet<string> AnonymousPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/auth/login", "/auth/register", "/auth/refresh", "/auth/external",
+    };
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (request.RequestUri is { AbsolutePath: var path } && path.StartsWith("/auth/", StringComparison.OrdinalIgnoreCase))
+        if (request.RequestUri is { AbsolutePath: var path } && AnonymousPaths.Contains(path.TrimEnd('/')))
             return await base.SendAsync(request, cancellationToken);
 
         // Buffer the body so the request can be replayed after a refresh (a request message can only be sent once).
