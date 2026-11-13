@@ -26,7 +26,7 @@ public static class ApiMapper
         if (dto.DeletedAt is not null)
             return new RoundRecord(round, []);
 
-        var holes = (dto.Holes ?? []).OrderBy(h => h.HoleNumber).Select(h =>
+        var holes = (dto.Holes ?? []).OrderBy(h => h.EntrySequence).Select(h =>
         {
             var row = new HoleRow
             {
@@ -35,7 +35,7 @@ public static class ApiMapper
                 TeeShotShort = h.TeeShotShort, Gir = h.Gir, PenaltyStrokes = h.PenaltyStrokes, GreensideSandShots = h.GreensideSandShots,
                 FairwaySandShots = h.FairwaySandShots, IsDerived = h.IsDerived,
             };
-            var shots = (h.Shots ?? []).OrderBy(s => s.Sequence).Select(s => ToRow(dto.Id, h.HoleNumber, s)).ToList();
+            var shots = (h.Shots ?? []).OrderBy(s => s.Sequence).Select(s => ToRow(dto.Id, h.EntrySequence, s)).ToList();
             return new HoleRecord(row, shots);
         }).ToList();
         return new RoundRecord(round, holes);
@@ -52,7 +52,7 @@ public static class ApiMapper
             Notes = r.Notes, WeatherConditions = r.WeatherConditions, TemperatureF = r.TemperatureF, WindSpeedMph = r.WindSpeedMph,
             WindDirectionDegrees = r.WindDirectionDegrees, DurationMinutes = r.DurationMinutes, DistanceMiles = r.DistanceMiles,
             StepCount = r.StepCount, ClientUpdatedAt = r.ClientUpdatedAt,
-            Holes = record.Holes.OrderBy(h => h.Hole.HoleNumber).Select(h => new ApiClient.UpsertHoleRequest
+            Holes = record.Holes.OrderBy(h => h.Hole.EntrySequence).Select(h => new ApiClient.UpsertHoleRequest
             {
                 HoleNumber = h.Hole.HoleNumber, EntrySequence = h.Hole.EntrySequence, Score = h.Hole.Score, Putts = h.Hole.Putts,
                 FairwayHit = h.Hole.FairwayHit, TeeShotLeft = h.Hole.TeeShotLeft, TeeShotRight = h.Hole.TeeShotRight,
@@ -63,9 +63,9 @@ public static class ApiMapper
         };
     }
 
-    private static ShotRow ToRow(Guid roundId, int holeNumber, ApiClient.ShotDto s) => new()
+    private static ShotRow ToRow(Guid roundId, int entrySequence, ApiClient.ShotDto s) => new()
     {
-        RoundId = roundId, HoleNumber = holeNumber, Sequence = s.Sequence, StartLie = Convert<Dom.Lie>(s.StartLie), StartDistance = s.StartDistance,
+        RoundId = roundId, EntrySequence = entrySequence, Sequence = s.Sequence, StartLie = Convert<Dom.Lie>(s.StartLie), StartDistance = s.StartDistance,
         Club = Convert<Dom.Club>(s.Club), ShotType = Convert<Dom.ShotType>(s.ShotType), EndLie = Convert<Dom.Lie>(s.EndLie),
         EndDistance = s.EndDistance, Direction = Convert<Dom.Direction>(s.Direction),
         Shape = s.Shape is { } shape ? Convert<Dom.Shape>(shape) : null, PenaltyStrokes = s.PenaltyStrokes,
@@ -81,29 +81,51 @@ public static class ApiMapper
 
     // ---- courses ----
 
-    /// <summary>A server course (from sync) as a not-pending local record.</summary>
+    /// <summary>A server course (from sync) as a not-pending local record. <c>UpdatedAt</c> is the server's.</summary>
     public static CourseRecord ToRecord(ApiClient.SyncCourseDto dto)
     {
-        var course = new CourseRow
-        {
-            Id = dto.Id, Name = dto.Name ?? "", ClubName = dto.ClubName, Address = dto.Address, City = dto.City, Region = dto.Region,
-            Country = dto.Country, Phone = dto.Phone, Website = dto.Website, Latitude = dto.Latitude, Longitude = dto.Longitude,
-            Status = dto.Status, Source = dto.Source, MergedIntoCourseId = dto.MergedIntoCourseId, UpdatedAt = dto.UpdatedAt, PendingSync = false,
-        };
-        var tees = (dto.Tees ?? []).Select(t => new TeeRecord(
-            new TeeRow { Id = t.Id, CourseId = dto.Id, Name = t.Name ?? "", Gender = t.Gender },
-            (t.Versions ?? []).Select(v => new TeeVersionRecord(
-                new TeeVersionRow
-                {
-                    Id = v.Id, TeeId = t.Id, EffectiveFrom = v.EffectiveFrom.DateTime.Date, Par = v.Par, Rating = v.Rating, Slope = v.Slope,
-                    FrontPar = v.FrontPar, FrontRating = v.FrontRating, FrontSlope = v.FrontSlope,
-                    BackPar = v.BackPar, BackRating = v.BackRating, BackSlope = v.BackSlope,
-                },
-                (v.Holes ?? []).OrderBy(h => h.Number)
-                    .Select(h => new TeeHoleRow { TeeVersionId = v.Id, Number = h.Number, Par = h.Par, Yardage = h.Yardage, StrokeIndex = h.StrokeIndex })
-                    .ToList())).ToList())).ToList();
+        var tees = (dto.Tees ?? []).Select(t => ToTee(dto.Id, t.Id, t.Name, t.Gender,
+            (t.Versions ?? []).Select(v => ToVersion(t.Id, v.Id, v.EffectiveFrom, v.Par, v.Rating, v.Slope, v.FrontPar, v.FrontRating, v.FrontSlope,
+                v.BackPar, v.BackRating, v.BackSlope, v.Holes)))).ToList();
+        var course = ToCourse(dto.Id, dto.Name, dto.ClubName, dto.Address, dto.City, dto.Region, dto.Country, dto.Phone, dto.Website, dto.Latitude,
+            dto.Longitude, dto.Status, dto.Source, dto.MergedIntoCourseId, dto.UpdatedAt);
         return new CourseRecord(course, tees);
     }
+
+    /// <summary>A course returned by import/create/read as a not-pending local record. The detail has no modified time, so
+    /// <paramref name="receivedAt"/> (the caller's clock) stands in for <c>UpdatedAt</c>.</summary>
+    public static CourseRecord ToRecord(ApiClient.CourseDetailDto dto, DateTimeOffset receivedAt)
+    {
+        var tees = (dto.Tees ?? []).Select(t => ToTee(dto.Id, t.Id, t.Name, t.Gender,
+            (t.Versions ?? []).Select(v => ToVersion(t.Id, v.Id, v.EffectiveFrom, v.Par, v.Rating, v.Slope, v.FrontPar, v.FrontRating, v.FrontSlope,
+                v.BackPar, v.BackRating, v.BackSlope, v.Holes)))).ToList();
+        var course = ToCourse(dto.Id, dto.Name, dto.ClubName, dto.Address, dto.City, dto.Region, dto.Country, dto.Phone, dto.Website, dto.Latitude,
+            dto.Longitude, dto.Status, dto.Source, dto.MergedIntoCourseId, receivedAt);
+        return new CourseRecord(course, tees);
+    }
+
+    private static CourseRow ToCourse(Guid id, string? name, string? clubName, string? address, string? city, string? region, string? country,
+        string? phone, string? website, double? latitude, double? longitude, ApiClient.CourseStatus status, ApiClient.CourseSource source,
+        Guid? mergedInto, DateTimeOffset updatedAt) => new()
+    {
+        Id = id, Name = name ?? "", ClubName = clubName, Address = address, City = city, Region = region, Country = country, Phone = phone,
+        Website = website, Latitude = latitude, Longitude = longitude, Status = status, Source = source, MergedIntoCourseId = mergedInto,
+        UpdatedAt = updatedAt, PendingSync = false,
+    };
+
+    private static TeeRecord ToTee(Guid courseId, Guid id, string? name, ApiClient.Gender gender, IEnumerable<TeeVersionRecord> versions) =>
+        new(new TeeRow { Id = id, CourseId = courseId, Name = name ?? "", Gender = gender }, versions.ToList());
+
+    private static TeeVersionRecord ToVersion(Guid teeId, Guid id, DateTimeOffset effectiveFrom, int par, double rating, int slope, int? frontPar,
+        double? frontRating, int? frontSlope, int? backPar, double? backRating, int? backSlope, ICollection<ApiClient.TeeHoleDto>? holes) =>
+        new(new TeeVersionRow
+            {
+                Id = id, TeeId = teeId, EffectiveFrom = effectiveFrom.DateTime.Date, Par = par, Rating = rating, Slope = slope,
+                FrontPar = frontPar, FrontRating = frontRating, FrontSlope = frontSlope, BackPar = backPar, BackRating = backRating, BackSlope = backSlope,
+            },
+            (holes ?? []).OrderBy(h => h.Number)
+                .Select(h => new TeeHoleRow { TeeVersionId = id, Number = h.Number, Par = h.Par, Yardage = h.Yardage, StrokeIndex = h.StrokeIndex })
+                .ToList());
 
     /// <summary>The body for <c>POST /courses</c> of a course created on this device: client ids, each tee's latest version.</summary>
     public static ApiClient.CreateCourseRequest ToCreateRequest(CourseRecord record)

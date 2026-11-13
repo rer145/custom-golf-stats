@@ -4,6 +4,9 @@ namespace CustomGolfStats.Domain.Shots;
 
 public static class HoleSummaryDeriver
 {
+    /// <summary>Strokes taken so far: one per shot plus every penalty stroke. Works on a hole still in progress.</summary>
+    public static int Strokes(IReadOnlyList<Shot> shots) => shots.Count + shots.Sum(s => s.PenaltyStrokes);
+
     /// <summary>
     /// Derives a hole summary from shot-by-shot data. For shot-entered holes this is the GIR authority:
     /// a penalty taken after the ball reached the green does not affect GIR, unlike
@@ -19,7 +22,7 @@ public static class HoleSummaryDeriver
         var ordered = shots.OrderBy(s => s.Sequence).ToList();
         var first = ordered[0];
         var penalties = ordered.Sum(s => s.PenaltyStrokes);
-        var score = ordered.Count + penalties;
+        var score = Strokes(ordered);
         var drivingHole = DrivingHole.IsDrivingHole(hole.Par);
 
         var running = 0;

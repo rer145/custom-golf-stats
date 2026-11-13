@@ -32,25 +32,41 @@ public sealed class EntitlementsRepository(SQLiteAsyncConnection db, IClock cloc
         await db.InsertOrReplaceAsync(row);
     }
 
+    /// <summary>Gives back a trial round consumed by <see cref="TryConsumeTrialRoundAsync"/> when the round could not be created.</summary>
+    public Task RefundTrialRoundAsync() => db.RunInTransactionAsync(c =>
+    {
+        var row = c.Find<EntitlementsRow>(EntitlementsRow.SingletonId);
+        if (row is not { TrialShotRoundsRemaining: { } remaining })
+            return;
+        row.TrialShotRoundsRemaining = remaining + 1;
+        row.ShotByShotEntry = true;
+        row.UpdatedAt = clock.UtcNow;
+        c.Update(row);
+    });
+
     /// <summary>
     /// Offline start of a shot-by-shot round: true when allowed. Paid (or unlimited) consumes nothing; a free golfer's cached
     /// remaining count is decremented (never below zero) and the feature closes at zero. Nothing cached means no.
     /// The server stays the source of truth and overwrites the cache on the next sync.
     /// </summary>
-    public async Task<bool> TryConsumeTrialRoundAsync()
+    public async Task<bool> TryConsumeTrialRoundAsync() => (await TryUseShotByShotAsync()).Allowed;
+
+    /// <summary>Like <see cref="TryConsumeTrialRoundAsync"/> but also says whether the trial count actually went down, which is
+    /// what a later <see cref="RefundTrialRoundAsync"/> must undo.</summary>
+    public async Task<TrialUse> TryUseShotByShotAsync()
     {
-        var allowed = false;
+        var result = new TrialUse(false, false);
         await db.RunInTransactionAsync(c =>
         {
             var row = c.Find<EntitlementsRow>(EntitlementsRow.SingletonId);
             if (row is null || !row.ShotByShotEntry)
                 return;
-            allowed = true;
+            result = new TrialUse(true, false);
             if (row.TrialShotRoundsRemaining is not { } remaining)
                 return;
             if (remaining <= 0)
             {
-                allowed = false;
+                result = new TrialUse(false, false);
                 return;
             }
             row.TrialShotRoundsRemaining = remaining - 1;
@@ -58,10 +74,14 @@ public sealed class EntitlementsRepository(SQLiteAsyncConnection db, IClock cloc
                 row.ShotByShotEntry = false;
             row.UpdatedAt = clock.UtcNow;
             c.Update(row);
+            result = new TrialUse(true, true);
         });
-        return allowed;
+        return result;
     }
 }
+
+/// <summary>The outcome of starting a shot-by-shot round: whether it is allowed and whether a trial round was used up for it.</summary>
+public readonly record struct TrialUse(bool Allowed, bool CountDropped);
 
 public sealed class SyncStateRepository(SQLiteAsyncConnection db)
 {

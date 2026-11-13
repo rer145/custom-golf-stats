@@ -162,7 +162,7 @@ public class SyncEngineRobustnessTests
         };
         using var cancelFirst = new CancellationTokenSource();
 
-        var first = rig.Engine.SyncAsync(cancelFirst.Token);
+        var first = Task.Run(() => rig.Engine.SyncAsync(cancelFirst.Token));
         while (!rig.Server.Requests.Any(r => r.Method == HttpMethod.Put))
             await Task.Delay(10, TestContext.Current.CancellationToken);
         var second = rig.Engine.SyncAsync(TestContext.Current.CancellationToken);

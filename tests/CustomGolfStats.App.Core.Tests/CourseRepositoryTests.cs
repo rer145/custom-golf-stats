@@ -129,10 +129,23 @@ public class CourseRepositoryTests
 
         var asOf2024 = await t.Db.Courses.GetVersionInEffectAsync(Samples.TeeId, new DateTime(2024, 6, 1));
         var asOf2026 = await t.Db.Courses.GetVersionInEffectAsync(Samples.TeeId, new DateTime(2026, 6, 1));
-        var before = await t.Db.Courses.GetVersionInEffectAsync(Samples.TeeId, new DateTime(2010, 1, 1));
 
         Assert.Equal(Samples.TeeVersionId, asOf2024!.Id);
         Assert.Equal(v2.Id, asOf2026!.Id);
-        Assert.Null(before);
+    }
+
+    [Fact]
+    public async Task A_date_before_the_first_version_uses_the_earliest_one_like_the_API()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var course = Samples.Course();
+        var v2 = new TeeVersionRow { Id = Guid.NewGuid(), TeeId = Samples.TeeId, EffectiveFrom = new DateTime(2025, 1, 1), Par = 72, Rating = 72.0, Slope = 133 };
+        course.Tees[0].Versions.Add(new TeeVersionRecord(v2, []));
+        await t.Db.Courses.SaveAsync(course);
+
+        var before = await t.Db.Courses.GetVersionInEffectAsync(Samples.TeeId, new DateTime(2010, 1, 1));
+
+        Assert.Equal(Samples.TeeVersionId, before!.Id); // sample version is effective 2020: the earliest
+        Assert.Null(await t.Db.Courses.GetVersionInEffectAsync(Guid.NewGuid(), new DateTime(2026, 1, 1))); // a tee with no versions
     }
 }

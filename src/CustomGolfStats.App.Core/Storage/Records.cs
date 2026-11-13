@@ -14,12 +14,12 @@ public sealed record HoleRecord(HoleRow Hole, IReadOnlyList<ShotRow> Shots)
     public static HoleRecord FromShots(Guid roundId, HoleInfo info, int entrySequence, IReadOnlyList<Shot> shots)
     {
         var summary = HoleSummaryDeriver.Derive(info, entrySequence, shots);
-        var rows = shots.OrderBy(s => s.Sequence).Select(s => ShotRow.FromShot(roundId, info.Number, s)).ToList();
+        var rows = shots.OrderBy(s => s.Sequence).Select(s => ShotRow.FromShot(roundId, entrySequence, s)).ToList();
         return new HoleRecord(HoleRow.FromSummary(roundId, summary, isDerived: true), rows);
     }
 }
 
-/// <summary>A round with its holes (ordered by hole number) and their shots.</summary>
+/// <summary>A round with its holes (ordered by entry sequence) and their shots.</summary>
 public sealed record RoundRecord(RoundRow Round, IReadOnlyList<HoleRecord> Holes)
 {
     public RoundData ToRoundData() => new(Round.Id, DateOnly.FromDateTime(Round.PlayedOn), Round.CourseId, Round.CourseName,
