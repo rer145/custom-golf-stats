@@ -67,6 +67,29 @@
     <TrimmerRootAssembly Include="CustomGolfStats.Api.Client" RootMode="All" />
   </ItemGroup>
 
+  <!-- Development-only platform settings: plain HTTP to the local API (iOS ATS exception, Android cleartext to 10.0.2.2). Debug
+       builds get them; a Release build can opt in with -p:AllowLocalCleartext=true to smoke-test against a local API. -->
+  <PropertyGroup>
+    <UseLocalCleartext Condition="'$(Configuration)' == 'Debug' or '$(AllowLocalCleartext)' == 'true'">true</UseLocalCleartext>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' == 'true' and '$(TargetFramework)' == 'net10.0-ios'">
+    <PartialAppManifest Include="Platforms\iOS\Info.Debug.plist" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' == 'true' and '$(TargetFramework)' == 'net10.0-android'">
+    <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config.xml" />
+    <AndroidResource Include="Platforms\Android\DebugResources\xml\network_security_config.xml" Link="Platforms\Android\Resources\xml\network_security_config.xml" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' != 'true' or '$(TargetFramework)' != 'net10.0-android'">
+    <AndroidResource Remove="Platforms\Android\DebugResources\**" />
+    <None Remove="Platforms\Android\DebugResources\**" />
+  </ItemGroup>
+
+  <!-- A store build must name its API: without -p:ApiBaseUrl a Release mobile build would talk to 127.0.0.1. -->
+  <Target Name="RequireApiBaseUrlForRelease" BeforeTargets="BeforeBuild"
+          Condition="'$(Configuration)' == 'Release' and '$(ApiBaseUrl)' == '' and ('$(TargetFramework)' == 'net10.0-ios' or '$(TargetFramework)' == 'net10.0-android')">
+    <Error Code="CGS0001" Text="Release builds for iOS and Android need the API address: dotnet build -c Release -p:ApiBaseUrl=https://api.example.com/" />
+  </Target>
+
   <!-- API base URL for this build: dotnet build -p:ApiBaseUrl=https://api.example.com/ (see Composition/AppConfig.cs). -->
   <ItemGroup Condition="'$(ApiBaseUrl)' != ''">
     <AssemblyMetadata Include="ApiBaseUrl" Value="$(ApiBaseUrl)" />

@@ -55,7 +55,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
-          <TextBox InputScope="Number" Header="Course rating" PlaceholderText="71.2" Text="{Binding Rating, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="CurrencyAmount" Header="Course rating" PlaceholderText="71.2" Text="{Binding Rating, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
           <TextBox InputScope="Number" Grid.Column="1" Header="Slope" PlaceholderText="128" Text="{Binding Slope, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
         </Grid>
 

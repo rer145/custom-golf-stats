@@ -59,11 +59,12 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBox InputScope="Number" Header="New index" PlaceholderText="e.g. 12.4" Text="{Binding NewHandicapIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="Formula" Header="New index" PlaceholderText="e.g. 12.4 or +2.1" Text="{x:Bind ViewModel.NewHandicapText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
           <CalendarDatePicker Grid.Column="1" Header="Effective" Date="{Binding NewHandicapDate, Mode=TwoWay, Converter={StaticResource DateOffset}}"
                               HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" DateFormat="{}{day.integer} {month.abbreviated} {year.full}" />
           <Button Grid.Column="2" Content="+ Add" Command="{x:Bind ViewModel.AddHandicapCommand}" Style="{StaticResource BrandAccentButtonStyle}" VerticalAlignment="Bottom" />
         </Grid>
+        <TextBlock Text="A plus handicap (better than scratch) starts with +, like +2.1." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
         <ItemsControl ItemsSource="{x:Bind ViewModel.HandicapErrors}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="x:String">

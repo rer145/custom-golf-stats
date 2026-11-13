@@ -95,12 +95,12 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <TextBox InputScope="Number" Header="Temperature (°F)" Text="{Binding TemperatureF, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
-          <TextBox InputScope="Number" Grid.Column="1" Header="Wind (mph)" Text="{Binding WindSpeedMph, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="CurrencyAmount" Header="Temperature (°F)" Text="{Binding TemperatureF, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="CurrencyAmount" Grid.Column="1" Header="Wind (mph)" Text="{Binding WindSpeedMph, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
           <TextBox InputScope="Number" Grid.Row="1" Header="Wind from (°)" Text="{Binding WindDirectionDegrees, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
           <TextBox InputScope="Number" Grid.Row="1" Grid.Column="1" Header="Duration (min)" Text="{Binding DurationMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
           <TextBox InputScope="Number" Grid.Row="2" Header="Steps" Text="{Binding StepCount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
-          <TextBox InputScope="Number" Grid.Row="2" Grid.Column="1" Header="Distance (mi)" Text="{Binding DistanceMiles, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="CurrencyAmount" Grid.Row="2" Grid.Column="1" Header="Distance (mi)" Text="{Binding DistanceMiles, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
         </Grid>
         <ItemsControl ItemsSource="{x:Bind ViewModel.ExtrasErrors}">
           <ItemsControl.ItemTemplate>

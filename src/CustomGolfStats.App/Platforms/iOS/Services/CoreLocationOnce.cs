@@ -38,7 +38,8 @@ public sealed class CoreLocationOnce : ILocationOnce
                 tcs.TrySetResult(false);
             }
         });
-        ct.Register(() => tcs.TrySetResult(false));
+        var registration = ct.Register(() => tcs.TrySetResult(false));
+        _ = tcs.Task.ContinueWith(_ => registration.Dispose(), TaskScheduler.Default);
         return tcs.Task;
     }
 

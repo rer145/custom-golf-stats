@@ -110,7 +110,8 @@ public static class Display
         $"{ShortDate(playedOn)}  ·  {Holes(holes)}{(finished ? "" : "  ·  in progress")}";
     public static string Score(int score) => score.ToString(Inv);
     public static string SuggestedGir(bool suggested) => suggested ? "Suggested: green in regulation" : "Suggested: missed green";
-    public static string Handicap(double? index) => index is { } i ? i.ToString("0.0", Inv) : Core.ViewModels.UiText.NoValue;
+    /// <summary>A plus handicap (stored negative) shows as "+2.1".</summary>
+    public static string Handicap(double? index) => HandicapText.Format(index);
 
     public static string AddHoleText(int? suggested) => suggested is { } n ? $"+ Add hole {n}" : "+ Add a hole";
     public static string ShotButtonText(int? editingIndex) => editingIndex is null ? "+ Add shot" : "Save shot changes";
@@ -172,7 +173,8 @@ public sealed partial class EnumTextConverter : IValueConverter
 
 /// <summary>
 /// A TextBox's text to a numeric view model property, updated as the golfer types (so a button tapped straight after typing sees
-/// the value). ConverterParameter "int" or "double". Unfinished input ("-", "35.") leaves the property as it was; empty is null.
+/// the value). ConverterParameter "int" or "double"; "," or "." as the decimal separator. Empty or unreadable text is null (no
+/// value), which the view models report as missing, so a stale number is never kept.
 /// </summary>
 public sealed partial class NumberTextConverter : IValueConverter
 {
@@ -187,14 +189,14 @@ public sealed partial class NumberTextConverter : IValueConverter
 
     public object? ConvertBack(object value, Type targetType, object parameter, string language)
     {
-        var text = (value as string)?.Trim() ?? "";
+        // "," is accepted as the decimal separator. Text that is not a number (yet) becomes "no value", never the previous number:
+        // every numeric view model property is nullable, so the screen's own "Enter the ..." message shows instead of a stale value.
+        var text = ((value as string)?.Trim() ?? "").Replace(',', '.');
         if (text.Length == 0)
             return null;
-        if (text.EndsWith('.') || text == "-")
-            return DependencyProperty.UnsetValue;
         if ((parameter as string) == "double")
-            return double.TryParse(text, NumberStyles.Float, Inv, out var d) ? d : DependencyProperty.UnsetValue;
-        return int.TryParse(text, NumberStyles.Integer, Inv, out var i) ? i : DependencyProperty.UnsetValue;
+            return double.TryParse(text, NumberStyles.Float, Inv, out var d) && double.IsFinite(d) ? d : null;
+        return int.TryParse(text, NumberStyles.Integer, Inv, out var i) ? i : null;
     }
 }
 

@@ -86,7 +86,25 @@ public abstract partial class RoutePage : Page
     protected void OnBack(object sender, RoutedEventArgs e) => _ = Resolve<INavigator>().GoBackAsync();
 
     /// <summary>Asks before something that cannot be undone (deleting a round or a hole). True when the golfer confirmed.</summary>
+    private static bool _dialogOpen;
+
     protected async Task<bool> ConfirmAsync(string title, string message, string confirmText)
+    {
+        // Only one dialog at a time (a second tap while one is open would throw from ShowAsync).
+        if (_dialogOpen)
+            return false;
+        _dialogOpen = true;
+        try
+        {
+            return await ShowConfirmAsync(title, message, confirmText);
+        }
+        finally
+        {
+            _dialogOpen = false;
+        }
+    }
+
+    private async Task<bool> ShowConfirmAsync(string title, string message, string confirmText)
     {
         var dialog = new ContentDialog
         {

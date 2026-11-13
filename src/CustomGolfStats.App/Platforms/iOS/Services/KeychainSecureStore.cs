@@ -30,7 +30,8 @@ public sealed class KeychainSecureStore : ISecureStore
             // must not include the item class, so they go in a bare record.
             var data = NSData.FromString(value, NSStringEncoding.UTF8);
             var status = SecKeyChain.Update(Query(key), new SecRecord { ValueData = data });
-            if (status == SecStatusCode.ItemNotFound)
+            var added = status == SecStatusCode.ItemNotFound;
+            if (added)
             {
                 var record = Query(key);
                 record.ValueData = data;
@@ -39,6 +40,9 @@ public sealed class KeychainSecureStore : ISecureStore
             }
             if (status != SecStatusCode.Success)
                 throw Failure("write", status);
+#if DEBUG
+            Diagnostics.SafeLog.Info($"Keychain {(added ? "added" : "updated")} {key}"); // the key name only, never the value
+#endif
             return Task.CompletedTask;
         }
     }
