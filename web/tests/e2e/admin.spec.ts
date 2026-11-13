@@ -194,7 +194,7 @@ test.describe('courses', () => {
 
   test('an unknown course shows a not-found message, not an error page', async ({ page }) => {
     await signIn(page, ADMIN);
-    const res = await page.goto('/admin/courses/11111111-1111-4111-8111-111111111111');
+    const res = await page.goto('/admin/courses/99999999-9999-4999-8999-999999999999');
     expect(res?.status()).toBe(404);
     await expect(page.getByRole('alert')).toBeVisible();
   });
