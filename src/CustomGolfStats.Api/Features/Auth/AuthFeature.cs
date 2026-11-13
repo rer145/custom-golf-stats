@@ -12,6 +12,15 @@ public static class AuthFeature
         // Registered after AddIdentityApiEndpoints, so this replaces the stock SignInManager (disabled accounts are refused).
         services.AddScoped<SignInManager<Account>, AccountSignInManager>();
 
+        // Development only: Auth:BearerTokenExpiration (a TimeSpan, e.g. "00:00:30") shortens the access token lifetime so a client's
+        // refresh path can be exercised by hand. Unset, and in every other environment, Identity's default (1 hour) applies.
+        services.AddOptions<BearerTokenOptions>(IdentityConstants.BearerScheme)
+            .Configure<IConfiguration, IHostEnvironment>((options, config, env) =>
+            {
+                if (env.IsDevelopment() && config.GetValue<TimeSpan?>("Auth:BearerTokenExpiration") is { } expiration)
+                    options.BearerTokenExpiration = expiration;
+            });
+
         services.AddSingleton<IExternalTokenValidator>(sp => new ExternalTokenValidator(
             ExternalAuthOptions.From(sp.GetRequiredService<IConfiguration>()),
             ExternalTokenValidator.CreateMetadataSources(),
