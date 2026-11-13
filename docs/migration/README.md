@@ -33,7 +33,7 @@ The `linux/amd64` image runs on Apple Silicon under Docker's emulation; give it 
 
 ## 3. Prepare the target
 
-1. Run the API against the target Postgres once, so the schema is migrated. The tool never migrates; it exits with code 2 if migrations are pending.
+1. Make sure the target Postgres schema is fully migrated. The API applies its migrations on start **only in Development**; otherwise apply them with `dotnet ef database update --project src/CustomGolfStats.Api` (or a migrations bundle). The tool never migrates; it exits with code 2 if migrations are pending.
 2. Create the golfer's account through the API (`POST /auth/register`, or sign in with Apple/Google). The tool looks the account up by email and never creates accounts.
 
 ## 4. Import
@@ -49,8 +49,12 @@ dotnet run --project src/CustomGolfStats.Migration -- import --golfer-id 1 --acc
 ```
 
 - `--dry-run` does everything except commit.
+- `--replace-other-golfer` is needed only when the account already holds rounds or handicap entries imported from a *different* golftrack golfer; see "Re-running".
 - The report lists counts per year, skipped rounds, duplicate rounds, holes with zero putts, tees with missing ratings, durations it couldn't read, rounds moved to the tee of their holes, and anything outside the API's ranges.
-- Exit codes: `0` success, `2` a problem with the arguments, account or target, `1` anything unexpected.
+- Exit codes:
+  - `0`: success.
+  - `2`: something you can fix. That covers bad arguments, an unusable report path, an unknown account, a golfer with no active rounds, an import over another golfer's data without `--replace-other-golfer`, a target with pending migrations, or rows already imported into another account. Nothing was changed.
+  - `1`: connection failures and anything unexpected. The message says whether the import was committed.
 
 ### What gets imported
 
@@ -63,7 +67,12 @@ dotnet run --project src/CustomGolfStats.Migration -- import --golfer-id 1 --acc
 
 Running `import` again is safe. It clears what the previous run imported into that account and imports again in one transaction. Rows come out the same, with the same ids, but their timestamps change.
 
-Because of that, **import before anyone edits the imported data in the app.** A re-run replaces imported rounds, and golftrack courses that nothing else uses, so edits to them are lost. Importing a different `--golfer-id` into the same account replaces the earlier golfer's rounds; the tool prints a warning when it does.
+Because of that, **import before anyone edits the imported data in the app, and before any device syncs the account.** A re-run hard-deletes the imported rounds and recreates them; it does not soft-delete them. As a result:
+
+- Edits to imported rounds, and to golftrack courses that nothing else uses, are lost.
+- A device that already synced the imported rounds gets no tombstones for any round that a re-run does not recreate.
+
+A `--golfer-id` with no active rounds is refused (exit 2), so a typo can't wipe the previous import. Importing a *different* golftrack golfer into an account that already holds another golfer's imported rounds or handicap entries is also refused (exit 2), unless you pass `--replace-other-golfer`. With the flag, those rows are cleared and replaced, and the tool prints a warning with the counts ("would clear" on a dry run).
 
 ## 5. Parity check
 

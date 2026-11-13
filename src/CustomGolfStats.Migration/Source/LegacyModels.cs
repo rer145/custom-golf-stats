@@ -89,7 +89,8 @@ public sealed record LegacyData(
     IReadOnlyDictionary<int, string> Temperatures);
 
 /// <summary>
-/// All golftrack ids of the tables whose rows the import writes (any golfer, active or not); rounds map to their golfer.
+/// All golftrack ids of the tables whose rows the import writes (any golfer, active or not); rounds and handicap
+/// history rows map to their golfer.
 /// </summary>
 public sealed record LegacyIdSet(
-    IReadOnlyList<int> CourseIds, IReadOnlyDictionary<int, int> RoundGolfers, IReadOnlyList<int> HandicapIds);
+    IReadOnlyList<int> CourseIds, IReadOnlyDictionary<int, int> RoundGolfers, IReadOnlyDictionary<int, int> HandicapGolfers);

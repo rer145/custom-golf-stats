@@ -39,6 +39,7 @@ public static class MigrationReport
                 ["Previously imported rounds cleared", Num(c.RoundsRemoved)],
                 ["... of which from other golftrack golfers", Num(c.RoundsRemovedFromOtherGolfers)],
                 ["Previously imported handicap entries cleared", Num(c.HandicapEntriesRemoved)],
+                ["... of which handicap entries from other golftrack golfers", Num(c.HandicapEntriesRemovedFromOtherGolfers)],
                 ["Unused golftrack courses cleared", Num(c.CoursesRemoved)],
                 ["Findings", Num(findings.Count)],
             ]);

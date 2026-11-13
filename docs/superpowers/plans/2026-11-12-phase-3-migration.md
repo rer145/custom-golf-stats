@@ -32,7 +32,7 @@
 1. **Re-running is safe:** running `import` twice gives exactly the same rows and counts, and touches nothing it didn't create (other accounts, API-imported courses). Test in Task 3.
 2. **No secret leakage:** no connection string or password appears in output, exceptions or the report. Test in Task 3.
 3. **Mapping edge cases:** null `SequenceNumber`, duplicated sequence numbers, a 9-hole tee, null ratings, odd stroke indexes on 9 holes, unknown round type, unparseable duration, a round with a missing hole, a round that plays a hole twice. Tests in Task 2.
-4. **Parity honesty:** the parity report shows every compared number, and separates "intended difference" (the documented phase 1 decisions) from "unexplained difference". Nothing is hidden by tolerance except float rounding (±0.05 on averages/percentages). Test in Task 4.
+4. **Parity honesty:** the parity report shows every compared number, and separates "intended difference" (the documented phase 1 decisions) from "unexplained difference". Nothing is hidden by tolerance except float rounding (±0.006 on averages/percentages: golftrack rounds to 2 dp). Test in Task 4.
 
 ---
 

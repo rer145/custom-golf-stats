@@ -142,7 +142,9 @@ public sealed class GolftrackReader(string connectionString)
         return new LegacyIdSet(
             await QueryAsync(connection, null, "SELECT Id FROM dbo.Course", r => r.GetInt32(0), cancellationToken),
             rounds.ToDictionary(r => r.Id, r => r.GolferId),
-            await QueryAsync(connection, null, "SELECT Id FROM dbo.HandicapHistory", r => r.GetInt32(0), cancellationToken));
+            (await QueryAsync(
+                    connection, null, "SELECT Id, GolferId FROM dbo.HandicapHistory", r => (Id: r.GetInt32(0), GolferId: r.GetInt32(1)), cancellationToken))
+                .ToDictionary(h => h.Id, h => h.GolferId));
     }
 
     private static async Task<IReadOnlyDictionary<int, string>> LookupAsync(

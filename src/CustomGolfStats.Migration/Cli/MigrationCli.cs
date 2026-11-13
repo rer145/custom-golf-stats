@@ -29,7 +29,13 @@ public static class MigrationCli
     public static async Task<int> RunAsync(
         string[] args, TextWriter output, TextWriter error, Func<string, string?> environment, CancellationToken cancellationToken = default)
     {
-        var redactor = new SecretRedactor([environment(SourceVariable), environment(TargetVariable), .. ConnectionArguments(args)]);
+        // Masked in every message: the connection strings, and any argument that looks like one (it has '=' and ';'),
+        // which also covers a connection string given to a mistyped option.
+        var redactor = new SecretRedactor(
+        [
+            environment(SourceVariable), environment(TargetVariable), .. ConnectionArguments(args),
+            .. args.Where(a => a.Contains('=', StringComparison.Ordinal) && a.Contains(';', StringComparison.Ordinal)),
+        ]);
         var settings = new Settings(output, error, environment, redactor);
         var root = new RootCommand("Migrates golftrack data into Custom Golf Stats.") { ImportCommand(settings), ParityCommand(settings) };
 
@@ -55,20 +61,26 @@ public static class MigrationCli
         var dryRun = new Option<bool>("--dry-run") { Description = "Do everything, then roll back instead of committing." };
         var command = new Command("import", "Import one golftrack golfer's rounds, courses and handicap history into an account.");
         common.AddTo(command);
+        var replaceOtherGolfer = new Option<bool>("--replace-other-golfer")
+        {
+            Description = "Allow clearing rounds and handicap entries that an earlier run imported from a different golftrack golfer.",
+        };
         command.Options.Add(dryRun);
+        command.Options.Add(replaceOtherGolfer);
         command.SetAction((result, token) => RunAsync(settings, common, result, new Messages("Failed, nothing was committed: ", "Cancelled. Nothing was committed."), async (source, db, reportPath, state, ct) =>
         {
             var golferId = result.GetValue(common.Golfer);
             var email = result.GetValue(common.Email)!;
             var import = await new Importer(new GolftrackReader(source), db, TimeProvider.System)
-                .RunAsync(golferId, email, result.GetValue(dryRun), ct);
+                .RunAsync(golferId, email, result.GetValue(dryRun), result.GetValue(replaceOtherGolfer), ct);
             state.Committed = import.Committed;
 
             var c = import.Counts;
-            if (c.RoundsRemovedFromOtherGolfers > 0)
+            if (c.RoundsRemovedFromOtherGolfers > 0 || c.HandicapEntriesRemovedFromOtherGolfers > 0)
             {
                 await settings.Error.WriteLineAsync(string.Create(CultureInfo.InvariantCulture,
-                    $"Warning: cleared {c.RoundsRemovedFromOtherGolfers} previously imported rounds that came from a different golftrack golfer than {golferId}."));
+                    $"Warning: {(import.Committed ? "cleared" : "would clear")} {c.RoundsRemovedFromOtherGolfers} previously imported rounds and " +
+                    $"{c.HandicapEntriesRemovedFromOtherGolfers} handicap entries that came from a different golftrack golfer than {golferId}."));
             }
 
             await File.WriteAllTextAsync(reportPath, MigrationReport.ToMarkdown(import, email, TimeProvider.System.GetUtcNow()), CancellationToken.None);
@@ -100,7 +112,7 @@ public static class MigrationCli
             var rows = parity.Years.SelectMany(y => y.Sections).SelectMany(s => s.Rows).ToList();
             await settings.Output.WriteLineAsync(string.Create(CultureInfo.InvariantCulture, $"""
                 Parity for golftrack golfer {golferId}, {parity.Years.Count} years:
-                  {rows.Count(r => r.Verdict == Verdict.Match)} match, {rows.Count(r => r.Verdict == Verdict.Intended)} intended, {rows.Count(r => r.Verdict == Verdict.Unexplained)} unexplained, {rows.Count(r => r.Verdict == Verdict.NotCompared)} not compared.
+                  {rows.Count(r => r.Verdict == Verdict.Match)} match, {rows.Count(r => r.Verdict == Verdict.Intended)} intended, {rows.Count(r => r.Verdict == Verdict.Unexplained)} unexplained, {rows.Count(r => r.Verdict == Verdict.NotCompared)} not compared, {rows.Count(r => r.Verdict == Verdict.Missing)} missing or failed.
                 Report: {reportPath}
                 """));
         }, token));
@@ -153,7 +165,8 @@ public static class MigrationCli
             if ((await db.Database.GetPendingMigrationsAsync(cancellationToken)).Any())
             {
                 throw new MigrationUserException(
-                    "The Custom Golf Stats database is not up to date. Run the API (it applies its migrations) and try again.");
+                    "The Custom Golf Stats database has pending migrations. Apply them and try again: the API applies them on " +
+                    "start only in Development; otherwise run `dotnet ef database update` (or a migrations bundle).");
             }
 
             await work(source, db, reportPath, state, cancellationToken);

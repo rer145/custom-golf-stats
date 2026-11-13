@@ -17,6 +17,16 @@ public sealed class SecretRedactorTests
     }
 
     [Fact]
+    public void Masks_quoted_password_values()
+    {
+        var redactor = new SecretRedactor([]);
+
+        var text = redactor.Redact("a Password=\"Canary;Quoted pw\" b pwd='Other Canary;x' c");
+
+        Assert.Equal("a Password=*** b pwd=*** c", text);
+    }
+
+    [Fact]
     public void Describes_inner_exceptions_without_stack_traces()
     {
         var exception = new InvalidOperationException("outer", new TimeoutException("inner"));

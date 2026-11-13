@@ -22,11 +22,12 @@ public sealed class ImporterTests(MsSqlFixture sql, PostgresFixture postgres) : 
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    private async Task<ImportResult> ImportAsync(bool dryRun = false, string email = MigrationScenario.AccountEmail)
+    private async Task<ImportResult> ImportAsync(
+        bool dryRun = false, string email = MigrationScenario.AccountEmail, int? golferId = null, bool replaceOtherGolfer = false)
     {
         await using var db = _scenario.CreateTargetContext();
         var importer = new Importer(new GolftrackReader(_scenario.SourceConnectionString), db, TimeProvider.System);
-        return await importer.RunAsync(_scenario.GolferId, email, dryRun, Ct);
+        return await importer.RunAsync(golferId ?? _scenario.GolferId, email, dryRun, replaceOtherGolfer, Ct);
     }
 
     [Fact]
@@ -184,6 +185,44 @@ public sealed class ImporterTests(MsSqlFixture sql, PostgresFixture postgres) : 
 
         Assert.Equal(4, result.Counts.RoundsRemoved);
         Assert.Equal(before, await SnapshotAsync());
+    }
+
+    [Fact]
+    public async Task Golfer_without_active_rounds_is_a_user_error_and_changes_nothing()
+    {
+        await ImportAsync();
+        var before = await SnapshotAsync();
+
+        var error = await Assert.ThrowsAsync<MigrationUserException>(() => ImportAsync(golferId: 9999));
+
+        Assert.Contains("9999 has no active rounds", error.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await SnapshotAsync());
+    }
+
+    [Fact]
+    public async Task Replacing_another_golfers_import_is_refused_without_the_flag()
+    {
+        await ImportAsync();
+        var before = await SnapshotAsync();
+
+        var error = await Assert.ThrowsAsync<MigrationUserException>(() => ImportAsync(golferId: _scenario.OtherGolferId));
+
+        Assert.Contains("--replace-other-golfer", error.Message, StringComparison.Ordinal);
+        Assert.Contains("4 rounds and 2 handicap entries", error.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await SnapshotAsync());
+    }
+
+    [Fact]
+    public async Task Replacing_another_golfers_import_with_the_flag_counts_what_it_clears()
+    {
+        await ImportAsync();
+
+        var result = await ImportAsync(golferId: _scenario.OtherGolferId, replaceOtherGolfer: true);
+
+        Assert.Equal((4, 2), (result.Counts.RoundsRemovedFromOtherGolfers, result.Counts.HandicapEntriesRemovedFromOtherGolfers));
+        Assert.Equal(1, result.Counts.Rounds);
+        await using var db = _scenario.CreateTargetContext();
+        Assert.Equal(1, await db.Rounds.CountAsync(r => r.AccountId == _scenario.AccountId, Ct));
     }
 
     [Fact]

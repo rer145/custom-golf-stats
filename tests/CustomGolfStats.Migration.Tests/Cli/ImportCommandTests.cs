@@ -156,11 +156,71 @@ public sealed class ImportCommandTests(MsSqlFixture sql, PostgresFixture postgre
         var (exitCode, _, error) = await RunAsync(
             Environment(),
             "import", "--golfer-id", _scenario.OtherGolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath);
+            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath, "--replace-other-golfer");
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("Warning: cleared 4 previously imported rounds", error, StringComparison.Ordinal);
+        Assert.Contains("Warning: cleared 4 previously imported rounds and 2 handicap entries", error, StringComparison.Ordinal);
         Assert.Contains("... of which from other golftrack golfers | 4 |", await File.ReadAllTextAsync(_reportPath, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Dry_run_replacing_another_golfer_says_what_it_would_clear()
+    {
+        Assert.Equal(0, (await RunAsync(Environment(), ImportArgs())).ExitCode);
+
+        var (exitCode, _, error) = await RunAsync(
+            Environment(),
+            "import", "--golfer-id", _scenario.OtherGolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath, "--replace-other-golfer", "--dry-run");
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Warning: would clear 4 previously imported rounds and 2 handicap entries", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Other_golfer_without_the_flag_exits_2()
+    {
+        Assert.Equal(0, (await RunAsync(Environment(), ImportArgs())).ExitCode);
+
+        var (exitCode, _, error) = await RunAsync(
+            Environment(),
+            "import", "--golfer-id", _scenario.OtherGolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--replace-other-golfer", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Target_with_pending_migrations_exits_2()
+    {
+        await using (var connection = new NpgsqlConnection(_scenario.TargetConnectionString))
+        {
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using var command = new NpgsqlCommand(
+                // EFCore.NamingConventions snake-cases the history table's columns too.
+                "DELETE FROM \"__EFMigrationsHistory\" WHERE migration_id = (SELECT max(migration_id) FROM \"__EFMigrationsHistory\")",
+                connection);
+            Assert.Equal(1, await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
+        }
+
+        var (exitCode, _, error) = await RunAsync(Environment(), ImportArgs());
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("pending migrations", error, StringComparison.Ordinal);
+        Assert.Contains("dotnet ef database update", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Connection_string_under_a_mistyped_option_is_masked()
+    {
+        var source = new SqlConnectionStringBuilder(_scenario.SourceConnectionString) { Password = FakePassword }.ConnectionString;
+
+        var (exitCode, output, error) = await RunAsync(Environment(), ImportArgs("--sorce", source));
+
+        Assert.Equal(2, exitCode);
+        Assert.NotEqual("", error);
+        Assert.DoesNotContain(FakePassword, output + error, StringComparison.Ordinal);
     }
 
     [Fact]

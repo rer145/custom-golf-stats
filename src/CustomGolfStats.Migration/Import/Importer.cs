@@ -13,7 +13,8 @@ public sealed class MigrationUserException(string message) : Exception(message);
 /// <param name="TeesWritten">Tees written, on new courses and (missing tees only) on reused ones.</param>
 /// <param name="RoundsRemoved">Previously imported rounds cleared before writing (the same for handicap entries and courses).</param>
 /// <param name="RoundsRemovedFromOtherGolfers">Of <paramref name="RoundsRemoved"/>, those imported from a different golftrack
-/// golfer than this run's (an earlier run with another --golfer-id).</param>
+/// golfer than this run's (an earlier run with another --golfer-id; only allowed with replaceOtherGolfer).</param>
+/// <param name="HandicapEntriesRemovedFromOtherGolfers">The same for handicap entries.</param>
 public sealed record ImportCounts(
     int CoursesWritten,
     int CoursesReused,
@@ -25,7 +26,8 @@ public sealed record ImportCounts(
     int RoundsRemoved,
     int HandicapEntriesRemoved,
     int CoursesRemoved,
-    int RoundsRemovedFromOtherGolfers = 0);
+    int RoundsRemovedFromOtherGolfers = 0,
+    int HandicapEntriesRemovedFromOtherGolfers = 0);
 
 public sealed record ImportResult(Guid AccountId, int GolferId, bool Committed, ImportCounts Counts, MappedImport Mapped);
 
@@ -43,30 +45,49 @@ public sealed record ImportResult(Guid AccountId, int GolferId, bool Committed, 
 /// </summary>
 public sealed class Importer(GolftrackReader source, AppDbContext target, TimeProvider time)
 {
-    public async Task<ImportResult> RunAsync(int golferId, string accountEmail, bool dryRun, CancellationToken cancellationToken = default)
+    public async Task<ImportResult> RunAsync(
+        int golferId, string accountEmail, bool dryRun, bool replaceOtherGolfer = false, CancellationToken cancellationToken = default)
     {
         var accountId = await AccountLookup.FindAsync(target, accountEmail, cancellationToken);
 
         var legacy = await source.ReadAsync(golferId, cancellationToken);
+        if (legacy.Rounds.Count == 0)
+        {
+            // A wrong --golfer-id would otherwise clear the previous import and commit an empty one.
+            throw new MigrationUserException($"golftrack golfer {golferId} has no active rounds. Check --golfer-id. Nothing was changed.");
+        }
+
         var allIds = await source.ReadAllIdsAsync(cancellationToken);
         var mapped = GolftrackMapper.Map(legacy, accountId, time.GetUtcNow());
 
-        await using var transaction = await target.Database.BeginTransactionAsync(cancellationToken);
-
         var golferByRoundId = allIds.RoundGolfers.ToDictionary(r => DeterministicIds.For("Round", r.Key), r => r.Value);
+        var golferByHandicapId = allIds.HandicapGolfers.ToDictionary(h => DeterministicIds.For("HandicapHistory", h.Key), h => h.Value);
         var importableRoundIds = golferByRoundId.Keys.ToList();
-        var importableHandicapIds = allIds.HandicapIds.Select(id => DeterministicIds.For("HandicapHistory", id)).ToList();
+        var importableHandicapIds = golferByHandicapId.Keys.ToList();
         var importableCourseIds = allIds.CourseIds.Select(id => DeterministicIds.For("Course", id)).ToList();
 
+        // What a previous import put into this account, and whether any of it came from another golftrack golfer.
         var previousRoundIds = await target.Rounds
             .Where(r => r.AccountId == accountId && importableRoundIds.Contains(r.Id))
             .Select(r => r.Id)
             .ToListAsync(cancellationToken);
-        var roundsRemoved = await target.Rounds.Where(r => previousRoundIds.Contains(r.Id)).ExecuteDeleteAsync(cancellationToken);
-        var removedFromOtherGolfers = previousRoundIds.Count(id => golferByRoundId[id] != golferId);
-        var handicapsRemoved = await target.HandicapEntries
+        var previousHandicapIds = await target.HandicapEntries
             .Where(h => h.AccountId == accountId && importableHandicapIds.Contains(h.Id))
-            .ExecuteDeleteAsync(cancellationToken);
+            .Select(h => h.Id)
+            .ToListAsync(cancellationToken);
+        var roundsFromOtherGolfers = previousRoundIds.Count(id => golferByRoundId[id] != golferId);
+        var handicapsFromOtherGolfers = previousHandicapIds.Count(id => golferByHandicapId[id] != golferId);
+        if ((roundsFromOtherGolfers > 0 || handicapsFromOtherGolfers > 0) && !replaceOtherGolfer)
+        {
+            throw new MigrationUserException(
+                $"This account holds {roundsFromOtherGolfers} rounds and {handicapsFromOtherGolfers} handicap entries imported from " +
+                $"another golftrack golfer than {golferId}. Pass --replace-other-golfer to replace them. Nothing was changed.");
+        }
+
+        await using var transaction = await target.Database.BeginTransactionAsync(cancellationToken);
+
+        var roundsRemoved = await target.Rounds.Where(r => previousRoundIds.Contains(r.Id)).ExecuteDeleteAsync(cancellationToken);
+        var handicapsRemoved = await target.HandicapEntries.Where(h => previousHandicapIds.Contains(h.Id)).ExecuteDeleteAsync(cancellationToken);
         var coursesRemoved = await target.Courses
             .Where(c => c.Source == CourseSource.Golftrack && importableCourseIds.Contains(c.Id))
             .Where(c => !target.Rounds.Any(r => r.TeeVersion.Tee.CourseId == c.Id))
@@ -88,7 +109,8 @@ public sealed class Importer(GolftrackReader source, AppDbContext target, TimePr
         }
         else
         {
-            await transaction.CommitAsync(cancellationToken);
+            // Not cancellable: once asked to commit, the outcome must be known (a cancel here could commit anyway).
+            await transaction.CommitAsync(CancellationToken.None);
         }
 
         target.ChangeTracker.Clear();
@@ -103,7 +125,8 @@ public sealed class Importer(GolftrackReader source, AppDbContext target, TimePr
             roundsRemoved,
             handicapsRemoved,
             coursesRemoved,
-            removedFromOtherGolfers);
+            roundsFromOtherGolfers,
+            handicapsFromOtherGolfers);
         return new ImportResult(accountId, golferId, !dryRun, counts, mapped);
     }
 

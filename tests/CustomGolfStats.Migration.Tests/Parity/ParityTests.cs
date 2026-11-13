@@ -41,7 +41,7 @@ public sealed class ParityTests(MsSqlFixture sql, PostgresFixture postgres) : IA
         await using var db = CreateTarget();
         db.Users.Add(new Api.Data.Entities.Account { UserName = Email, NormalizedUserName = Email.ToUpperInvariant(), Email = Email, NormalizedEmail = Email.ToUpperInvariant() });
         await db.SaveChangesAsync(Ct);
-        await new Importer(new GolftrackReader(_source), db, TimeProvider.System).RunAsync(_golferId, Email, dryRun: false, Ct);
+        await new Importer(new GolftrackReader(_source), db, TimeProvider.System).RunAsync(_golferId, Email, dryRun: false, cancellationToken: Ct);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

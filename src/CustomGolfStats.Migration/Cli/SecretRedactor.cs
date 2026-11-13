@@ -71,6 +71,7 @@ public sealed partial class SecretRedactor
         }
     }
 
-    [GeneratedRegex(@"(?<key>\b(?:password|pwd)\s*=\s*)[^;""'\s]*", RegexOptions.IgnoreCase)]
+    // A quoted value ("a;b c" or 'a;b c') is masked whole; an unquoted one up to the next ';', quote or whitespace.
+    [GeneratedRegex(@"(?<key>\b(?:password|pwd)\s*=\s*)(?:""[^""]*""|'[^']*'|[^;""'\s]*)", RegexOptions.IgnoreCase)]
     private static partial Regex PasswordSetting();
 }
