@@ -45,7 +45,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet workload install ios
+      - run: dotnet workload install ios android  # restore evaluates every target framework
       - name: Build iOS (Release, device, unsigned)
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
@@ -70,7 +70,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet workload install android
+      - run: dotnet workload install ios android  # restore evaluates every target framework
       - name: Build Android (Release AAB, debug-signed)
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
