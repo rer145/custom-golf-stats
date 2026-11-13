@@ -32,7 +32,7 @@ internal sealed class LegacyBuilder
     /// <summary>Holes 1..<paramref name="count"/>, par 4, 400 yards, stroke index = number unless given.</summary>
     public IReadOnlyList<LegacyHole> Holes(LegacyTee tee, int count = 18, Func<int, int>? strokeIndex = null, Func<int, int>? par = null) =>
         Enumerable.Range(1, count)
-            .Select(n => Add(_holes, new LegacyHole(NextId(), tee.Id, n, par?.Invoke(n) ?? 4, 400, strokeIndex?.Invoke(n) ?? n)))
+            .Select(n => Add(_holes, new LegacyHole(NextId(), tee.Id, n, par?.Invoke(n) ?? 4, 400, strokeIndex?.Invoke(n) ?? n, IsActive: true)))
             .ToList();
 
     public LegacyHole Add(LegacyHole hole) => Add(_holes, hole);

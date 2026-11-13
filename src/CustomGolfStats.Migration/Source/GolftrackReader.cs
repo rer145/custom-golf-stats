@@ -4,18 +4,13 @@ namespace CustomGolfStats.Migration.Source;
 
 /// <summary>
 /// Reads one golfer's data from golftrack with plain, parameterised <c>SELECT</c> statements (nothing else is ever run).
-/// Only active rows are read: rounds and round details with <c>IsActive = 1</c>, and the active courses, tees and holes
-/// those rounds play (a tee counts only when its course is active too). A round whose tee is inactive is still read, so
-/// the mapper can report it as missing its tee. Lookup tables are read whole (names only, active or not).
+/// Rounds and round details are read only when <c>IsActive = 1</c>. Every course, tee and hole those rounds play is read
+/// whatever its own <c>IsActive</c>: golftrack's Stats_* procedures ignore it there, and many played tees were
+/// deactivated later. Tees no active round plays are not read. Lookup tables are read whole (names only).
 /// </summary>
 public sealed class GolftrackReader(string connectionString)
 {
     private const string RoundTees = "SELECT r.TeeId FROM dbo.Round r WHERE r.GolferId = @golferId AND r.IsActive = 1";
-
-    private const string ActiveRoundTees = $"""
-        SELECT t.Id FROM dbo.Tee t JOIN dbo.Course c ON c.Id = t.CourseId
-        WHERE t.IsActive = 1 AND c.IsActive = 1 AND t.Id IN ({RoundTees})
-        """;
 
     public async Task<LegacyData> ReadAsync(int golferId, CancellationToken cancellationToken = default)
     {
@@ -28,7 +23,7 @@ public sealed class GolftrackReader(string connectionString)
             $"""
             SELECT c.Id, c.Name, c.Address, c.Address2, c.City, c.PostalCode, c.PhoneNumber, c.Website, c.Latitude, c.Longitude
             FROM dbo.Course c
-            WHERE c.Id IN (SELECT t.CourseId FROM dbo.Tee t WHERE t.Id IN ({ActiveRoundTees}))
+            WHERE c.Id IN (SELECT t.CourseId FROM dbo.Tee t WHERE t.Id IN ({RoundTees}))
             ORDER BY c.Id
             """,
             r => new LegacyCourse(
@@ -44,7 +39,7 @@ public sealed class GolftrackReader(string connectionString)
                    t.FrontNinePar, t.FrontNineCourseRating, t.FrontNineSlopeRating,
                    t.BackNinePar, t.BackNineCourseRating, t.BackNineSlopeRating
             FROM dbo.Tee t
-            WHERE t.Id IN ({ActiveRoundTees})
+            WHERE t.Id IN ({RoundTees})
             ORDER BY t.Id
             """,
             r => new LegacyTee(
@@ -57,12 +52,12 @@ public sealed class GolftrackReader(string connectionString)
             connection,
             golferId,
             $"""
-            SELECT h.Id, h.TeeId, h.Number, h.Par, h.Yardage, h.Handicap
+            SELECT h.Id, h.TeeId, h.Number, h.Par, h.Yardage, h.Handicap, h.IsActive
             FROM dbo.Hole h
-            WHERE h.IsActive = 1 AND h.TeeId IN ({ActiveRoundTees})
+            WHERE h.TeeId IN ({RoundTees})
             ORDER BY h.Id
             """,
-            r => new LegacyHole(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5)),
+            r => new LegacyHole(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5), r.GetBoolean(6)),
             cancellationToken);
 
         var rounds = await QueryAsync(

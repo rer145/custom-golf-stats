@@ -1,3 +1,5 @@
+using CustomGolfStats.Migration.Mapping;
+using CustomGolfStats.Migration.Report;
 using CustomGolfStats.Migration.Source;
 using CustomGolfStats.Migration.Tests.Infrastructure;
 
@@ -46,7 +48,7 @@ public sealed class GolftrackReaderTests(MsSqlFixture sql) : IAsyncLifetime
         Assert.Equal(
             new LegacyTee(tee, course, "Blue", "F", 72, null, null, 36, 34.4, null, 36, 35.1, 126),
             Assert.Single(data.Tees));
-        Assert.Equal(new LegacyHole(hole, tee, 1, 5, 512, 7), Assert.Single(data.Holes));
+        Assert.Equal(new LegacyHole(hole, tee, 1, 5, 512, 7, IsActive: true), Assert.Single(data.Holes));
         Assert.Equal(
             new LegacyRound(round, golfer, tee, league, rain, windy, cold, 1, 6, "4:15", 5.4321m,
                 new DateTime(2024, 6, 1, 14, 30, 0), "Wet"),
@@ -91,7 +93,7 @@ public sealed class GolftrackReaderTests(MsSqlFixture sql) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Excludes_inactive_rows()
+    public async Task Excludes_inactive_rounds_and_details_only()
     {
         var golfer = await _seed.GolferAsync();
         var course = await _seed.CourseAsync();
@@ -104,24 +106,51 @@ public sealed class GolftrackReaderTests(MsSqlFixture sql) : IAsyncLifetime
         var inactiveRound = await _seed.RoundAsync(golfer, tee, new DateTime(2024, 6, 2), isActive: false);
         await _seed.RoundDetailAsync(inactiveRound, activeHole);
 
-        // A round on an inactive tee is still read (the mapper reports it as missing its tee) but the tee is not.
-        var inactiveTee = await _seed.TeeAsync(course, "Red", isActive: false);
-        await _seed.HolesAsync(inactiveTee, 1);
+        // Played tees, courses and holes are read whatever their own IsActive (golftrack's stats ignore it there).
+        var inactiveCourse = await _seed.CourseAsync("Closed", isActive: false);
+        var inactiveTee = await _seed.TeeAsync(inactiveCourse, "Red", isActive: false);
+        var inactiveTeeHole = await _seed.HoleAsync(inactiveTee, 1, isActive: false);
         var roundOnInactiveTee = await _seed.RoundAsync(golfer, inactiveTee, new DateTime(2024, 6, 3));
 
-        // Likewise an inactive course hides its tees and holes.
-        var inactiveCourse = await _seed.CourseAsync("Closed", isActive: false);
-        var teeOfInactiveCourse = await _seed.TeeAsync(inactiveCourse);
-        await _seed.HolesAsync(teeOfInactiveCourse, 1);
-        var roundOnInactiveCourse = await _seed.RoundAsync(golfer, teeOfInactiveCourse, new DateTime(2024, 6, 4));
+        // Tees (and their courses and holes) that no active round plays are not read, active or not.
+        var unplayedCourse = await _seed.CourseAsync("Unplayed", isActive: false);
+        var unplayedTee = await _seed.TeeAsync(unplayedCourse, isActive: false);
+        await _seed.HolesAsync(unplayedTee, 1);
+        var onlyOnInactiveRound = await _seed.TeeAsync(course, "Gold");
+        await _seed.HolesAsync(onlyOnInactiveRound, 1);
+        await _seed.RoundAsync(golfer, onlyOnInactiveRound, new DateTime(2024, 6, 5), isActive: false);
 
         var data = await new GolftrackReader(_connectionString).ReadAsync(golfer, TestContext.Current.CancellationToken);
 
-        Assert.Equal([round, roundOnInactiveTee, roundOnInactiveCourse], data.Rounds.Select(r => r.Id));
+        Assert.Equal([round, roundOnInactiveTee], data.Rounds.Select(r => r.Id));
         Assert.Equal([activeDetail], data.RoundDetails.Select(d => d.Id));
-        Assert.Equal([course], data.Courses.Select(c => c.Id));
-        Assert.Equal([tee], data.Tees.Select(t => t.Id));
-        Assert.Equal([activeHole], data.Holes.Select(h => h.Id));
+        Assert.Equal([course, inactiveCourse], data.Courses.Select(c => c.Id));
+        Assert.Equal([tee, inactiveTee], data.Tees.Select(t => t.Id));
+        Assert.Equal(
+            [(activeHole, true), (inactiveHole, false), (inactiveTeeHole, false)],
+            data.Holes.Select(h => (h.Id, h.IsActive)));
+    }
+
+    [Fact]
+    public async Task Round_on_an_inactive_tee_and_course_with_inactive_holes_is_imported_with_all_holes()
+    {
+        var golfer = await _seed.GolferAsync();
+        var course = await _seed.CourseAsync("Old Course", isActive: false);
+        var tee = await _seed.TeeAsync(course, isActive: false);
+        var round = await _seed.RoundAsync(golfer, tee, new DateTime(2019, 9, 1));
+        for (var number = 1; number <= 18; number++)
+        {
+            await _seed.RoundDetailAsync(round, await _seed.HoleAsync(tee, number, isActive: false), sequenceNumber: number);
+        }
+
+        var data = await new GolftrackReader(_connectionString).ReadAsync(golfer, TestContext.Current.CancellationToken);
+        var mapped = GolftrackMapper.Map(data, Guid.NewGuid(), DateTimeOffset.UnixEpoch);
+
+        var mappedCourse = Assert.Single(mapped.Courses);
+        Assert.Equal("Old Course", mappedCourse.Name);
+        Assert.Equal(18, Assert.Single(Assert.Single(mappedCourse.Tees).Versions).Holes.Count);
+        Assert.Equal(Enumerable.Range(1, 18), Assert.Single(mapped.Rounds).HoleResults.Select(h => h.HoleNumber));
+        Assert.DoesNotContain(mapped.Findings, f => f is RoundSkipped or TeeSkipped);
     }
 
     [Fact]

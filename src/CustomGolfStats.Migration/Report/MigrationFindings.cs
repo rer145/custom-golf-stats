@@ -12,11 +12,15 @@ public sealed record TeeRatingDefaulted(
     int LegacyTeeId, string CourseName, string TeeName, string Field, string? OriginalValue, string? StoredValue)
     : MigrationFinding;
 
-/// <summary>A tee that could not be imported (no active holes, more than 18, or its course is missing).</summary>
+/// <summary>A tee that could not be imported (no holes, more than 18, or its course is missing).</summary>
 public sealed record TeeSkipped(int LegacyTeeId, string CourseName, string TeeName, string Reason) : MigrationFinding;
 
-/// <summary>A tee with more than one active hole of the same number; the lowest hole id is kept.</summary>
-public sealed record DuplicateTeeHoleNumber(int LegacyTeeId, int HoleNumber, IReadOnlyList<int> LegacyHoleIds) : MigrationFinding;
+/// <summary>
+/// A tee with more than one hole row of the same number whose par, yardage or stroke index differ. The active row is
+/// used (the lowest id among several active ones, or among all when none is active). Identical rows are not reported.
+/// </summary>
+public sealed record DuplicateTeeHoleNumber(int LegacyTeeId, int HoleNumber, int KeptLegacyHoleId, IReadOnlyList<int> LegacyHoleIds)
+    : MigrationFinding;
 
 /// <summary>A round that was not imported: its tee or one of its holes is missing, or it has no hole details.</summary>
 public sealed record RoundSkipped(int LegacyRoundId, DateOnly PlayedOn, string Reason) : MigrationFinding;

@@ -173,12 +173,34 @@ public sealed class GolftrackMapperTests
     }
 
     [Fact]
-    public void Tee_with_two_holes_of_one_number_keeps_the_first_and_reports_it()
+    public void Identical_duplicate_hole_rows_use_the_active_one_without_a_finding()
+    {
+        var course = _legacy.Course();
+        var tee = _legacy.Tee(course);
+        var oldFourth = _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, 4, 4, 400, 4, IsActive: false));
+        var holes = _legacy.Holes(tee);
+        var round = _legacy.Round(tee);
+        _legacy.Details(round, holes.Take(3));
+        var playedOnOldRow = _legacy.Detail(round, oldFourth, score: 6);
+        _legacy.Details(round, holes.Skip(4));
+
+        var result = Map();
+
+        var version = Assert.Single(Assert.Single(Assert.Single(result.Courses).Tees).Versions);
+        Assert.Equal(18, version.Holes.Count);
+        Assert.Equal(DeterministicIds.For("Hole", holes[3].Id), Assert.Single(version.Holes, h => h.Number == 4).Id);
+        var fourth = Assert.Single(Assert.Single(result.Rounds).HoleResults, h => h.Id == DeterministicIds.For("RoundDetail", playedOnOldRow.Id));
+        Assert.Equal(4, fourth.HoleNumber);
+        Assert.Empty(result.Findings);
+    }
+
+    [Fact]
+    public void Differing_duplicate_hole_rows_keep_the_lowest_id_and_are_reported()
     {
         var course = _legacy.Course();
         var tee = _legacy.Tee(course);
         var holes = _legacy.Holes(tee);
-        var extra = _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, 4, 5, 999, 4));
+        var extra = _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, 4, 5, 999, 4, IsActive: true));
         var round = _legacy.Round(tee);
         _legacy.Details(round, holes);
 
@@ -189,8 +211,24 @@ public sealed class GolftrackMapperTests
         Assert.Equal(DeterministicIds.For("Hole", holes[3].Id), fourth.Id);
         Assert.Equal(400, fourth.Yardage);
         var duplicate = Assert.Single(result.Findings.OfType<DuplicateTeeHoleNumber>());
-        Assert.Equal((tee.Id, 4), (duplicate.LegacyTeeId, duplicate.HoleNumber));
+        Assert.Equal((tee.Id, 4, holes[3].Id), (duplicate.LegacyTeeId, duplicate.HoleNumber, duplicate.KeptLegacyHoleId));
         Assert.Equal([holes[3].Id, extra.Id], duplicate.LegacyHoleIds);
+    }
+
+    [Fact]
+    public void Inactive_holes_are_imported()
+    {
+        var course = _legacy.Course();
+        var tee = _legacy.Tee(course);
+        var holes = Enumerable.Range(1, 9)
+            .Select(n => _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, n, 4, 380, n, IsActive: false)))
+            .ToList();
+        _legacy.Details(_legacy.Round(tee), holes);
+
+        var result = Map();
+
+        Assert.Equal(9, Assert.Single(Assert.Single(Assert.Single(result.Courses).Tees).Versions).Holes.Count);
+        Assert.Equal(9, Assert.Single(result.Rounds).HoleResults.Count);
     }
 
     [Fact]
@@ -204,7 +242,7 @@ public sealed class GolftrackMapperTests
 
         Assert.Empty(result.Courses);
         Assert.Empty(result.Rounds);
-        Assert.Equal(new TeeSkipped(tee.Id, "Bare", "Black", "no active holes"), Assert.Single(result.Findings.OfType<TeeSkipped>()));
+        Assert.Equal(new TeeSkipped(tee.Id, "Bare", "Black", "no holes"), Assert.Single(result.Findings.OfType<TeeSkipped>()));
         Assert.Equal(round.Id, Assert.Single(result.Findings.OfType<RoundSkipped>()).LegacyRoundId);
     }
 

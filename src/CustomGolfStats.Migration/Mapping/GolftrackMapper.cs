@@ -35,7 +35,7 @@ public static class GolftrackMapper
             var holes = data.Holes.Where(h => h.TeeId == legacyTee.Id).ToList();
             if (!coursesById.TryGetValue(legacyTee.CourseId, out var legacyCourse))
             {
-                findings.Add(new TeeSkipped(legacyTee.Id, $"course {legacyTee.CourseId}", legacyTee.Name, "its course is missing or inactive"));
+                findings.Add(new TeeSkipped(legacyTee.Id, $"course {legacyTee.CourseId}", legacyTee.Name, "its course is missing"));
                 continue;
             }
 
@@ -120,24 +120,29 @@ public static class GolftrackMapper
         };
     }
 
-    /// <summary>The tee's single version, or null (and a finding) when the tee has no holes or more than 18.</summary>
+    /// <summary>
+    /// The tee's single version, or null (and a finding) when the tee has no holes or more than 18. Round details keep
+    /// pointing at their own hole row (by id), so a detail on a duplicate row still gets that row's hole number.
+    /// </summary>
     private static TeeVersion? MapTeeVersion(
         LegacyCourse course, LegacyTee tee, List<LegacyHole> holes, Guid accountId, DateTimeOffset now, List<MigrationFinding> findings)
     {
+        // One row per hole number: the active one (lowest id among several), else the lowest id. Rows that differ
+        // in par, yardage or stroke index are reported; identical copies are not.
         var kept = new List<LegacyHole>();
         foreach (var group in holes.GroupBy(h => h.Number).OrderBy(g => g.Key))
         {
-            var byId = group.OrderBy(h => h.Id).ToList();
-            kept.Add(byId[0]);
-            if (byId.Count > 1)
+            var rows = group.OrderByDescending(h => h.IsActive).ThenBy(h => h.Id).ToList();
+            kept.Add(rows[0]);
+            if (rows.Select(h => (h.Par, h.Yardage, h.Handicap)).Distinct().Count() > 1)
             {
-                findings.Add(new DuplicateTeeHoleNumber(tee.Id, group.Key, byId.Select(h => h.Id).ToList()));
+                findings.Add(new DuplicateTeeHoleNumber(tee.Id, group.Key, rows[0].Id, group.Select(h => h.Id).Order().ToList()));
             }
         }
 
         if (kept.Count == 0 || kept.Count > CourseRules.MaxHoles)
         {
-            findings.Add(new TeeSkipped(tee.Id, course.Name, tee.Name, kept.Count == 0 ? "no active holes" : $"{kept.Count} holes"));
+            findings.Add(new TeeSkipped(tee.Id, course.Name, tee.Name, kept.Count == 0 ? "no holes" : $"{kept.Count} holes"));
             return null;
         }
 
@@ -220,7 +225,7 @@ public static class GolftrackMapper
         var playedOn = DateOnly.FromDateTime(legacy.PlayedOn);
         if (!tees.TryGetValue(legacy.TeeId, out var tee))
         {
-            findings.Add(new RoundSkipped(legacy.Id, playedOn, $"tee {legacy.TeeId} is missing, inactive or has no usable holes"));
+            findings.Add(new RoundSkipped(legacy.Id, playedOn, $"tee {legacy.TeeId} is missing or has no usable holes"));
             return null;
         }
 
@@ -237,7 +242,7 @@ public static class GolftrackMapper
                 legacy.Id,
                 playedOn,
                 "hole " + string.Join(", ", missing.Select(d => d.HoleId.ToString(CultureInfo.InvariantCulture))) +
-                $" is missing, inactive or not on tee {legacy.TeeId}"));
+                $" is missing or not on tee {legacy.TeeId}"));
             return null;
         }
 

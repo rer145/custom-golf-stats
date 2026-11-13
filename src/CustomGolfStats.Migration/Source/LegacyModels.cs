@@ -1,7 +1,8 @@
 namespace CustomGolfStats.Migration.Source;
 
 // Rows read from golftrack (SQL Server), one record per table, with only the columns the migration uses.
-// Only active rows (IsActive = 1) are read; IsActive itself is therefore not carried.
+// Rounds and round details are read only when IsActive = 1. The courses, tees and holes those rounds play are read
+// whatever their own IsActive (golftrack's Stats_* procedures ignore it there too).
 
 public sealed record LegacyCourse(
     int Id,
@@ -30,8 +31,11 @@ public sealed record LegacyTee(
     double? BackNineCourseRating,
     int? BackNineSlopeRating);
 
-/// <summary><see cref="Handicap"/> is golftrack's stroke index for the hole.</summary>
-public sealed record LegacyHole(int Id, int TeeId, int Number, int Par, int Yardage, int Handicap);
+/// <summary>
+/// <see cref="Handicap"/> is golftrack's stroke index for the hole. Holes of a played tee are read whether active or
+/// not; <see cref="IsActive"/> only decides which of two rows for the same hole number is used.
+/// </summary>
+public sealed record LegacyHole(int Id, int TeeId, int Number, int Par, int Yardage, int Handicap, bool IsActive);
 
 public sealed record LegacyRound(
     int Id,
@@ -67,8 +71,8 @@ public sealed record LegacyRoundDetail(
 public sealed record LegacyHandicap(int Id, int GolferId, DateTime HandicapDate, decimal HandicapIndex);
 
 /// <summary>
-/// Everything the migration needs for one golfer: their active rounds and round details, the active courses, tees and
-/// holes those rounds play, their handicap history, and the lookup names (all lookup rows, active or not, since they
+/// Everything the migration needs for one golfer: their active rounds and round details, the courses, tees and holes
+/// (active or not) those rounds play, their handicap history, and the lookup names (all lookup rows, active or not, since they
 /// are only used as text). Lists are ordered by id.
 /// </summary>
 public sealed record LegacyData(
