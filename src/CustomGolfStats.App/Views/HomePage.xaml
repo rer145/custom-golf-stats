@@ -1,22 +1,122 @@
 <local:RoutePage x:Class="CustomGolfStats.App.Views.HomePage"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                 xmlns:local="using:CustomGolfStats.App.Views">
-  <!-- Placeholder for Route.Home (Task 4). The real screen arrives in Task 5; the bindings show the view model wiring. -->
-  <ScrollViewer>
-    <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace4}">
-      <TextBlock Text="Home" Style="{StaticResource BrandTextTitleStyle}" />
-      <TextBlock Text="{x:Bind local:Ui.Label('Placeholder screen')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
-      <StackPanel Spacing="{StaticResource BrandSpace3}">
-        <TextBlock Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" Style="{StaticResource BrandTextSecondaryStyle}" />
-        <Button Content="Start a round" Command="{x:Bind ViewModel.StartRoundCommand}" Style="{StaticResource BrandHeroButtonStyle}" />
-        <Button Content="Sync now" Command="{x:Bind ViewModel.SyncCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
-        <Button Content="Stats" Command="{x:Bind ViewModel.OpenStatsCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
-        <Button Content="Profile" Command="{x:Bind ViewModel.OpenProfileCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:vm="using:CustomGolfStats.App.Core.ViewModels"
+                 xmlns:sync="using:CustomGolfStats.App.Core.Sync">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Top bar: brand mark, title, stats and profile -->
+    <Grid Padding="20,8,12,8" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Image Source="{ThemeResource BrandMarkImage}" Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,10,0" />
+      <TextBlock Grid.Column="1" Text="Rounds" Style="{StaticResource BrandTextTitleStyle}" VerticalAlignment="Center" />
+      <Button Grid.Column="2" Command="{x:Bind ViewModel.OpenStatsCommand}" Style="{StaticResource BrandIconButtonStyle}"
+              AutomationProperties.Name="Stats" ToolTipService.ToolTip="Stats">
+        <FontIcon Glyph="&#xE9D2;" FontSize="20" />
+      </Button>
+      <Button Grid.Column="3" Command="{x:Bind ViewModel.OpenProfileCommand}" Style="{StaticResource BrandIconButtonStyle}"
+              AutomationProperties.Name="Profile" ToolTipService.ToolTip="Profile">
+        <FontIcon Glyph="&#xE77B;" FontSize="20" />
+      </Button>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace3}">
+        <!-- Sync status -->
+        <Border Style="{StaticResource BrandCardStyle}" Padding="16,8,8,8">
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="{x:Bind local:Ui.Label('Sync')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+              <TextBlock Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" Style="{StaticResource BrandTextBodyStyle}" />
+            </StackPanel>
+            <ProgressRing Grid.Column="1" Width="24" Height="24" IsActive="{x:Bind ViewModel.IsSyncing, Mode=OneWay}"
+                          Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsSyncing), Mode=OneWay}" Margin="0,0,10,0" />
+            <Button Grid.Column="1" Content="Sync" Command="{x:Bind ViewModel.SyncCommand}"
+                    Visibility="{x:Bind local:Ui.CollapsedIf(ViewModel.IsSyncing), Mode=OneWay}"
+                    Style="{StaticResource BrandLinkButtonStyle}" HorizontalAlignment="Right" />
+          </Grid>
+        </Border>
+
+        <!-- Signed out of sync -->
+        <Border Style="{StaticResource BrandNoticeStyle}" Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.NeedsSignIn), Mode=OneWay}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Your session ended. Sign in again to keep syncing; your rounds stay on this device." Style="{StaticResource BrandTextBodyStyle}" />
+            <Button Content="Sign in again" Command="{x:Bind ViewModel.SignInAgainCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Sync notices -->
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Notices}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="sync:SyncNotice">
+              <Border Style="{StaticResource BrandNoticeStyle}" Margin="0,0,0,8" Padding="16,12,8,12">
+                <Grid ColumnSpacing="8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{x:Bind Message}" Style="{StaticResource BrandTextBodyStyle}" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Click="OnDismissNotice" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Dismiss">
+                    <FontIcon Glyph="&#xE711;" FontSize="14" />
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- The add action of this screen -->
+        <Button Content="+ New round" Command="{x:Bind ViewModel.StartRoundCommand}" Style="{StaticResource BrandAccentButtonStyle}"
+                MinHeight="{StaticResource BrandButtonHeightLarge}" />
+
+        <TextBlock Text="{x:Bind local:Ui.Label('Recent rounds')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <TextBlock Text="No rounds yet. Start one and it will show up here, even offline."
+                   Visibility="{x:Bind local:Ui.VisibleIfZero(ViewModel.Rounds.Count), Mode=OneWay}"
+                   Style="{StaticResource BrandTextSecondaryStyle}" />
+        <ListView ItemsSource="{x:Bind ViewModel.Rounds}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnRoundClick"
+                  ItemContainerStyle="{StaticResource BrandListItemStyle}" ScrollViewer.VerticalScrollMode="Disabled">
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="vm:RoundListItem">
+              <Border Style="{StaticResource BrandCardStyle}" Padding="16,12">
+                <Grid ColumnSpacing="12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{x:Bind CourseName}" Style="{StaticResource BrandTextBodyStrongStyle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                    <TextBlock Text="{x:Bind local:Display.RoundLine(PlayedOn, Holes, IsFinished)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+                    <TextBlock Text="{x:Bind local:Ui.Label('Waiting to sync')}" Visibility="{x:Bind local:Ui.VisibleIf(IsWaitingToSync)}"
+                               Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandAccentTextBrush}" Margin="0,2,0,0" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind local:Display.Score(Score)}" Style="{StaticResource BrandTextStatMStyle}" HorizontalAlignment="Right" />
+                    <TextBlock Text="{x:Bind ToParText}" Style="{StaticResource BrandTextStatSStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" HorizontalAlignment="Right" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+        <Button Content="See all rounds" Command="{x:Bind ViewModel.SeeAllCommand}" Style="{StaticResource BrandSecondaryButtonStyle}"
+                Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.HasMoreRounds), Mode=OneWay}" />
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
       </StackPanel>
-      <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
-                 Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
-                 Style="{StaticResource BrandTextErrorStyle}" />
-    </StackPanel>
-  </ScrollViewer>
+    </ScrollViewer>
+  </Grid>
 </local:RoutePage>

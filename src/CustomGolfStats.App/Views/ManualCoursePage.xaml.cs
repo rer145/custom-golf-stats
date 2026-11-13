@@ -1,20 +1,19 @@
 namespace CustomGolfStats.App.Views;
 
-/// <summary>Route.ManualCourse: binds <see cref="ManualCourseViewModel"/>.</summary>
+/// <summary>Route.ManualCourse: binds <see cref="ManualCourseViewModel"/>. Works offline; the course syncs later.</summary>
 public sealed partial class ManualCoursePage : RoutePage
 {
+    private bool _initialized;
+
     public ManualCoursePage()
     {
         InitializeComponent();
+        DataContext = ViewModel;
     }
 
     public ManualCourseViewModel ViewModel { get; } = Resolve<ManualCourseViewModel>();
 
-    protected override Task LoadAsync(object? parameter) => InitializeOnce();
-
-    private bool _initialized;
-
-    private Task InitializeOnce()
+    protected override Task LoadAsync(object? parameter)
     {
         if (!_initialized)
             ViewModel.Initialize();
@@ -22,5 +21,7 @@ public sealed partial class ManualCoursePage : RoutePage
         return Task.CompletedTask;
     }
 
-    private void OnBack(object sender, RoutedEventArgs e) => _ = Resolve<INavigator>().GoBackAsync();
+    private void OnNine(object sender, RoutedEventArgs e) => ViewModel.SetHoleCountCommand.Execute(9);
+
+    private void OnEighteen(object sender, RoutedEventArgs e) => ViewModel.SetHoleCountCommand.Execute(18);
 }

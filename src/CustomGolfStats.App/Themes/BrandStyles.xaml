@@ -14,6 +14,31 @@
       <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
       <!-- Focused inputs underline in the brand primary instead of the system accent. -->
       <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BrandPrimaryBrush" />
+      <!-- Toggle buttons and chips: chosen = primary fill. -->
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackground" ResourceKey="BrandSurfaceBrush" />
+      <StaticResource x:Key="ToggleButtonForeground" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="BrandBorderBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="BrandPrimaryBrush" />
+      <!-- System accent and list selection follow the brand, never the platform blue. -->
+      <StaticResource x:Key="SystemAccentColor" ResourceKey="BrandPrimaryColor" />
+      <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
       <!-- Cards: 1 px border on light. -->
       <StaticResource x:Key="BrandCardBorderBrush" ResourceKey="BrandBorderBrush" />
     </ResourceDictionary>
@@ -22,6 +47,31 @@
       <BitmapImage x:Key="BrandMarkImage" UriSource="ms-appx:///Assets/Brand/mark-reversed-256.png" />
       <BitmapImage x:Key="BrandLockupStackedImage" UriSource="ms-appx:///Assets/Brand/lockup-stacked-on-dark@2x.png" />
       <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
+      <!-- Toggle buttons and chips: chosen = primary fill. -->
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackground" ResourceKey="BrandSurfaceBrush" />
+      <StaticResource x:Key="ToggleButtonForeground" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="BrandBorderBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="BrandPrimaryBrush" />
+      <!-- System accent and list selection follow the brand, never the platform blue. -->
+      <StaticResource x:Key="SystemAccentColor" ResourceKey="BrandPrimaryColor" />
+      <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
       <!-- Cards: no border on dark (BRAND.md section 5). -->
       <SolidColorBrush x:Key="BrandCardBorderBrush" Color="Transparent" />
       <!-- Focused inputs underline in the brand primary instead of the system accent. -->
@@ -142,6 +192,60 @@
   <!-- The hero number on dark may use Pin Orange itself (24 px bold and up). -->
   <Style x:Key="BrandRoundHeaderHighlightStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatLStyle}">
     <Setter Property="Foreground" Value="{StaticResource BrandPaletteOrangeBrush}" />
+  </Style>
+
+  <!-- ===== Lists and sections ===== -->
+  <!-- A section heading: mono label, upper case by the caller (Ui.Label). -->
+  <Style x:Key="BrandSectionLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextLabelStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextSecondaryBrush}" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <!-- Stat value in a tile (statM) with an Inter 13 caption below (BrandTextCaptionSecondaryStyle). -->
+  <Style x:Key="BrandStatValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatMStyle}" />
+  <!-- A tappable row: a card with no ListView chrome. -->
+  <Style x:Key="BrandListItemStyle" TargetType="ListViewItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+    <Setter Property="MinHeight" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <!-- One-tap choice chip (ChipPicker): pill, 44 tall, chosen = primary fill. -->
+  <Style x:Key="BrandChipStyle" TargetType="ToggleButton">
+    <Setter Property="MinHeight" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="MinWidth" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="CornerRadius" Value="22" />
+    <Setter Property="BorderThickness" Value="{StaticResource BrandBorderThickness}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBodyMedium}" />
+    <Setter Property="FontSize" Value="{StaticResource BrandFontSizeMd}" />
+  </Style>
+  <!-- On/off flag (fairway hit, missed left...): a 44 tall toggle with a 1 px border. -->
+  <Style x:Key="BrandFlagToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource BrandChipStyle}">
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <!-- Number fields: 44 tall, radius sm, mono digits. -->
+  <Style x:Key="BrandNumberBoxStyle" TargetType="NumberBox">
+    <Setter Property="MinHeight" Value="{StaticResource BrandInputHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="SpinButtonPlacementMode" Value="Hidden" />
+  </Style>
+  <Style TargetType="NumberBox" BasedOn="{StaticResource BrandNumberBoxStyle}" />
+  <!-- Small destructive text action ("Delete hole"): negative colour, still 44 tall. -->
+  <Style x:Key="BrandDangerLinkButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandLinkButtonStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandNegativeBrush}" />
+  </Style>
+  <!-- Square icon-sized button (44 x 44) for row actions such as favorite and delete. -->
+  <Style x:Key="BrandIconButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandSecondaryButtonStyle}">
+    <Setter Property="Width" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Height" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <!-- Notice card on home (sync notices): surface card with an accent-text heading. -->
+  <Style x:Key="BrandNoticeStyle" TargetType="Border" BasedOn="{StaticResource BrandCardStyle}">
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusMd}" />
   </Style>
 
   <!-- Notice / error banner shown by the app shell. -->

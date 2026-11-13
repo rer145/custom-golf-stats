@@ -212,3 +212,21 @@ public class QuickHoleViewModelTests
         Assert.Equal(UiText.HoleNotOnCourse, other.ErrorMessage);
     }
 }
+
+public class QuickHoleSuggestionNotificationTests
+{
+    [Fact]
+    public async Task Changing_score_or_putts_announces_the_new_gir_suggestion()
+    {
+        await using var rig = await VmRig.CreateAsync();
+        var roundId = await rig.CreateRoundAsync(EntryMode.Quick);
+        var vm = new QuickHoleViewModel(rig.Db, rig.Nav);
+        await vm.LoadAsync(new HoleArgs(roundId, HoleNumber: 1));
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        vm.Putts = 3;
+
+        Assert.Contains(nameof(QuickHoleViewModel.SuggestedGir), changed);
+    }
+}

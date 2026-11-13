@@ -26,19 +26,26 @@ public sealed class KeychainSecureStore : ISecureStore
     {
         lock (_lock)
         {
-            var data = NSData.FromString(value, NSStringEncoding.UTF8);
-            var status = SecKeyChain.Update(Query(key), new SecRecord(SecKind.GenericPassword) { ValueData = data });
-            if (status == SecStatusCode.ItemNotFound)
-            {
-                var record = Query(key);
-                record.ValueData = data;
-                record.Accessible = SecAccessible.AfterFirstUnlockThisDeviceOnly;
-                status = SecKeyChain.Add(record);
-            }
+            // Replace by delete + add: an update query must not carry the item class among the attributes it changes
+            // (that is errSecNoSuchAttr), and delete + add also re-applies the accessibility class.
+            var removed = SecKeyChain.Remove(Query(key));
+            if (removed is not (SecStatusCode.Success or SecStatusCode.ItemNotFound))
+                throw Failure("delete before write", removed);
+            var record = Query(key);
+            record.ValueData = NSData.FromString(value, NSStringEncoding.UTF8);
+            record.Accessible = SecAccessible.AfterFirstUnlockThisDeviceOnly;
+            var status = SecKeyChain.Add(record);
             if (status != SecStatusCode.Success)
-                throw new InvalidOperationException($"Keychain write failed ({status}).");
+                throw Failure("write", status);
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>Logs the Keychain status (never the value) and returns the exception to throw.</summary>
+    private static InvalidOperationException Failure(string what, SecStatusCode status)
+    {
+        Diagnostics.SafeLog.Info($"Keychain {what} failed: {status}");
+        return new InvalidOperationException($"Keychain {what} failed ({status}).");
     }
 
     public Task RemoveAsync(string key)

@@ -117,6 +117,7 @@ public sealed partial class QuickHoleViewModel(LocalDb db, INavigator navigator)
         OnPropertyChanged(nameof(HasTeeShotFlags));
         OnPropertyChanged(nameof(IsNewPlaying));
         OnPropertyChanged(nameof(ToPar));
+        OnPropertyChanged(nameof(SuggestedGir));
         Revalidate();
     }
 
@@ -153,6 +154,7 @@ public sealed partial class QuickHoleViewModel(LocalDb db, INavigator navigator)
             _applyingGir = false;
         }
         OnPropertyChanged(nameof(ToPar));
+        OnPropertyChanged(nameof(SuggestedGir));
         Revalidate();
     }
 

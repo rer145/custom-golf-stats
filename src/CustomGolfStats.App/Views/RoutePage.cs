@@ -33,6 +33,24 @@ public abstract partial class RoutePage : Page
         }
     }
 
+    /// <summary>The header's back button.</summary>
+    protected void OnBack(object sender, RoutedEventArgs e) => _ = Resolve<INavigator>().GoBackAsync();
+
+    /// <summary>Asks before something that cannot be undone (deleting a round or a hole). True when the golfer confirmed.</summary>
+    protected async Task<bool> ConfirmAsync(string title, string message, string confirmText)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = confirmText,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
     /// <summary>Loads the view model for this navigation. <paramref name="parameter"/> is the record the navigator was given.</summary>
     protected virtual Task LoadAsync(object? parameter) => Task.CompletedTask;
 }

@@ -1,0 +1,20 @@
+<UserControl x:Class="CustomGolfStats.App.Controls.Stepper"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- A whole-number field for one thumb: label on the left, − value + on the right, every target 44 pt. -->
+  <Grid ColumnSpacing="8" MinHeight="{StaticResource BrandTouchTarget}">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+      <ColumnDefinition Width="56" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <TextBlock x:Name="LabelText" VerticalAlignment="Center" Style="{StaticResource BrandTextBodyStyle}" />
+    <Button x:Name="MinusButton" Grid.Column="1" Content="−" Click="OnMinus" Width="48" Height="48" Padding="0"
+            Style="{StaticResource BrandSecondaryButtonStyle}" FontSize="22" AutomationProperties.Name="Decrease" />
+    <TextBlock x:Name="ValueText" Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+               Style="{StaticResource BrandTextStatMStyle}" />
+    <Button x:Name="PlusButton" Grid.Column="3" Content="+" Click="OnPlus" Width="48" Height="48" Padding="0"
+            Style="{StaticResource BrandSecondaryButtonStyle}" FontSize="22" AutomationProperties.Name="Increase" />
+  </Grid>
+</UserControl>

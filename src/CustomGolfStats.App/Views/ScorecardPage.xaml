@@ -1,18 +1,104 @@
 <local:RoutePage x:Class="CustomGolfStats.App.Views.ScorecardPage"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                 xmlns:local="using:CustomGolfStats.App.Views">
-  <!-- Placeholder for Route.Scorecard (Task 4). The real screen arrives in Task 5; the bindings show the view model wiring. -->
-  <ScrollViewer>
-    <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace4}">
-      <Button Content="Back" Click="OnBack" HorizontalAlignment="Left" Style="{StaticResource BrandLinkButtonStyle}" Padding="0" />
-      <TextBlock Text="Scorecard" Style="{StaticResource BrandTextTitleStyle}" />
-      <TextBlock Text="{x:Bind local:Ui.Label('Placeholder screen')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
-      <StackPanel Spacing="{StaticResource BrandSpace3}">
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:vm="using:CustomGolfStats.App.Core.ViewModels">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <TextBlock Text="Scorecard" Style="{StaticResource BrandTextTitleStyle}" />
+        <TextBlock Text="{x:Bind local:ScorecardPage.Subtitle(ViewModel.CourseName, ViewModel.TeeName, ViewModel.Rating, ViewModel.Slope), Mode=OneWay}"
+                   Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
       </StackPanel>
-      <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
-                 Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
-                 Style="{StaticResource BrandTextErrorStyle}" />
-    </StackPanel>
-  </ScrollViewer>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1" HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Auto">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="0" MinWidth="380">
+        <TextBlock Text="In the order played" Style="{StaticResource BrandTextCaptionSecondaryStyle}" Margin="0,0,0,8" />
+        <!-- Header -->
+        <Grid Padding="0,6" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,0,0,1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="36" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="48" />
+            <ColumnDefinition Width="32" />
+            <ColumnDefinition Width="52" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="36" />
+            <ColumnDefinition Width="36" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="HOLE" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="1" Text="PAR" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="2" Text="YDS" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="3" Text="SI" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="4" Text="SCORE" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="5" Text="+/-" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="6" Text="PUTT" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="7" Text="FIR" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="8" Text="GIR" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+        </Grid>
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ScorecardRow">
+              <Grid Padding="0,10" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,0,0,1">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="36" />
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="48" />
+                  <ColumnDefinition Width="32" />
+                  <ColumnDefinition Width="52" />
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="36" />
+                  <ColumnDefinition Width="36" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Bind local:Display.Number(HoleNumber)}" Style="{StaticResource BrandTextStatSStyle}" />
+                <TextBlock Grid.Column="1" Text="{x:Bind local:Display.Number(Par)}" Style="{StaticResource BrandTextStatSStyle}" FontFamily="{StaticResource BrandFontMonoMedium}" />
+                <TextBlock Grid.Column="2" Text="{x:Bind local:Display.Number(Yardage)}" Style="{StaticResource BrandTextStatSStyle}" FontFamily="{StaticResource BrandFontMonoMedium}" />
+                <TextBlock Grid.Column="3" Text="{x:Bind local:Display.Number(StrokeIndex)}" Style="{StaticResource BrandTextStatSStyle}" FontFamily="{StaticResource BrandFontMonoMedium}" />
+                <TextBlock Grid.Column="4" Text="{x:Bind local:Display.Number(Score)}" Style="{StaticResource BrandTextStatSStyle}" />
+                <TextBlock Grid.Column="5" Text="{x:Bind ToParText}" Style="{StaticResource BrandTextStatSStyle}" FontFamily="{StaticResource BrandFontMonoMedium}" />
+                <TextBlock Grid.Column="6" Text="{x:Bind local:Display.Number(Putts)}" Style="{StaticResource BrandTextStatSStyle}" FontFamily="{StaticResource BrandFontMonoMedium}" />
+                <TextBlock Grid.Column="7" Text="{x:Bind local:Display.Mark(FairwayHit)}" Style="{StaticResource BrandTextStatSStyle}" Foreground="{ThemeResource BrandPositiveBrush}" />
+                <TextBlock Grid.Column="8" Text="{x:Bind local:Display.Mark(Gir)}" Style="{StaticResource BrandTextStatSStyle}" Foreground="{ThemeResource BrandPositiveBrush}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <!-- Totals -->
+        <Grid Padding="0,12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="36" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="48" />
+            <ColumnDefinition Width="32" />
+            <ColumnDefinition Width="52" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="TOT" Style="{StaticResource BrandTextLabelStyle}" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{x:Bind local:Display.Number(ViewModel.TotalPar), Mode=OneWay}" Style="{StaticResource BrandTextStatSStyle}" />
+          <TextBlock Grid.Column="2" Text="{x:Bind local:Display.Number(ViewModel.TotalYardage), Mode=OneWay}" Style="{StaticResource BrandTextStatSStyle}" />
+          <TextBlock Grid.Column="4" Text="{x:Bind local:Display.Number(ViewModel.TotalScore), Mode=OneWay}" Style="{StaticResource BrandTextStatSStyle}" />
+          <TextBlock Grid.Column="5" Text="{x:Bind ViewModel.ToParText, Mode=OneWay}" Style="{StaticResource BrandTextStatSStyle}" />
+          <TextBlock Grid.Column="6" Text="{x:Bind local:Display.Number(ViewModel.TotalPutts), Mode=OneWay}" Style="{StaticResource BrandTextStatSStyle}" />
+        </Grid>
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </local:RoutePage>

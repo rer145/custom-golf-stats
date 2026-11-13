@@ -1,19 +1,93 @@
 <local:RoutePage x:Class="CustomGolfStats.App.Views.StartRoundPage"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                 xmlns:local="using:CustomGolfStats.App.Views">
-  <!-- Placeholder for Route.StartRound (Task 4). The real screen arrives in Task 5; the bindings show the view model wiring. -->
-  <ScrollViewer>
-    <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace4}">
-      <Button Content="Back" Click="OnBack" HorizontalAlignment="Left" Style="{StaticResource BrandLinkButtonStyle}" Padding="0" />
-      <TextBlock Text="Start a round" Style="{StaticResource BrandTextTitleStyle}" />
-      <TextBlock Text="{x:Bind local:Ui.Label('Placeholder screen')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
-      <StackPanel Spacing="{StaticResource BrandSpace3}">
-        <Button Content="Start round" Command="{x:Bind ViewModel.StartCommand}" Style="{StaticResource BrandHeroButtonStyle}" />
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:vm="using:CustomGolfStats.App.Core.ViewModels">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="Start a round" Style="{StaticResource BrandTextTitleStyle}" VerticalAlignment="Center" />
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace3}">
+        <TextBlock Text="{x:Bind ViewModel.CourseName, Mode=OneWay}" Style="{StaticResource BrandTextHeadingStyle}" />
+
+        <TextBlock Text="{x:Bind local:Ui.Label('Tee')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <ListView ItemsSource="{x:Bind ViewModel.Tees}" SelectionMode="Single" SelectedItem="{Binding SelectedTee, Mode=TwoWay}"
+                  ScrollViewer.VerticalScrollMode="Disabled">
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="vm:TeeOption">
+              <StackPanel Padding="0,10" Spacing="2">
+                <TextBlock Text="{x:Bind Name}" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                <TextBlock Text="{x:Bind Description}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <CalendarDatePicker Header="Date" Date="{Binding PlayedOn, Mode=TwoWay, Converter={StaticResource DateOffset}}"
+                              HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" DateFormat="{}{day.integer} {month.abbreviated} {year.full}" />
+          <ComboBox Grid.Column="1" Header="Round type" ItemsSource="{x:Bind ViewModel.RoundTypes}" SelectedItem="{Binding RoundType, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={StaticResource EnumText}}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+
+        <TextBlock Text="{x:Bind local:Ui.Label('How you will score it')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <Border Style="{StaticResource BrandCardStyle}" Padding="12,4">
+          <StackPanel>
+            <RadioButton GroupName="Mode" x:Name="QuickMode" Checked="OnQuickChecked" MinHeight="{StaticResource BrandTouchTarget}"
+                         IsChecked="{x:Bind local:StartRoundPage.IsQuick(ViewModel.Mode), Mode=OneWay}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Quick entry" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                <TextBlock Text="Score, putts, fairway and green per hole." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+              </StackPanel>
+            </RadioButton>
+            <RadioButton GroupName="Mode" x:Name="ShotMode" Checked="OnShotChecked" MinHeight="{StaticResource BrandTouchTarget}"
+                         IsEnabled="{x:Bind ViewModel.ShotByShotAllowed, Mode=OneWay}"
+                         IsChecked="{x:Bind local:StartRoundPage.IsShotByShot(ViewModel.Mode), Mode=OneWay}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Shot by shot" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                <TextBlock Text="Every shot: lie, distance, club and result." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+              </StackPanel>
+            </RadioButton>
+            <TextBlock Text="{x:Bind ViewModel.ShotByShotDisabledReason, Mode=OneWay}" Margin="32,0,0,8"
+                       Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ShotByShotDisabledReason), Mode=OneWay}"
+                       Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+            <TextBlock Text="{x:Bind ViewModel.TrialRoundsText, Mode=OneWay}" Margin="32,0,0,8"
+                       Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.TrialRoundsText), Mode=OneWay}"
+                       Style="{StaticResource BrandTextCaptionStyle}" Foreground="{ThemeResource BrandAccentTextBrush}" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
       </StackPanel>
-      <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
-                 Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
-                 Style="{StaticResource BrandTextErrorStyle}" />
-    </StackPanel>
-  </ScrollViewer>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="20,8,20,12" Background="{ThemeResource BrandBackgroundBrush}" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,1,0,0">
+      <Button Content="Start round" Command="{x:Bind ViewModel.StartCommand}" Style="{StaticResource BrandHeroButtonStyle}" />
+    </Border>
+  </Grid>
 </local:RoutePage>
