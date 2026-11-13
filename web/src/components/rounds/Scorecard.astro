@@ -1,0 +1,181 @@
+---
+import type { Schemas } from '../../api/client';
+import { DASH, formatInteger, formatToPar } from '../../lib/format';
+import { scoreMark, subtotals, type Subtotal } from '../../lib/scorecard';
+
+/**
+ * A round's scorecard. Rows come in the API's order: holes in the order they were played (a hole played twice has two
+ * rows), then the tee's unplayed holes. Out and In appear only when holes 1–9 or 10–18 were each played exactly once.
+ */
+interface Props {
+  card: Schemas['ScorecardResponse'];
+}
+
+const { card } = Astro.props;
+type Hole = Schemas['ScorecardHoleDto'];
+type Result = Schemas['ScorecardHoleResultDto'];
+
+const played = card.holes.filter((h): h is Hole & { result: Result } => h.result !== null);
+const unplayed = card.holes.filter((h) => h.result === null);
+const totals = subtotals(card.holes);
+
+const seen = new Set<number>();
+const rows = played.map((h) => {
+  const n = Number(h.number);
+  const again = seen.has(n);
+  seen.add(n);
+  return { hole: h, result: h.result, again };
+});
+
+function teeShot(h: Hole, r: Result): string {
+  if (r.fairwayHit) return 'Fairway';
+  const parts = [r.teeShotShort && 'Short', r.teeShotLong && 'Long', r.teeShotLeft && 'Left', r.teeShotRight && 'Right'].filter(Boolean) as string[];
+  if (parts.length > 0) return parts.map((p, i) => (i === 0 ? p : p.toLowerCase())).join(' ');
+  return Number(h.par) === 3 ? DASH : 'Missed';
+}
+
+const sand = (r: Result) => Number(r.greensideSandShots) + Number(r.fairwaySandShots);
+const subtotalRows: { label: string; t: Subtotal }[] = [
+  ...(totals.out ? [{ label: 'Out', t: totals.out }] : []),
+  ...(totals.in ? [{ label: 'In', t: totals.in }] : []),
+];
+---
+
+<div class="table-wrap scorecard-wrap">
+  <table class="table scorecard">
+    <caption class="visually-hidden">Scorecard, hole by hole in the order played</caption>
+    <thead>
+      <tr>
+        <th scope="col">Hole</th>
+        <th scope="col" class="num">Par</th>
+        <th scope="col" class="num">Yds</th>
+        <th scope="col" class="num">SI</th>
+        <th scope="col" class="num">Score</th>
+        <th scope="col" class="num">Putts</th>
+        <th scope="col">Tee shot</th>
+        <th scope="col">GIR</th>
+        <th scope="col" class="num">Pen</th>
+        <th scope="col" class="num">Sand</th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map(({ hole, result, again }) => (
+          <tr data-hole={hole.number} data-again={again ? 'true' : undefined}>
+            <th scope="row" class="num">
+              {formatInteger(hole.number)}
+              {again && <span class="again caption">again</span>}
+            </th>
+            <td class="num">{formatInteger(hole.par)}</td>
+            <td class="num muted">{formatInteger(hole.yardage)}</td>
+            <td class="num muted">{formatInteger(hole.strokeIndex)}</td>
+            <td class="num">
+              <span class:list={['score', `score-${scoreMark(result.score, hole.par)}`]}>{formatInteger(result.score)}</span>
+            </td>
+            <td class="num">{formatInteger(result.putts)}</td>
+            <td>{teeShot(hole, result)}</td>
+            <td>{result.gir ? 'Yes' : 'No'}</td>
+            <td class="num">{formatInteger(result.penaltyStrokes)}</td>
+            <td class="num">{formatInteger(sand(result))}</td>
+          </tr>
+        ))
+      }
+    </tbody>
+    {
+      unplayed.length > 0 && (
+        <tbody class="unplayed">
+          <tr>
+            <th scope="rowgroup" colspan="10" class="group-label">
+              Not played
+            </th>
+          </tr>
+          {unplayed.map((hole) => (
+            <tr data-hole={hole.number} data-unplayed="true">
+              <th scope="row" class="num">{formatInteger(hole.number)}</th>
+              <td class="num">{formatInteger(hole.par)}</td>
+              <td class="num">{formatInteger(hole.yardage)}</td>
+              <td class="num">{formatInteger(hole.strokeIndex)}</td>
+              <td class="num">{DASH}</td>
+              <td class="num">{DASH}</td>
+              <td>{DASH}</td>
+              <td>{DASH}</td>
+              <td class="num">{DASH}</td>
+              <td class="num">{DASH}</td>
+            </tr>
+          ))}
+        </tbody>
+      )
+    }
+    <tfoot>
+      {
+        subtotalRows.map(({ label, t }) => (
+          <tr data-subtotal={label}>
+            <th scope="row">{label}</th>
+            <td class="num">{formatInteger(t.par)}</td>
+            <td class="num muted">{formatInteger(t.yardage)}</td>
+            <td />
+            <td class="num strong">{formatInteger(t.score)}</td>
+            <td class="num">{formatInteger(t.putts)}</td>
+            <td colspan="4" class="num to-par">{formatToPar(t.score - t.par)}</td>
+          </tr>
+        ))
+      }
+      <tr data-subtotal="Total" class="total">
+        <th scope="row">Total</th>
+        <td class="num">{formatInteger(totals.total.par)}</td>
+        <td class="num muted">{formatInteger(totals.total.yardage)}</td>
+        <td />
+        <td class="num strong">{formatInteger(card.score)}</td>
+        <td class="num">{formatInteger(card.putts)}</td>
+        <td colspan="4" class="num to-par">{formatToPar(card.toPar)}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<style>
+  .scorecard-wrap { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .scorecard-wrap { border-color: transparent; }
+  }
+  :root[data-theme='dark'] .scorecard-wrap { border-color: transparent; }
+
+  .scorecard { white-space: nowrap; }
+  .scorecard th, .scorecard td { padding: var(--space-2) var(--space-3); }
+  .scorecard tbody th[scope='row'], .scorecard tfoot th[scope='row'] { text-align: left; font-weight: 600; }
+  /* Hole numbers stay in view while the card scrolls sideways on a phone. */
+  .scorecard th[scope='row'], .scorecard thead th:first-child { position: sticky; left: 0; background: var(--color-surface); }
+  .scorecard .again { margin-left: var(--space-2); }
+
+  .scorecard .unplayed td, .scorecard .unplayed th { color: var(--color-text-secondary); }
+  .scorecard .group-label {
+    position: static;
+    padding-top: var(--space-5);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .scorecard tfoot th, .scorecard tfoot td { border-top: 1px solid var(--color-border); font-weight: 600; }
+  .scorecard tfoot tr:last-child th, .scorecard tfoot tr:last-child td { border-bottom: 0; }
+  .scorecard tfoot .to-par { text-align: left; color: var(--color-text-secondary); }
+  .scorecard .total .to-par { color: var(--color-accent-text); }
+  .scorecard .strong { font-weight: 700; }
+
+  .score {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    border: 1.5px solid transparent;
+  }
+  .score-birdie, .score-eagle { border-color: var(--color-text); border-radius: 50%; }
+  .score-eagle { outline: 1.5px solid var(--color-text); outline-offset: 2px; }
+  .score-bogey, .score-double { border-color: var(--color-text-secondary); border-radius: 3px; }
+  .score-double { outline: 1.5px solid var(--color-text-secondary); outline-offset: 2px; }
+</style>

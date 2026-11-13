@@ -63,10 +63,25 @@ export function formatTenths(value: Numeric): string {
   return n === null ? DASH : fixed(n, 1);
 }
 
-/** A handicap index to 1 dp, in golf's convention: an index below zero is a plus handicap, `+2.1`. */
-export function formatHandicapIndex(value: Numeric): string {
+/** An API ratio (`value` is a 0–1 fraction, null with a zero denominator) as a percentage: `13.5%`. */
+export function formatRatio(ratio: { value: Numeric } | null | undefined): string {
+  const n = toNumber(ratio?.value);
+  return n === null ? DASH : formatPercent(n * 100);
+}
+
+/** A handicap index to 1 dp. The API stores a plus handicap as a negative index, written `+2.1`. */
+export function formatHandicap(value: Numeric): string {
   const n = toNumber(value);
   if (n === null) return DASH;
   const s = Math.abs(n).toFixed(1);
   return n < 0 && Number(s) !== 0 ? `+${s}` : s;
+}
+
+/** Same as {@link formatHandicap}; kept for the course and profile pages. */
+export const formatHandicapIndex = formatHandicap;
+
+/** Plain decimals, sign only when negative (a real minus): course ratings, `−1.2`. */
+export function formatDecimal(value: Numeric, digits = 1): string {
+  const n = toNumber(value);
+  return n === null ? DASH : fixed(n, digits);
 }

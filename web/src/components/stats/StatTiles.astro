@@ -1,0 +1,31 @@
+---
+/** A grid of <StatTile>s as a description list. `title` (optional) heads the group. */
+interface Props {
+  title?: string;
+  columns?: 2 | 3 | 4;
+}
+
+const { title, columns = 4 } = Astro.props;
+const id = title ? `tiles-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : undefined;
+---
+
+<section class="tiles-group" aria-labelledby={id}>
+  {title && <h2 id={id} class="title">{title}</h2>}
+  <dl class:list={['tiles', `tiles-${columns}`]}>
+    <slot />
+  </dl>
+</section>
+
+<style>
+  .tiles-group { display: grid; gap: var(--space-4); }
+  .tiles { display: grid; gap: var(--space-4); margin: 0; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
+  .tiles-4 { --cols: 4; }
+  .tiles-3 { --cols: 3; }
+  .tiles-2 { --cols: 2; }
+  @media (max-width: 960px) {
+    .tiles-4, .tiles-3 { --cols: 2; }
+  }
+  @media (max-width: 420px) {
+    .tiles { gap: var(--space-3); }
+  }
+</style>

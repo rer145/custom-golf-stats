@@ -1,0 +1,80 @@
+---
+import { formatValue, type ChartSpec } from '../../lib/chart-spec';
+
+/**
+ * A chart with its data table. The table is the fallback: it shows on its own until the Chart.js island draws the
+ * chart (no JS, or a failed draw, still gets every number), then folds into "Show the numbers".
+ */
+interface Props {
+  title: string;
+  spec: ChartSpec;
+  /** Header for the label column of the data table, e.g. "Score" or "Date". */
+  labelHeader: string;
+  /** Optional extra column (e.g. the counts behind a percentage). */
+  detail?: { header: string; values: string[] };
+  /** One sentence for screen readers describing what the chart shows. */
+  summary: string;
+  size?: 'm' | 's';
+}
+
+const { title, spec, labelHeader, detail, summary, size = 'm' } = Astro.props;
+const id = `chart-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+---
+
+<figure class:list={['chart', 'card', `chart-${size}`]} data-chart={JSON.stringify(spec)} aria-labelledby={`${id}-title`}>
+  <figcaption id={`${id}-title`} class="heading">{title}</figcaption>
+  <div class="chart-canvas">
+    <canvas role="img" aria-label={summary}></canvas>
+  </div>
+  <details class="chart-data" open>
+    <summary class="caption">Show the numbers</summary>
+    <div class="table-wrap">
+      <table class="table">
+        <caption class="visually-hidden">{title}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{labelHeader}</th>
+            {spec.series.map((s) => <th scope="col" class="num">{s.name}</th>)}
+            {detail && <th scope="col" class="num">{detail.header}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {
+            spec.labels.map((label, i) => (
+              <tr>
+                <th scope="row">{label}</th>
+                {spec.series.map((s) => (
+                  <td class="num">{formatValue(spec.format, s.values[i] ?? null)}</td>
+                ))}
+                {detail && <td class="num">{detail.values[i] ?? ''}</td>}
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+  </details>
+</figure>
+
+<script>
+  import { mountCharts } from '../../lib/charts.client';
+  mountCharts();
+</script>
+
+<style>
+  .chart { margin: 0; display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+  .chart-canvas { position: relative; height: 240px; }
+  .chart-s .chart-canvas { height: 180px; }
+  /* Until the island draws, the canvas takes no room and the table is the chart. */
+  .chart:not([data-ready]) .chart-canvas { display: none; }
+  .chart-data summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    cursor: pointer;
+    color: var(--color-text-secondary);
+  }
+  .chart:not([data-ready]) .chart-data summary { display: none; }
+  .chart-data .table { font-size: 14px; }
+  .chart-data .table th, .chart-data .table td { padding: var(--space-2) var(--space-3); }
+</style>

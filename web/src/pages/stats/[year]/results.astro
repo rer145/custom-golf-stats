@@ -1,0 +1,81 @@
+---
+import { call } from '../../../api/client';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { formatInteger, formatRatio, formatToPar } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, formatShortDate, parseYear, yearsFrom } from '../../../lib/stats';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/results', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = problem.status;
+const years = yearsFrom(yearsR);
+const rows = r.ok ? r.data.rounds : null;
+---
+
+<StatsShell section="results" year={year} years={years} lede="Every round of the season. Open one for its scorecard." problem={problem}>
+  {
+    rows && rows.length === 0 && <EmptyYear year={year} />
+  }
+  {
+    rows && rows.length > 0 && (
+      <div class="table-wrap">
+        <table class="table results">
+          <caption class="visually-hidden">Rounds in {year}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Course</th>
+              <th scope="col" class="num">Holes</th>
+              <th scope="col" class="num">Score</th>
+              <th scope="col" class="num">To par</th>
+              <th scope="col" class="num">Putts</th>
+              <th scope="col" class="num">GIR</th>
+              <th scope="col" class="num">Fairways</th>
+              <th scope="col" class="num">Par 3</th>
+              <th scope="col" class="num">Par 4</th>
+              <th scope="col" class="num">Par 5</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr data-round={row.roundId}>
+                <th scope="row" class="num">
+                  <a href={`/rounds/${row.roundId}`} aria-label={`Scorecard for ${formatShortDate(row.playedOn)}, ${row.courseName}`}>
+                    {formatShortDate(row.playedOn)}
+                  </a>
+                </th>
+                <td>
+                  {row.courseName} <span class="muted">({row.teeName})</span>
+                </td>
+                <td class="num">{formatInteger(row.holeCount)}</td>
+                <td class="num strong">{formatInteger(row.score)}</td>
+                <td class="num">{formatToPar(row.toPar)}</td>
+                <td class="num">{formatInteger(row.putts)}</td>
+                <td class="num">{formatRatio(row.gir)}</td>
+                <td class="num">{formatRatio(row.drivingAccuracy)}</td>
+                <td class="num">{formatToPar(row.par3ToPar)}</td>
+                <td class="num">{formatToPar(row.par4ToPar)}</td>
+                <td class="num">{formatToPar(row.par5ToPar)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</StatsShell>
+
+<style>
+  .results { white-space: nowrap; }
+  .results td:nth-child(2) { white-space: normal; min-width: 14em; }
+  .results th[scope='row'] { text-align: left; }
+  .results th[scope='row'] a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+  .results .strong { font-weight: 700; }
+  .results th, .results td { padding-block: var(--space-1); }
+</style>

@@ -1,0 +1,158 @@
+---
+import { call } from '../../../api/client';
+import Chart from '../../../components/stats/Chart.astro';
+import ChartGrid from '../../../components/stats/ChartGrid.astro';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { chartValue, ratioChartValue } from '../../../lib/chart-spec';
+import { formatAverage, formatHandicap, formatInteger, formatToPar } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, formatDate, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const path = { params: { path: { year } } };
+const [yearsR, overallR, teeR, approachR, scoringR, puttingR, handicapR] = await Promise.all([
+  call(api.GET('/stats/years')),
+  call(api.GET('/stats/{year}/overall', path)),
+  call(api.GET('/stats/{year}/off-the-tee', path)),
+  call(api.GET('/stats/{year}/approach', path)),
+  call(api.GET('/stats/{year}/scoring', path)),
+  call(api.GET('/stats/{year}/putting', path)),
+  call(api.GET('/stats/handicap')),
+]);
+const all = [yearsR, overallR, teeR, approachR, scoringR, puttingR, handicapR];
+if (all.some(isSessionEnded)) return endSession(Astro);
+const problem = firstProblem(...all);
+if (problem) Astro.response.status = problem.status;
+const years = yearsFrom(yearsR);
+
+const o = overallR.ok ? overallR.data : null;
+const tee = teeR.ok ? teeR.data : null;
+const app = approachR.ok ? approachR.data : null;
+const sc = scoringR.ok ? scoringR.data : null;
+const pu = puttingR.ok ? puttingR.data : null;
+const hcp = handicapR.ok ? handicapR.data.entries : [];
+const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
+---
+
+<StatsShell section="overall" year={year} years={years} lede="The season at a glance." problem={problem}>
+  {
+    o && tee && app && sc && pu && (
+      <>
+        {Number(o.holesPlayed) === 0 && <EmptyYear year={year} />}
+        <StatTiles>
+          <StatTile
+            label="Handicap index"
+            value={formatHandicap(o.handicapIndex)}
+            caption={o.handicapEffectiveOn ? `As of ${formatDate(o.handicapEffectiveOn)}` : 'None recorded'}
+            accent
+            size="l"
+          />
+          <StatTile
+            label="18-hole average"
+            value={formatAverage(o.scoringAverage18.value)}
+            caption={`${formatInteger(rounds18)} ${rounds18 === 1 ? 'round' : 'rounds'}`}
+            size="l"
+          />
+          <StatTile label="Holes played" value={formatInteger(o.holesPlayed)} size="l" />
+          <StatTile label="To par" value={formatToPar(o.toPar)} caption="Every hole played" size="l" />
+        </StatTiles>
+
+        <ChartGrid>
+          <Chart
+            title="Driving accuracy"
+            labelHeader="Tee shot"
+            summary="Share of tee shots on par 4s and 5s that found the fairway, missed left and missed right."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              highlight: 0,
+              labels: ['Fairway', 'Missed left', 'Missed right'],
+              series: [{ name: 'Share', values: [tee.drivingAccuracy, tee.leftTendency, tee.rightTendency].map(ratioChartValue) }],
+            }}
+            detail={{ header: 'Holes', values: [tee.drivingAccuracy, tee.leftTendency, tee.rightTendency].map(ratioCounts) }}
+          />
+          <Chart
+            title="Greens in regulation"
+            labelHeader="From"
+            summary="Greens in regulation overall and after a tee shot in the fairway, left or right."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              highlight: 0,
+              labels: ['All holes', 'Fairway', 'Left', 'Right'],
+              series: [{ name: 'GIR', values: [app.gir, app.girFromFairway, app.girFromLeft, app.girFromRight].map(ratioChartValue) }],
+            }}
+            detail={{ header: 'Holes', values: [app.gir, app.girFromFairway, app.girFromLeft, app.girFromRight].map(ratioCounts) }}
+          />
+          <Chart
+            title="Scoring"
+            labelHeader="Stat"
+            size="s"
+            summary="Par breakers and birdie-or-better, as a share of holes played."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              labels: ['Par breakers', 'Birdie or better'],
+              series: [{ name: 'Share', values: [ratioChartValue(sc.parBreakers), ratioChartValue(sc.birdieOrBetter)] }],
+            }}
+            detail={{ header: 'Holes', values: [ratioCounts(sc.parBreakers), ratioCounts(sc.birdieOrBetter)] }}
+          />
+          <Chart
+            title="Recovery"
+            labelHeader="Stat"
+            size="s"
+            summary="Sand saves, scrambling and hole-outs as percentages."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              labels: ['Sand saves', 'Scrambling', 'Hole-outs'],
+              series: [{ name: 'Share', values: [app.sandSave, app.scrambling, app.holeOut].map(ratioChartValue) }],
+            }}
+            detail={{ header: 'Holes', values: [app.sandSave, app.scrambling, app.holeOut].map(ratioCounts) }}
+          />
+          <Chart
+            title="Putting averages"
+            labelHeader="Stat"
+            size="s"
+            summary="Average putts on greens hit in regulation and on every hole."
+            spec={{
+              kind: 'hbar',
+              format: 'average',
+              min: 0,
+              labels: ['Putts per GIR', 'Putts per hole'],
+              series: [{ name: 'Putts', values: [chartValue(pu.puttsPerGir.value), chartValue(pu.puttsPerHole.value)] }],
+            }}
+            detail={{ header: 'Putts / holes', values: [pu.puttsPerGir, pu.puttsPerHole].map((a) => `${a.total}/${a.count}`) }}
+          />
+          <Chart
+            title="Handicap history"
+            labelHeader="Effective"
+            size="s"
+            summary="Handicap index over time, oldest first."
+            spec={{
+              kind: 'line',
+              format: 'handicap',
+              highlight: hcp.length - 1,
+              labels: hcp.map((e) => formatDate(e.effectiveOn)),
+              series: [{ name: 'Index', values: hcp.map((e) => chartValue(e.index)) }],
+            }}
+          />
+        </ChartGrid>
+      </>
+    )
+  }
+</StatsShell>

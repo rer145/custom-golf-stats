@@ -1,0 +1,44 @@
+---
+import { call } from '../../../api/client';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { formatAverage, formatInteger, formatRatio } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, parseYear, ratioCounts, threePuttAvoidance, yearsFrom } from '../../../lib/stats';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/putting', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = problem.status;
+const years = yearsFrom(yearsR);
+const p = r.ok ? r.data : null;
+const per = (a: { total: number | string; count: number | string }, unit: string) =>
+  `${formatInteger(a.total)} putts, ${formatInteger(a.count)} ${unit}${Number(a.count) === 1 ? '' : 's'}`;
+---
+
+<StatsShell section="putting" year={year} years={years} lede="Putts per green, per hole and per round." problem={problem}>
+  {
+    p && (
+      <>
+        {Number(p.puttsPerHole.count) === 0 && <EmptyYear year={year} />}
+        <StatTiles title="Averages" columns={4}>
+          <StatTile label="Putts per GIR" value={formatAverage(p.puttsPerGir.value)} caption={per(p.puttsPerGir, 'green')} accent size="l" />
+          <StatTile label="Putts per hole" value={formatAverage(p.puttsPerHole.value)} caption={per(p.puttsPerHole, 'hole')} size="l" />
+          <StatTile label="Per 18-hole round" value={formatAverage(p.puttsPerRound18.value)} caption={per(p.puttsPerRound18, 'round')} size="l" />
+          <StatTile label="Per 9-hole round" value={formatAverage(p.puttsPerRound9.value)} caption={per(p.puttsPerRound9, 'round')} size="l" />
+        </StatTiles>
+        <StatTiles title="Rates" columns={3}>
+          <StatTile label="One-putts" value={formatRatio(p.onePutt)} caption={ratioCounts(p.onePutt)} />
+          <StatTile label="3-putt avoidance" value={formatRatio(threePuttAvoidance(p.threePuttRate))} caption={ratioCounts(threePuttAvoidance(p.threePuttRate))} />
+          <StatTile label="Birdie conversion" value={formatRatio(p.birdieConversion)} caption={ratioCounts(p.birdieConversion)} />
+        </StatTiles>
+      </>
+    )
+  }
+</StatsShell>

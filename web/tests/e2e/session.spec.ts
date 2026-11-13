@@ -64,7 +64,7 @@ test('an access token near expiry is refreshed and the cookie re-sealed', async 
 
   const res = await page.goto('/rounds');
   expect(res?.status()).toBe(200);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Rounds');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^Rounds/);
 
   // Only a refresh re-seals the cookie.
   const after = (await context.cookies()).find((c) => c.name === SESSION_COOKIE)!.value;
