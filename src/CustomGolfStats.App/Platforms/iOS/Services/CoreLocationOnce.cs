@@ -7,6 +7,50 @@ namespace CustomGolfStats.App.Platforms.iOS.Services;
 /// when-in-use permission the first time; never tracks.</summary>
 public sealed class CoreLocationOnce : ILocationOnce
 {
+    private CLLocationManager? _accessManager; // kept alive while the permission prompt is open
+
+    /// <summary>Shows the when-in-use prompt the first time and waits for the answer; afterwards answers at once.</summary>
+    public Task<bool> RequestAccessAsync(CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        UIApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+        {
+            try
+            {
+                var manager = new CLLocationManager();
+                switch (manager.AuthorizationStatus)
+                {
+                    case CLAuthorizationStatus.AuthorizedWhenInUse or CLAuthorizationStatus.AuthorizedAlways:
+                        tcs.TrySetResult(true);
+                        break;
+                    case CLAuthorizationStatus.NotDetermined:
+                        _accessManager = manager;
+                        manager.Delegate = new AccessDelegate(tcs);
+                        manager.RequestWhenInUseAuthorization();
+                        break;
+                    default:
+                        tcs.TrySetResult(false);
+                        break;
+                }
+            }
+            catch (Exception)
+            {
+                tcs.TrySetResult(false);
+            }
+        });
+        ct.Register(() => tcs.TrySetResult(false));
+        return tcs.Task;
+    }
+
+    private sealed class AccessDelegate(TaskCompletionSource<bool> tcs) : CLLocationManagerDelegate
+    {
+        public override void DidChangeAuthorization(CLLocationManager manager)
+        {
+            if (manager.AuthorizationStatus != CLAuthorizationStatus.NotDetermined)
+                tcs.TrySetResult(manager.AuthorizationStatus is CLAuthorizationStatus.AuthorizedWhenInUse or CLAuthorizationStatus.AuthorizedAlways);
+        }
+    }
+
     public async Task<GeoPoint?> GetCoarseLocationAsync(CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<GeoPoint?>(TaskCreationOptions.RunContinuationsAsynchronously);

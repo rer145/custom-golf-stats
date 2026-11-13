@@ -31,6 +31,8 @@ public sealed class NoPedometer : IPedometer
 
 public sealed class NoLocation : ILocationOnce
 {
+    public Task<bool> RequestAccessAsync(CancellationToken ct) => Task.FromResult(false);
+
     public Task<GeoPoint?> GetCoarseLocationAsync(CancellationToken ct) => Task.FromResult<GeoPoint?>(null);
 }
 

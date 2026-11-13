@@ -9,6 +9,15 @@ public sealed partial class AppShell : UserControl
     {
         InitializeComponent();
         SizeChanged += (_, _) => ApplySafeArea();
+        // Status-bar text colour follows the theme of the page on screen.
+        // Deferred: on Android the theme switch reaches the page after this event, and the system can reset the bar meanwhile.
+        ActualThemeChanged += (_, _) =>
+        {
+            DispatcherQueue.TryEnqueue(() => (RootFrame.Content as Views.RoutePage)?.ApplyStatusBar());
+            _ = Task.Delay(500).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => (RootFrame.Content as Views.RoutePage)?.ApplyStatusBar()),
+                TaskScheduler.Default);
+        };
+        RootFrame.Navigated += (_, _) => DispatcherQueue.TryEnqueue(() => (RootFrame.Content as Views.RoutePage)?.ApplyStatusBar());
         Loaded += (_, _) => ApplySafeArea();
     }
 
@@ -46,6 +55,10 @@ public sealed partial class AppShell : UserControl
         var top = Math.Max(0, visible.Top);
         var right = Math.Max(0, size.Width - visible.Right);
         var bottom = Math.Max(0, size.Height - visible.Bottom);
-        Root.Padding = new Thickness(left, top, right, bottom);
+        // The top inset is the pages' to handle (a round header band extends under the status bar).
+        Root.Padding = new Thickness(left, 0, right, bottom);
+        StartupPanel.Padding = new Thickness(0, top, 0, 0);
+        Banner.Margin = new Thickness(12);
+        SafeArea.SetTop(top);
     }
 }

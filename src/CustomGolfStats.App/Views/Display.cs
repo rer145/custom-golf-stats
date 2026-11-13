@@ -97,6 +97,7 @@ public static class Display
     public static string Number(int value) => value.ToString(Inv);
     public static string Number(double? value, string format = "0.0") => value is { } v ? v.ToString(format, Inv) : Core.ViewModels.UiText.NoValue;
     public static string Percent(Ratio ratio) => ratio.Value is { } v ? (v * 100).ToString("0", Inv) + "%" : Core.ViewModels.UiText.NoValue;
+    public static string Putts(int count) => count == 1 ? "1 putt" : $"{count} putts";
     public static string Holes(int count) => count == 1 ? "1 hole" : $"{count} holes";
     public static string Thru(int holes) => holes == 0 ? "NO HOLES YET" : $"THRU {holes}";
     public static string HoleTitle(int number) => $"Hole {number}";
@@ -132,7 +133,7 @@ public static class Display
 
     /// <summary>The derived hole summary in one line once the hole is holed; until then how many strokes so far.</summary>
     public static string SummaryLine(Domain.Holes.HoleSummary? summary, int strokes) => summary is { } h
-        ? $"{h.Putts} putt{(h.Putts == 1 ? "" : "s")}  ·  {(h.Gir ? "GIR" : "missed green")}{(h.FairwayHit ? "  ·  fairway" : "")}{(h.PenaltyStrokes > 0 ? $"  ·  {h.PenaltyStrokes} penalty" : "")}"
+        ? $"{Putts(h.Putts)}  ·  {(h.Gir ? "GIR" : "missed green")}{(h.FairwayHit ? "  ·  fairway" : "")}{(h.PenaltyStrokes > 0 ? $"  ·  {h.PenaltyStrokes} penalty" : "")}"
         : strokes == 0 ? "No shots yet" : $"{strokes} stroke{(strokes == 1 ? "" : "s")} so far";
 
     public static string ShotHeading(int? editingIndex, int count) =>

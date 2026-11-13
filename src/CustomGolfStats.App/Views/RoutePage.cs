@@ -1,4 +1,5 @@
 using CustomGolfStats.App.Diagnostics;
+using CustomGolfStats.App.Shell;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace CustomGolfStats.App.Views;
@@ -15,7 +16,55 @@ public abstract partial class RoutePage : Page
         Style = (Style)Application.Current.Resources["BrandPageStyle"];
         // Keep focus (and so the on-screen keyboard) off the first text box until the golfer taps one.
         IsTabStop = true;
-        Loaded += (_, _) => Focus(FocusState.Programmatic);
+        Loaded += (_, _) =>
+        {
+            Focus(FocusState.Programmatic);
+            ApplyTopInset();
+            ApplyStatusBar();
+        };
+        Unloaded += (_, _) => SafeArea.TopChanged -= ApplyTopInset;
+        SafeArea.TopChanged += ApplyTopInset;
+        ActualThemeChanged += (_, _) => ApplyStatusBar(); // the shell also re-applies it when the system theme changes
+    }
+
+    /// <summary>The page's round header band, if it has one (named "HeaderBand" in XAML).</summary>
+    private Border? HeaderBand => FindName("HeaderBand") as Border;
+
+    private Thickness? _bandPadding;
+
+    /// <summary>A page with a header band draws it under the status bar (the band grows by the inset); any other page starts below it.</summary>
+    private void ApplyTopInset()
+    {
+        var top = SafeArea.Top;
+        if (HeaderBand is { } band)
+        {
+            _bandPadding ??= band.Padding;
+            var p = _bandPadding.Value;
+            band.Padding = new Thickness(p.Left, p.Top + top, p.Right, p.Bottom);
+        }
+        else if (Content is FrameworkElement content)
+        {
+            content.Margin = new Thickness(0, top, 0, 0);
+        }
+    }
+
+    /// <summary>Light status-bar text over a header band (always dark) or a dark page; dark text over a light page.</summary>
+    internal void ApplyStatusBar()
+    {
+#if __IOS__ || __ANDROID__
+        try
+        {
+            var dark = ActualTheme == ElementTheme.Dark
+                || (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+            var light = HeaderBand is not null || dark;
+            Windows.UI.ViewManagement.StatusBar.GetForCurrentView().ForegroundColor =
+                light ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        }
+        catch (Exception)
+        {
+            // best effort: the bar keeps its previous colours
+        }
+#endif
     }
 
     protected static T Resolve<T>() where T : notnull => App.Services.GetRequiredService<T>();
@@ -45,7 +94,7 @@ public abstract partial class RoutePage : Page
             Content = message,
             PrimaryButtonText = confirmText,
             CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
+            DefaultButton = ContentDialogButton.None, // no system-accent button: both choices read as equals
             XamlRoot = XamlRoot,
         };
         return await dialog.ShowAsync() == ContentDialogResult.Primary;

@@ -26,15 +26,17 @@ public sealed class KeychainSecureStore : ISecureStore
     {
         lock (_lock)
         {
-            // Replace by delete + add: an update query must not carry the item class among the attributes it changes
-            // (that is errSecNoSuchAttr), and delete + add also re-applies the accessibility class.
-            var removed = SecKeyChain.Remove(Query(key));
-            if (removed is not (SecStatusCode.Success or SecStatusCode.ItemNotFound))
-                throw Failure("delete before write", removed);
-            var record = Query(key);
-            record.ValueData = NSData.FromString(value, NSStringEncoding.UTF8);
-            record.Accessible = SecAccessible.AfterFirstUnlockThisDeviceOnly;
-            var status = SecKeyChain.Add(record);
+            // Update in place (the old value stays if this fails); add only when there is no item yet. The attributes to change
+            // must not include the item class, so they go in a bare record.
+            var data = NSData.FromString(value, NSStringEncoding.UTF8);
+            var status = SecKeyChain.Update(Query(key), new SecRecord { ValueData = data });
+            if (status == SecStatusCode.ItemNotFound)
+            {
+                var record = Query(key);
+                record.ValueData = data;
+                record.Accessible = SecAccessible.AfterFirstUnlockThisDeviceOnly;
+                status = SecKeyChain.Add(record);
+            }
             if (status != SecStatusCode.Success)
                 throw Failure("write", status);
             return Task.CompletedTask;

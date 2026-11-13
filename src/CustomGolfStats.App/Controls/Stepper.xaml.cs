@@ -51,5 +51,8 @@ public sealed partial class Stepper : UserControl
         PlusButton.IsEnabled = Value < Maximum;
         AutomationProperties.SetName(MinusButton, $"Decrease {Label}");
         AutomationProperties.SetName(PlusButton, $"Increase {Label}");
+        // Screen readers hear the whole field, e.g. "Putts 2".
+        AutomationProperties.SetName(this, $"{Label} {ValueText.Text}");
+        AutomationProperties.SetName(ValueText, $"{Label} {ValueText.Text}");
     }
 }

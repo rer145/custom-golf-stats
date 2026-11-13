@@ -11,7 +11,7 @@
     </Grid.RowDefinitions>
 
     <!-- Round header band: Fairway Ink, score in statXL, to-par as the one accent number -->
-    <Border Style="{StaticResource BrandRoundHeaderBandStyle}" Padding="8,8,20,20">
+    <Border x:Name="HeaderBand" Style="{StaticResource BrandRoundHeaderBandStyle}" Padding="8,8,20,20">
       <StackPanel Spacing="4">
         <Grid ColumnSpacing="4">
           <Grid.ColumnDefinitions>

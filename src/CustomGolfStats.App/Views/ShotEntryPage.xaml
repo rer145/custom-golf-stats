@@ -12,7 +12,7 @@
     </Grid.RowDefinitions>
 
     <!-- Hole header with the live derived summary -->
-    <Border Style="{StaticResource BrandRoundHeaderBandStyle}" Padding="8,8,20,12">
+    <Border x:Name="HeaderBand" Style="{StaticResource BrandRoundHeaderBandStyle}" Padding="8,8,20,12">
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />

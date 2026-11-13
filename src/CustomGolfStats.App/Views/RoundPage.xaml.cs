@@ -28,7 +28,7 @@ public sealed partial class RoundPage : RoutePage
         await Resolve<IMotionPermission>().PrepareAsync();
     }
 
-    public static string HoleLine(int par, int putts) => $"Par {par}  ·  {putts} putt{(putts == 1 ? "" : "s")}";
+    public static string HoleLine(int par, int putts) => $"Par {par}  ·  {Display.Putts(putts)}";
 
     public static string HoleFlags(bool gir, bool fairway, int shots, bool derived)
     {

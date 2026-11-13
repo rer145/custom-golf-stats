@@ -20,10 +20,15 @@ public sealed partial class ShotEntryPage : RoutePage
 
     private void OnShotClick(object sender, ItemClickEventArgs e) => ViewModel.EditShotCommand.Execute(e.ClickedItem);
 
-    private void OnDeleteShot(object sender, RoutedEventArgs e)
+    private async void OnDeleteShot(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ShotItem item })
-            ViewModel.DeleteShotCommand.Execute(item);
+        if (sender is not FrameworkElement { DataContext: ShotItem item })
+            return;
+        // Removing the last shot is a quick undo; removing one from the middle renumbers the rest, so ask first.
+        var isLast = ViewModel.Shots.Count > 0 && ReferenceEquals(ViewModel.Shots[^1], item);
+        if (!isLast && !await ConfirmAsync($"Delete shot {item.Shot.Sequence}?", "The shots after it move up one place.", "Delete"))
+            return;
+        await ViewModel.DeleteShotCommand.ExecuteAsync(item);
     }
 
     private async void OnDeleteHole(object sender, RoutedEventArgs e)

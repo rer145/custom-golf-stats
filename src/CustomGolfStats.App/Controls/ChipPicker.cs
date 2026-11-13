@@ -24,6 +24,12 @@ public sealed partial class ChipPicker : UserControl
     public ChipPicker()
     {
         Content = _panel;
+        Loaded += (_, _) => SyncChecks();
+        SizeChanged += (_, _) =>
+        {
+            if (SingleRow)
+                ScrollChosenIntoView();
+        };
     }
 
     public IEnumerable? ItemsSource { get => (IEnumerable?)GetValue(ItemsSourceProperty); set => SetValue(ItemsSourceProperty, value); }
@@ -74,5 +80,34 @@ public sealed partial class ChipPicker : UserControl
         foreach (var (item, chip) in _chips)
             chip.IsChecked = Equals(item, SelectedItem);
         _syncing = false;
+        if (SingleRow)
+            DispatcherQueue?.TryEnqueue(ScrollChosenIntoView); // after layout, so positions are known
+    }
+
+    private ScrollViewer? NearestScrollViewer()
+    {
+        DependencyObject? current = this;
+        while (current is not null)
+        {
+            current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
+            if (current is ScrollViewer viewer)
+                return viewer;
+        }
+        return null;
+    }
+
+    /// <summary>In a single row inside a horizontal ScrollViewer, scroll so the chosen chip shows (the prefilled club may be far
+    /// along the row). Only that ScrollViewer moves, never the page.</summary>
+    private void ScrollChosenIntoView()
+    {
+        var chosen = _chips.FirstOrDefault(c => Equals(c.Item, SelectedItem)).Chip;
+        if (chosen is null || NearestScrollViewer() is not { } viewer || chosen.ActualWidth <= 0)
+            return;
+        var x = chosen.TransformToVisual(_panel).TransformPoint(new Windows.Foundation.Point(0, 0)).X;
+        var left = viewer.HorizontalOffset;
+        var right = left + viewer.ViewportWidth;
+        if (x >= left && x + chosen.ActualWidth <= right)
+            return;
+        viewer.ChangeView(Math.Max(0, x - 16), null, null, disableAnimation: true);
     }
 }
