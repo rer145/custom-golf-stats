@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CustomGolfStats.Migration</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- AppDbContext and the API's entities run on the ASP.NET Core shared framework (Identity, data protection). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="System.CommandLine" />
+    <!-- Pins SqlClient's transitive dependency to a patched version (see Directory.Packages.props). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CustomGolfStats.Api\CustomGolfStats.Api.csproj" />
+    <ProjectReference Include="..\CustomGolfStats.Domain\CustomGolfStats.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

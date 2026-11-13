@@ -63,7 +63,7 @@ public static class CourseImport
     /// Stroke indexes as given when they are a permutation of 1..n (n holes); otherwise their rank, ties broken by hole
     /// order (a nine-hole tee whose provider uses the eighteen-hole odd indexes 1, 3, ..., 17 becomes 1..9).
     /// </summary>
-    internal static IReadOnlyList<int> NormalizeStrokeIndexes(IReadOnlyList<int> strokeIndexes)
+    public static IReadOnlyList<int> NormalizeStrokeIndexes(IReadOnlyList<int> strokeIndexes)
     {
         var n = strokeIndexes.Count;
         if (strokeIndexes.Order().SequenceEqual(Enumerable.Range(1, n)))
