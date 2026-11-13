@@ -1,13 +1,72 @@
 ---
-// Placeholder until Task 4 (admin) replaces it. The middleware has already checked role === 'Admin' live.
+import AdminNav from '../../components/admin/AdminNav.astro';
+import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
+import { call } from '../../api/client';
+import { pageStatus } from '../../lib/admin';
+import { DASH, formatInteger } from '../../lib/format';
+import { endSession, isSessionEnded } from '../../lib/guard';
+
+// The middleware has already checked role === 'Admin' live; the API enforces it again on every call.
+const api = Astro.locals.api;
+const [flags, imported, edited, verified] = await Promise.all([
+  call(api.GET('/admin/flags', { params: { query: { status: 'Open' } } })),
+  call(api.GET('/admin/courses', { params: { query: { status: 'Imported' } } })),
+  call(api.GET('/admin/courses', { params: { query: { status: 'UserEdited' } } })),
+  call(api.GET('/admin/courses', { params: { query: { status: 'Verified' } } })),
+]);
+const results = [flags, imported, edited, verified];
+if (results.some(isSessionEnded)) return endSession(Astro);
+const failed = results.find((r) => !r.ok);
+const problem = failed && !failed.ok ? failed.problem : null;
+if (problem) Astro.response.status = pageStatus(problem.status);
+
+// The API lists at most 200 of anything; show "200+" rather than a count that looks exact but isn't.
+const LIMIT = 200;
+const count = (r: (typeof results)[number]) =>
+  r.ok && Array.isArray(r.data) ? (r.data.length >= LIMIT ? `${formatInteger(LIMIT)}+` : formatInteger(r.data.length)) : DASH;
+
+const tiles = [
+  { label: 'Open flags', value: count(flags), href: '/admin/flags', id: 'flags' },
+  { label: 'Imported', value: count(imported), href: '/admin/courses?status=Imported', id: 'imported' },
+  { label: 'User edited', value: count(edited), href: '/admin/courses?status=UserEdited', id: 'edited' },
+  { label: 'Verified', value: count(verified), href: '/admin/courses?status=Verified', id: 'verified' },
+];
 ---
 
 <AppLayout title="Admin">
   <div class="container page">
     <div class="page-header">
       <h1 class="display">Admin</h1>
-      <p class="lede">Users, courses, flags and settings will show here.</p>
+      <p class="lede">Golfers, courses, flagged data and app settings.</p>
     </div>
+    <AdminNav />
+    <Problem problem={problem} />
+    <section aria-labelledby="overview-h" class="overview">
+      <h2 class="title" id="overview-h">Overview</h2>
+      <ul class="tiles">
+        {
+          tiles.map((t) => (
+            <li>
+              <a class="card tile" href={t.href} data-tile={t.id}>
+                <span class="tile-label">{t.label}</span>
+                <span class="stat stat-l" data-value>
+                  {t.value}
+                </span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="caption">Courses are counted by status, merged ones included. Open flags are the ones waiting for a decision.</p>
+    </section>
   </div>
 </AppLayout>
+
+<style>
+  .overview { display: grid; gap: var(--space-4); margin-top: var(--space-5); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  .tile { display: grid; gap: var(--space-3); color: var(--color-text); text-decoration: none; min-height: var(--touch-target); }
+  .tile:hover { border-color: var(--color-text-secondary); }
+  .tile-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
+</style>

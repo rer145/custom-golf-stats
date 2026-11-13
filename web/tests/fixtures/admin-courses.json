@@ -1,0 +1,16 @@
+[
+  { "n": 1, "name": "Alder Creek", "clubName": "Alder Creek Golf Club", "city": "Portland", "region": "OR", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 2, "name": "Birchwood Links", "clubName": "Birchwood Links", "city": "Salem", "region": "OR", "country": "US", "status": "UserEdited", "source": "Manual" },
+  { "n": 3, "name": "Cedar Hollow", "clubName": "Cedar Hollow", "city": "Eugene", "region": "OR", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 4, "name": "Dunmore Park", "clubName": "Dunmore Park", "city": "Bend", "region": "OR", "country": "US", "status": "Verified", "source": "Golftrack" },
+  { "n": 5, "name": "Elm Grove", "clubName": "Elm Grove", "city": "Boise", "region": "ID", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 6, "name": "Elm Grove Golf Club", "clubName": "Elm Grove Golf Club", "city": "Boise", "region": "ID", "country": "US", "status": "Verified", "source": "Golftrack" },
+  { "n": 7, "name": "Fern Valley", "clubName": "Fern Valley", "city": "Reno", "region": "NV", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 8, "name": "Fern Valley Golf Club", "clubName": "Fern Valley Golf Club", "city": "Reno", "region": "NV", "country": "US", "status": "Verified", "source": "Golftrack" },
+  { "n": 9, "name": "Gorse Hill", "clubName": "Gorse Hill", "city": "Tacoma", "region": "WA", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 10, "name": "Heron Point", "clubName": "Heron Point", "city": "Olympia", "region": "WA", "country": "US", "status": "Verified", "source": "Golftrack", "playedHoles": [4, 5] },
+  { "n": 11, "name": "Ivy Ridge", "clubName": "Ivy Ridge", "city": "Spokane", "region": "WA", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 12, "name": "Juniper Busy", "clubName": "Juniper Busy", "city": "Yakima", "region": "WA", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 13, "name": "Kestrel Trails", "clubName": "Kestrel Trails", "city": "Medford", "region": "OR", "country": "US", "status": "Imported", "source": "GolfCourseApi" },
+  { "n": 14, "name": "Kestrel Trails Golf Club", "clubName": "Kestrel Trails Golf Club", "city": "Medford", "region": "OR", "country": "US", "status": "Verified", "source": "Golftrack" }
+]
