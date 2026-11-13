@@ -146,6 +146,27 @@ public static class GolftrackMapper
             return null;
         }
 
+        foreach (var hole in kept)
+        {
+            void OutOfRange(string field, int value) =>
+                findings.Add(new HoleOutOfRange(tee.Id, course.Name, tee.Name, hole.Id, hole.Number, field, value));
+
+            if (hole.Number is < 1 or > CourseRules.MaxHoles)
+            {
+                OutOfRange("Number", hole.Number);
+            }
+
+            if (hole.Par is < CourseRules.MinPar or > CourseRules.MaxPar)
+            {
+                OutOfRange("Par", hole.Par);
+            }
+
+            if (hole.Yardage is < 0 or > CourseRules.MaxYardage)
+            {
+                OutOfRange("Yardage", hole.Yardage);
+            }
+        }
+
         var version = new TeeVersion
         {
             Id = DeterministicIds.For("TeeVersion", tee.Id),
@@ -347,7 +368,8 @@ public static class GolftrackMapper
 
     /// <summary>
     /// Minutes from <c>h:mm</c>, <c>hh:mm:ss</c> (seconds rounded to the nearest minute) or a plain number of minutes.
-    /// Anything else, or a duration that isn't positive, is dropped and reported; a blank duration is just null.
+    /// Anything else, a duration that isn't positive or one too large for an int, is dropped and reported; a blank
+    /// duration is just null.
     /// </summary>
     private static int? Duration(LegacyRound legacy, DateOnly playedOn, List<MigrationFinding> findings)
     {
@@ -380,12 +402,13 @@ public static class GolftrackMapper
             return null;
         }
 
-        return numbers.Count switch
+        long minutes = numbers.Count switch
         {
             1 => numbers[0],
-            2 => numbers[0] * 60 + numbers[1],
-            _ => numbers[0] * 60 + numbers[1] + (numbers[2] >= 30 ? 1 : 0),
+            2 => numbers[0] * 60L + numbers[1],
+            _ => numbers[0] * 60L + numbers[1] + (numbers[2] >= 30 ? 1 : 0),
         };
+        return minutes <= int.MaxValue ? (int)minutes : null; // too large for the column: unparseable
     }
 
     private static decimal? Distance(LegacyRound legacy, DateOnly playedOn, List<MigrationFinding> findings)

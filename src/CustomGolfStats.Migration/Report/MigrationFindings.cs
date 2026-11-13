@@ -22,6 +22,14 @@ public sealed record TeeSkipped(int LegacyTeeId, string CourseName, string TeeNa
 public sealed record DuplicateTeeHoleNumber(int LegacyTeeId, int HoleNumber, int KeptLegacyHoleId, IReadOnlyList<int> LegacyHoleIds)
     : MigrationFinding;
 
+/// <summary>
+/// An imported tee hole whose number (1..18), par (3..6) or yardage (0..1000) is outside what the API accepts. Stored
+/// as golftrack has it; an edit through the API would have to correct it.
+/// </summary>
+public sealed record HoleOutOfRange(
+    int LegacyTeeId, string CourseName, string TeeName, int LegacyHoleId, int HoleNumber, string Field, int Value)
+    : MigrationFinding;
+
 /// <summary>A round that was not imported: its tee or one of its holes is missing, or it has no hole details.</summary>
 public sealed record RoundSkipped(int LegacyRoundId, DateOnly PlayedOn, string Reason) : MigrationFinding;
 

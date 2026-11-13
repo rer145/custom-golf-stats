@@ -232,6 +232,33 @@ public sealed class GolftrackMapperTests
     }
 
     [Fact]
+    public void Holes_outside_the_api_ranges_are_reported_but_imported()
+    {
+        var course = _legacy.Course("Wild");
+        var tee = _legacy.Tee(course, "Long");
+        var holes = _legacy.Holes(tee, 2).ToList();
+        var odd = _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, 19, 7, 1200, 3, IsActive: true));
+        var negative = _legacy.Add(new LegacyHole(_legacy.NextId(), tee.Id, 0, 2, -5, 4, IsActive: true));
+        _legacy.Details(_legacy.Round(tee), holes.Append(odd).Append(negative));
+
+        var result = Map();
+
+        var version = Assert.Single(Assert.Single(Assert.Single(result.Courses).Tees).Versions);
+        Assert.Equal(4, version.Holes.Count);
+        Assert.Equal(
+            [
+                new HoleOutOfRange(tee.Id, "Wild", "Long", negative.Id, 0, "Number", 0),
+                new HoleOutOfRange(tee.Id, "Wild", "Long", negative.Id, 0, "Par", 2),
+                new HoleOutOfRange(tee.Id, "Wild", "Long", negative.Id, 0, "Yardage", -5),
+                new HoleOutOfRange(tee.Id, "Wild", "Long", odd.Id, 19, "Number", 19),
+                new HoleOutOfRange(tee.Id, "Wild", "Long", odd.Id, 19, "Par", 7),
+                new HoleOutOfRange(tee.Id, "Wild", "Long", odd.Id, 19, "Yardage", 1200),
+            ],
+            result.Findings.OfType<HoleOutOfRange>());
+        Assert.Single(result.Rounds);
+    }
+
+    [Fact]
     public void Tee_without_holes_is_skipped_and_its_rounds_too()
     {
         var course = _legacy.Course("Bare");
@@ -566,6 +593,9 @@ public sealed class GolftrackMapperTests
     [InlineData("1:2:3:4")]
     [InlineData("0")]
     [InlineData("-30")]
+    [InlineData("99999999:00")]
+    [InlineData("35791395:00")]
+    [InlineData("99999999999")]
     public void Unparseable_duration_is_dropped_and_reported(string duration)
     {
         var tee = _legacy.Tee(_legacy.Course());
