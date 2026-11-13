@@ -14,12 +14,16 @@
       <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
       <!-- Focused inputs underline in the brand primary instead of the system accent. -->
       <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BrandPrimaryBrush" />
+      <!-- Cards: 1 px border on light. -->
+      <StaticResource x:Key="BrandCardBorderBrush" ResourceKey="BrandBorderBrush" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <!-- The reversed mark and on-dark lockup are for Fairway Ink backgrounds. -->
       <BitmapImage x:Key="BrandMarkImage" UriSource="ms-appx:///Assets/Brand/mark-reversed-256.png" />
       <BitmapImage x:Key="BrandLockupStackedImage" UriSource="ms-appx:///Assets/Brand/lockup-stacked-on-dark@2x.png" />
       <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
+      <!-- Cards: no border on dark (BRAND.md section 5). -->
+      <SolidColorBrush x:Key="BrandCardBorderBrush" Color="Transparent" />
       <!-- Focused inputs underline in the brand primary instead of the system accent. -->
       <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BrandPrimaryBrush" />
     </ResourceDictionary>
@@ -110,10 +114,10 @@
   <Style TargetType="PasswordBox" BasedOn="{StaticResource BrandPasswordBoxStyle}" />
 
   <!-- ===== Surfaces ===== -->
-  <!-- Card: surface with a 1 px border on light; no border on dark (border token is close to the surface there). No shadows. -->
+  <!-- Card: white surface with a 1 px border on Chalk; on dark the surface with no border (BrandCardBorderBrush). No shadows. -->
   <Style x:Key="BrandCardStyle" TargetType="Border">
     <Setter Property="Background" Value="{ThemeResource BrandSurfaceBrush}" />
-    <Setter Property="BorderBrush" Value="{ThemeResource BrandBorderBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource BrandCardBorderBrush}" />
     <Setter Property="BorderThickness" Value="{StaticResource BrandBorderThickness}" />
     <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusLg}" />
     <Setter Property="Padding" Value="{StaticResource BrandPadding4}" />

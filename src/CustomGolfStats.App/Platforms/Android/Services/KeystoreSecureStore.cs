@@ -10,7 +10,8 @@ namespace CustomGolfStats.App.Platforms.Android.Services;
 /// <summary>
 /// Values encrypted with an AES-256-GCM key that lives in the Android Keystore (never exportable), stored as ciphertext in the
 /// app's private preferences. A value that can no longer be decrypted (the key was lost, for example after a restore to another
-/// device) reads as absent, which signs the golfer out instead of failing.
+/// device: bad GCM tag, invalidated or unrecoverable key) is deleted and reads as absent, which signs the golfer out; any other
+/// failure is rethrown and the value kept.
 /// </summary>
 public sealed class KeystoreSecureStore(Context context) : ISecureStore
 {
@@ -38,7 +39,7 @@ public sealed class KeystoreSecureStore(Context context) : ISecureStore
                 var plain = cipher.DoFinal(bytes, 1 + ivLength, bytes.Length - 1 - ivLength)!;
                 return Task.FromResult<string?>(Encoding.UTF8.GetString(plain));
             }
-            catch (Exception ex) when (ex is GeneralSecurityException or FormatException or IndexOutOfRangeException or Java.Lang.Exception)
+            catch (Exception ex) when (IsUnrecoverable(ex))
             {
                 Preferences.Edit()!.Remove(key)!.Commit();
                 return Task.FromResult<string?>(null);
@@ -73,6 +74,13 @@ public sealed class KeystoreSecureStore(Context context) : ISecureStore
             return Task.CompletedTask;
         }
     }
+
+    /// <summary>The stored value can never be read again: the GCM tag does not match (the key changed), the key was invalidated or
+    /// cannot be recovered, or the stored text is not what this class writes. Anything else (a transient Keystore failure, for
+    /// example) is rethrown and the value is kept.</summary>
+    private static bool IsUnrecoverable(Exception ex) =>
+        ex is AEADBadTagException or KeyPermanentlyInvalidatedException or UnrecoverableKeyException
+            or FormatException or IndexOutOfRangeException or ArgumentOutOfRangeException;
 
     private static IKey GetOrCreateKey()
     {

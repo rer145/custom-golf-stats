@@ -2,10 +2,11 @@
   <PropertyGroup>
     <!--
       Mobile heads build on macOS (Xcode and the iOS/Android workloads). Everywhere else (CI on ubuntu) only the desktop head
-      builds, so the solution test run stays green without mobile workloads.
+      builds, so the solution test run stays green without mobile workloads. `-p:AppDesktopOnly=true` gives the same desktop-only
+      build on macOS (for example to run the solution in Release exactly like CI).
     -->
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">net10.0-ios;net10.0-android;net10.0-desktop</TargetFrameworks>
-    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX'))">net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(AppDesktopOnly)' != 'true'">net10.0-ios;net10.0-android;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX')) or '$(AppDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
 
     <OutputType>Exe</OutputType>
     <UnoSingleProject>true</UnoSingleProject>
@@ -29,15 +30,20 @@
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
-    <!-- The installed iOS workload (26.1) asks for Xcode 26.1; this machine has Xcode 26.0, which builds and runs simulator apps
-         fine. Remove once Xcode is updated. -->
+  </PropertyGroup>
+
+  <!--
+    LOCAL WORKAROUND, Debug only; remove after Xcode 26.1 is installed. The installed iOS workload (26.1) asks for Xcode 26.1 and
+    this machine has Xcode 26.0, which builds and runs simulator apps fine once: the Xcode version check is off, only the platform
+    SDK assemblies are trimmed (the default None link mode fails with MT0180 against the 26.0 SDK; the app's own and third-party
+    assemblies stay whole for sqlite-net and JSON reflection), trim analysis of untrimmed assemblies is suppressed, and
+    UHR001 (Hot Reload prefers MTouchLink=None) / MT0079 (Xcode 26.1 recommended) are demoted to messages.
+    Release builds keep Xcode validation, the SDK's default linking and every trim warning.
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
     <ValidateXcodeVersion>false</ValidateXcodeVersion>
-    <!-- Trim only the platform SDK assemblies (the iOS 26.1 bindings are not linked against the 26.0 SDK's headers, and the app's
-         own and third-party assemblies stay whole for sqlite-net and JSON reflection). Trim analysis of assemblies that are not
-         trimmed is then noise, so it is suppressed. -->
     <MtouchLink>SdkOnly</MtouchLink>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <!-- UHR001: Hot Reload prefers MTouchLink=None, which needs Xcode 26.1 (see above). MT0079: the same Xcode 26.0/26.1 note. -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);UHR001;MT0079</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
@@ -57,8 +63,8 @@
 
   <!-- sqlite-net maps the row types and the API client serializes its DTOs by reflection: keep them whole when trimming. -->
   <ItemGroup>
-    <TrimmerRootAssembly Include="CustomGolfStats.App.Core" />
-    <TrimmerRootAssembly Include="CustomGolfStats.Api.Client" />
+    <TrimmerRootAssembly Include="CustomGolfStats.App.Core" RootMode="All" />
+    <TrimmerRootAssembly Include="CustomGolfStats.Api.Client" RootMode="All" />
   </ItemGroup>
 
   <!-- API base URL for this build: dotnet build -p:ApiBaseUrl=https://api.example.com/ (see Composition/AppConfig.cs). -->
