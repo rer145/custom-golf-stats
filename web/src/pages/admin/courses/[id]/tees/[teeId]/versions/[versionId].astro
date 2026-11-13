@@ -1,0 +1,282 @@
+---
+import AdminNav from '../../../../../../../components/admin/AdminNav.astro';
+import Field from '../../../../../../../components/Field.astro';
+import Problem from '../../../../../../../components/Problem.astro';
+import AppLayout from '../../../../../../../layouts/AppLayout.astro';
+import { call, fieldErrors, type ApiProblem } from '../../../../../../../api/client';
+import { localProblem, pageStatus, parseDecimal, parseWholeNumber, playedHoleNumbers } from '../../../../../../../lib/admin';
+import { formText, notAForm, readForm } from '../../../../../../../lib/forms';
+import { endSession, isSessionEnded } from '../../../../../../../lib/guard';
+
+const { id = '', teeId = '', versionId = '' } = Astro.params;
+const api = Astro.locals.api;
+const courseHref = `/admin/courses/${id}`;
+
+const loaded = await call(api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(loaded)) return endSession(Astro);
+const course = loaded.ok ? loaded.data : null;
+const tee = course?.tees.find((t) => t.id === teeId);
+const version = tee?.versions.find((v) => v.id === versionId);
+let problem: ApiProblem | null = loaded.ok ? null : loaded.problem;
+if (loaded.ok && !version) {
+  problem = { status: 404, message: 'That tee version wasn’t found.', fieldErrors: {} };
+}
+
+const SCALARS = ['effectiveFrom', 'rating', 'slope', 'frontRating', 'frontSlope', 'backRating', 'backSlope'] as const;
+const originalHoles = [...(version?.holes ?? [])].sort((a, b) => Number(a.number) - Number(b.number));
+const stored: Record<string, string> = version
+  ? {
+      effectiveFrom: version.effectiveFrom,
+      rating: String(version.rating),
+      slope: String(version.slope),
+      frontRating: version.frontRating === null ? '' : String(version.frontRating),
+      frontSlope: version.frontSlope === null ? '' : String(version.frontSlope),
+      backRating: version.backRating === null ? '' : String(version.backRating),
+      backSlope: version.backSlope === null ? '' : String(version.backSlope),
+    }
+  : {};
+for (const h of originalHoles) {
+  stored[`hole-${h.number}-par`] = String(h.par);
+  stored[`hole-${h.number}-yardage`] = String(h.yardage);
+  stored[`hole-${h.number}-strokeIndex`] = String(h.strokeIndex);
+  stored[`hole-${h.number}-keep`] = 'on';
+}
+
+let posted: Record<string, string> | null = null;
+const rowErrors: Record<number, string[]> = {};
+
+if (Astro.request.method === 'POST' && version) {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  posted = {};
+  for (const k of SCALARS) posted[k] = formText(form, k);
+  for (const h of originalHoles) {
+    for (const f of ['par', 'yardage', 'strokeIndex']) posted[`hole-${h.number}-${f}`] = formText(form, `hole-${h.number}-${f}`);
+    if (form.has(`hole-${h.number}-keep`)) posted[`hole-${h.number}-keep`] = 'on';
+  }
+  const confirmed = form.has('confirm');
+  const errors: Record<string, string[]> = {};
+  const num = (k: string, whole: boolean) => {
+    const r = (whole ? parseWholeNumber : parseDecimal)(posted?.[k] ?? '');
+    if ('error' in r) {
+      errors[k] = [r.error];
+      return null;
+    }
+    return r.value;
+  };
+  const rating = num('rating', false);
+  const slope = num('slope', true);
+  const frontRating = num('frontRating', false);
+  const frontSlope = num('frontSlope', true);
+  const backRating = num('backRating', false);
+  const backSlope = num('backSlope', true);
+  const kept = originalHoles.filter((h) => posted?.[`hole-${h.number}-keep`] === 'on');
+  const holes: { number: number; par: number; yardage: number; strokeIndex: number }[] = [];
+  for (const h of kept) {
+    const row: number[] = [];
+    for (const f of ['par', 'yardage', 'strokeIndex']) {
+      const r = parseWholeNumber(posted[`hole-${h.number}-${f}`] ?? '');
+      if ('error' in r || r.value === null) {
+        (rowErrors[Number(h.number)] ??= []).push(`${f === 'strokeIndex' ? 'Stroke index' : f[0]!.toUpperCase() + f.slice(1)}: enter a whole number.`);
+        row.push(0);
+      } else row.push(r.value);
+    }
+    holes.push({ number: Number(h.number), par: row[0]!, yardage: row[1]!, strokeIndex: row[2]! });
+  }
+  if (!confirmed) errors.confirm = ['Confirm that you understand this changes rounds already played.'];
+  if (Object.keys(errors).length > 0 || Object.keys(rowErrors).length > 0) {
+    problem = localProblem(errors);
+    Astro.response.status = 400;
+  } else {
+    const result = await call(
+      api.PUT('/admin/courses/{id}/tees/{teeId}/versions/{versionId}', {
+        params: { path: { id, teeId, versionId } },
+        body: {
+          effectiveFrom: (posted.effectiveFrom ?? '').trim() || null,
+          rating,
+          slope,
+          frontRating,
+          frontSlope,
+          backRating,
+          backSlope,
+          holes,
+        },
+      }),
+    );
+    if (isSessionEnded(result)) return endSession(Astro);
+    if (result.ok) return Astro.redirect(`${courseHref}?saved=version`, 303);
+    problem = result.problem;
+    Astro.response.status = pageStatus(problem.status);
+    // The API numbers holes by position in what we sent; show each message on its hole's row.
+    for (const [key, messages] of Object.entries(problem.fieldErrors)) {
+      const m = /^holes\[(\d+)\]\.(\w+)$/.exec(key);
+      const hole = m ? kept[Number(m[1])] : undefined;
+      if (hole) (rowErrors[Number(hole.number)] ??= []).push(...messages.map((t) => `${m![2]}: ${t}`));
+    }
+  }
+} else if (Astro.request.method === 'POST') {
+  Astro.response.status = 404;
+}
+
+const value = (k: string) => posted?.[k] ?? stored[k] ?? '';
+const kept = (n: number) => (posted ? posted[`hole-${n}-keep`] === 'on' : true);
+const played = playedHoleNumbers(problem);
+const holesTopLevel = fieldErrors(problem, 'holes');
+const scalarProblem = posted ? problem : null;
+const title = tee && version ? `${tee.name}, effective ${version.effectiveFrom}` : 'Tee version';
+---
+
+<AppLayout title={`Correct tee version · Admin`}>
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Correct tee version</h1>
+      <p class="lede">{course ? `${course.name} · ${title}` : 'This tee version could not be loaded.'}</p>
+    </div>
+    <AdminNav />
+    <p><a href={courseHref} class="back">Back to the course</a></p>
+    {!version && <Problem problem={problem} />}
+
+    {
+      version && (
+        <form class="form" method="post" action={Astro.url.pathname} novalidate>
+          <div class="warning" role="note" data-warning>
+            <strong>This changes played rounds.</strong>
+            <p>
+              The correction is made to this version in place, not as a new one. Every round already played on it changes: par, score to par, rating and slope update, and shot-by-shot rounds
+              have their hole stats (such as greens in regulation and fairways) worked out again. Rounds stay on this version, so they can only keep the holes they played.
+            </p>
+          </div>
+
+          <Problem problem={problem} heading={problem?.status === 409 ? 'Not corrected' : undefined} />
+          {played.length > 0 && (
+            <p class="problem" data-played-holes>
+              Holes still in play on this version: <span class="num">{played.join(', ')}</span>. Keep them, or add a new version dated from when the change took effect.
+            </p>
+          )}
+
+          <div class="grid">
+            <Field name="effectiveFrom" label="Effective from" type="date" value={value('effectiveFrom')} problem={scalarProblem} />
+            <Field name="rating" label="Rating" inputmode="decimal" value={value('rating')} problem={scalarProblem} />
+            <Field name="slope" label="Slope" inputmode="numeric" value={value('slope')} problem={scalarProblem} />
+            <Field name="frontRating" label="Front nine rating" inputmode="decimal" value={value('frontRating')} problem={scalarProblem} />
+            <Field name="frontSlope" label="Front nine slope" inputmode="numeric" value={value('frontSlope')} problem={scalarProblem} />
+            <Field name="backRating" label="Back nine rating" inputmode="decimal" value={value('backRating')} problem={scalarProblem} />
+            <Field name="backSlope" label="Back nine slope" inputmode="numeric" value={value('backSlope')} problem={scalarProblem} />
+          </div>
+
+          <fieldset class="holes">
+            <legend class="title">Holes</legend>
+            <p class="muted">Untick a hole to remove it. Holes that rounds have played can't be removed.</p>
+            {holesTopLevel.length > 0 && <p class="field-error">{holesTopLevel.join(' ')}</p>}
+            <div class="table-wrap">
+              <table class="table">
+                <caption class="visually-hidden">Holes of this tee version</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Hole</th>
+                    <th scope="col">Keep</th>
+                    <th scope="col" class="num">Par</th>
+                    <th scope="col" class="num">Yardage</th>
+                    <th scope="col" class="num">Stroke index</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {originalHoles.map((h) => {
+                    const n = Number(h.number);
+                    const errs = rowErrors[n] ?? [];
+                    return (
+                      <tr data-hole={n}>
+                        <th scope="row" class="num">
+                          {n}
+                          {errs.length > 0 && (
+                            <span class="field-error row-error" data-row-error>
+                              {errs.join(' ')}
+                            </span>
+                          )}
+                        </th>
+                        <td>
+                          <label class="check">
+                            <input type="checkbox" name={`hole-${n}-keep`} checked={kept(n)} />
+                            <span class="visually-hidden">Keep hole {n}</span>
+                          </label>
+                        </td>
+                        {(['par', 'yardage', 'strokeIndex'] as const).map((f) => (
+                          <td class="num">
+                            <input
+                              class="cell"
+                              name={`hole-${n}-${f}`}
+                              inputmode="numeric"
+                              value={value(`hole-${n}-${f}`)}
+                              aria-label={`Hole ${n} ${f === 'strokeIndex' ? 'stroke index' : f}`}
+                              aria-invalid={errs.length > 0 ? 'true' : undefined}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </fieldset>
+
+          <div class="confirm">
+            <label class="check">
+              <input type="checkbox" name="confirm" id="field-confirm" aria-invalid={fieldErrors(scalarProblem, 'confirm').length > 0 ? 'true' : undefined} />
+              <span>I understand this changes rounds already played on this version.</span>
+            </label>
+            {fieldErrors(scalarProblem, 'confirm').map((e) => (
+              <p class="field-error">{e}</p>
+            ))}
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">
+              Correct version
+            </button>
+            <a class="btn btn-secondary" href={courseHref}>
+              Cancel
+            </a>
+          </div>
+        </form>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .back { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+  .warning {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--color-accent-text);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    max-width: 52em;
+  }
+  .warning strong { color: var(--color-accent-text); font-family: var(--font-display); }
+  .warning p { margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+  .holes { border: 0; padding: 0; margin: 0; display: grid; gap: var(--space-3); min-width: 0; }
+  .holes legend { padding: 0; margin-bottom: var(--space-2); }
+  .cell {
+    width: 5.5em;
+    min-height: var(--touch-target);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 500 15px/1.2 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .cell[aria-invalid='true'] { border-color: var(--color-negative); }
+  .cell:focus-visible, .check input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .check { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--touch-target); cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: var(--color-primary); }
+  .confirm .check { align-items: flex-start; }
+  .row-error { display: block; font-family: var(--font-body); font-size: 14px; font-weight: 500; max-width: 16em; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+</style>

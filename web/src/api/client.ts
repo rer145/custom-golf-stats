@@ -14,6 +14,8 @@ export interface ApiProblem {
   message: string;
   /** Validation errors keyed by camelCase field path (`firstName`, `tees[0].holes[2].par`). */
   fieldErrors: Record<string, string[]>;
+  /** Extra members of the problem body beyond the standard ones (the 409 `unmatched` list, `holeNumbers`). Absent when there are none. */
+  extensions?: Record<string, unknown>;
 }
 
 export type ApiResult<T> = { ok: true; status: number; data: T } | { ok: false; problem: ApiProblem };
@@ -77,12 +79,15 @@ export function toProblem(status: number, body: unknown): ApiProblem {
   const detail = text(record.detail);
   const hasFieldErrors = Object.keys(fieldErrors).length > 0;
   const message = hasFieldErrors ? 'Check the highlighted fields.' : (detail ?? title ?? messageForStatus(status));
+  const standard = new Set(['type', 'title', 'status', 'detail', 'instance', 'errors', 'traceId']);
+  const extensions = Object.fromEntries(Object.entries(record).filter(([key]) => !standard.has(key)));
   return {
     status,
     ...(title !== undefined ? { title } : {}),
     ...(detail !== undefined ? { detail } : {}),
     message,
     fieldErrors,
+    ...(Object.keys(extensions).length > 0 ? { extensions } : {}),
   };
 }
 

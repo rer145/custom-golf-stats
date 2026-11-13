@@ -1,0 +1,157 @@
+---
+import AdminNav from '../../../components/admin/AdminNav.astro';
+import Problem from '../../../components/Problem.astro';
+import AppLayout from '../../../layouts/AppLayout.astro';
+import { call } from '../../../api/client';
+import { pageStatus } from '../../../lib/admin';
+import { formatInteger } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+
+const STATUSES = ['Imported', 'UserEdited', 'Verified'] as const;
+const STATUS_LABELS: Record<string, string> = { Imported: 'Imported', UserEdited: 'User edited', Verified: 'Verified' };
+const requested = Astro.url.searchParams.get('status') ?? '';
+const status = (STATUSES as readonly string[]).includes(requested) ? requested : '';
+const query = (Astro.url.searchParams.get('query') ?? '').trim();
+
+const result = await call(
+  Astro.locals.api.GET('/admin/courses', { params: { query: { ...(status ? { status } : {}), ...(query ? { query } : {}) } } }),
+);
+if (isSessionEnded(result)) return endSession(Astro);
+const courses = result.ok ? result.data : [];
+const problem = result.ok ? null : result.problem;
+if (problem) Astro.response.status = pageStatus(problem.status);
+const merged = Astro.url.searchParams.get('merged');
+const filterHref = (s: string) => {
+  const p = new URLSearchParams();
+  if (s) p.set('status', s);
+  if (query) p.set('query', query);
+  const q = p.toString();
+  return q ? `/admin/courses?${q}` : '/admin/courses';
+};
+---
+
+<AppLayout title="Courses · Admin">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Courses</h1>
+      <p class="lede">Review imported and edited courses, verify them, correct tee versions and merge duplicates.</p>
+    </div>
+    <AdminNav />
+    <Problem problem={problem} />
+
+    <form class="search" method="get" action="/admin/courses" role="search">
+      <div class="field">
+        <label for="course-query">Search by name, club or city</label>
+        <input id="course-query" name="query" type="search" value={query} autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="course-status">Status</label>
+        <select id="course-status" name="status">
+          <option value="" selected={status === ''}>All</option>
+          {
+            STATUSES.map((s) => (
+              <option value={s} selected={status === s}>
+                {STATUS_LABELS[s]}
+              </option>
+            ))
+          }
+        </select>
+      </div>
+      <button class="btn btn-secondary" type="submit">Filter</button>
+    </form>
+
+    <nav class="chips" aria-label="Filter by status">
+      <a href={filterHref('')} aria-current={status === '' ? 'true' : undefined}>All</a>
+      {
+        STATUSES.map((s) => (
+          <a href={filterHref(s)} aria-current={status === s ? 'true' : undefined}>
+            {STATUS_LABELS[s]}
+          </a>
+        ))
+      }
+    </nav>
+
+    {
+      courses.length === 0 ? (
+        <p class="muted" data-empty>
+          No courses match.
+        </p>
+      ) : (
+        <div class="table-wrap">
+          <table class="table">
+            <caption class="visually-hidden">Courses</caption>
+            <thead>
+              <tr>
+                <th scope="col">Course</th>
+                <th scope="col">Location</th>
+                <th scope="col">Status</th>
+                <th scope="col" class="num">Open flags</th>
+                <th scope="col">
+                  <span class="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {courses.map((c) => (
+                <tr data-course={c.name}>
+                  <th scope="row">
+                    <a href={`/admin/courses/${c.id}`}>{c.name}</a>
+                    {c.clubName && c.clubName !== c.name && <span class="caption sub">{c.clubName}</span>}
+                  </th>
+                  <td>{[c.city, c.region, c.country].filter(Boolean).join(', ')}</td>
+                  <td>
+                    <span class="status" data-status={c.status}>
+                      {STATUS_LABELS[c.status] ?? c.status}
+                    </span>
+                    {c.mergedIntoCourseId && (
+                      <span class="caption sub">
+                        Merged into <a href={`/admin/courses/${c.mergedIntoCourseId}`}>another course</a>
+                      </span>
+                    )}
+                  </td>
+                  <td class="num">{formatInteger(c.openFlags)}</td>
+                  <td>
+                    <a class="btn btn-secondary" href={`/admin/courses/${c.id}`} aria-label={`Edit ${c.name}`}>
+                      Edit
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+    {merged && <p class="caption">Merged {merged}.</p>}
+  </div>
+</AppLayout>
+
+<style>
+  .search { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-bottom: var(--space-4); }
+  .search .field:first-child { flex: 1 1 260px; max-width: 420px; }
+  .search select {
+    min-height: var(--touch-target);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 16px/1.4 var(--font-body);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+  .chips a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .chips a[aria-current='true'] { background: var(--color-chip-bg); border-color: var(--color-primary); }
+  .sub { display: block; }
+  .status { font-weight: 500; }
+  td a:not(.btn), th a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+</style>

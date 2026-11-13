@@ -1,0 +1,27 @@
+---
+/** A confirmation after an admin action succeeded (announced politely). Renders nothing without text. */
+interface Props {
+  text?: string | null | undefined;
+}
+const { text } = Astro.props;
+---
+
+{
+  text && (
+    <p class="notice" role="status" data-notice>
+      {text}
+    </p>
+  )
+}
+
+<style>
+  .notice {
+    margin: 0 0 var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-positive);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 15px;
+  }
+</style>

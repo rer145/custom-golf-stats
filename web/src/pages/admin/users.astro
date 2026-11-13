@@ -1,0 +1,175 @@
+---
+import AdminNav from '../../components/admin/AdminNav.astro';
+import Notice from '../../components/admin/Notice.astro';
+import Problem from '../../components/Problem.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
+import { call, fieldErrors, type ApiProblem } from '../../api/client';
+import { isoDate, pageStatus } from '../../lib/admin';
+import { formatInteger } from '../../lib/format';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { endSession, isSessionEnded } from '../../lib/guard';
+
+const api = Astro.locals.api;
+const query = (Astro.url.searchParams.get('query') ?? '').trim();
+const saved = Astro.url.searchParams.get('saved');
+let problem: ApiProblem | null = null;
+let failedId: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const id = formText(form, 'id');
+  const email = formText(form, 'email');
+  const tier = formText(form, 'tier');
+  const role = formText(form, 'role');
+  const disabled = form.has('disabled');
+  const result = await call(api.PUT('/admin/users/{id}', { params: { path: { id } }, body: { tier, role, disabled } }));
+  if (isSessionEnded(result)) return endSession(Astro);
+  if (result.ok) {
+    const next = new URLSearchParams();
+    if (query) next.set('query', query);
+    next.set('saved', result.data.email || email);
+    return Astro.redirect(`/admin/users?${next}`, 303);
+  }
+  problem = result.problem;
+  failedId = id;
+  Astro.response.status = pageStatus(problem.status);
+}
+
+const list = await call(api.GET('/admin/users', { params: { query: query ? { query } : {} } }));
+if (isSessionEnded(list)) return endSession(Astro);
+const users = list.ok ? list.data : [];
+if (!list.ok) {
+  problem = list.problem;
+  Astro.response.status = pageStatus(list.problem.status);
+}
+const me = Astro.locals.session?.email;
+const messagesFor = (id: string) => (id === failedId ? ['tier', 'role', 'disabled'].flatMap((k) => fieldErrors(problem, k)) : []);
+---
+
+<AppLayout title="Users · Admin">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Users</h1>
+      <p class="lede">Find a golfer, then set their tier and role or disable the account.</p>
+    </div>
+    <AdminNav />
+    <Notice text={saved ? `Saved changes for ${saved}.` : null} />
+    <Problem problem={problem} heading={failedId ? 'Not saved' : undefined} />
+
+    <form class="search" method="get" action="/admin/users" role="search">
+      <div class="field">
+        <label for="user-query">Search by email or name</label>
+        <input id="user-query" name="query" type="search" value={query} autocomplete="off" />
+      </div>
+      <button class="btn btn-secondary" type="submit">Search</button>
+    </form>
+
+    {
+      users.length === 0 ? (
+        <p class="muted" data-empty>
+          {query ? 'No golfers match that search.' : 'There are no golfers yet.'}
+        </p>
+      ) : (
+        <div class="table-wrap">
+          <table class="table users">
+            <caption class="visually-hidden">Golfers</caption>
+            <thead>
+              <tr>
+                <th scope="col">Golfer</th>
+                <th scope="col">Tier</th>
+                <th scope="col">Role</th>
+                <th scope="col">Disabled</th>
+                <th scope="col" class="num">Trial rounds used</th>
+                <th scope="col">
+                  <span class="visually-hidden">Save</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const formId = `user-${u.id}`;
+                const errors = messagesFor(u.id);
+                return (
+                  <tr data-user={u.email}>
+                    <th scope="row">
+                      <span class="email">{u.email}</span>
+                      {u.email === me && <span class="you caption"> (you)</span>}
+                      <span class="caption who">{[u.firstName, u.lastName].filter(Boolean).join(' ')}</span>
+                      {u.disabledAt && <span class="caption who">Disabled {isoDate(u.disabledAt)}</span>}
+                    </th>
+                    <td>
+                      <form id={formId} method="post" action={query ? `/admin/users?query=${encodeURIComponent(query)}` : '/admin/users'} />
+                      <input type="hidden" name="id" value={u.id} form={formId} />
+                      <input type="hidden" name="email" value={u.email} form={formId} />
+                      <select name="tier" form={formId} aria-label={`Tier for ${u.email}`}>
+                        {['Free', 'Paid'].map((t) => (
+                          <option value={t} selected={u.tier === t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select name="role" form={formId} aria-label={`Role for ${u.email}`}>
+                        {['User', 'Admin'].map((r) => (
+                          <option value={r} selected={u.role === r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <label class="check">
+                        <input type="checkbox" name="disabled" value="true" form={formId} checked={u.disabledAt !== null} />
+                        <span class="visually-hidden">Disabled: {u.email}</span>
+                        <span aria-hidden="true">Disabled</span>
+                      </label>
+                    </td>
+                    <td class="num">{formatInteger(u.trialShotRoundsUsed)}</td>
+                    <td>
+                      <button class="btn btn-primary" type="submit" form={formId} aria-label={`Save ${u.email}`}>
+                        Save
+                      </button>
+                      {errors.length > 0 && (
+                        <ul class="field-error row-error" data-row-error>
+                          {errors.map((e) => (
+                            <li>{e}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+    <p class="caption">Role changes reach a golfer's session when it next refreshes. Disabling blocks sign-in at once; sessions already open end within the hour.</p>
+  </div>
+</AppLayout>
+
+<style>
+  .search { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-bottom: var(--space-6); }
+  .search .field { flex: 1 1 260px; max-width: 420px; }
+  .users { min-width: 760px; }
+  .users th[scope='row'] { font-weight: 500; }
+  .email { display: block; overflow-wrap: anywhere; }
+  .who { display: block; }
+  .you { color: var(--color-text-secondary); }
+  select {
+    min-height: var(--touch-target);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 15px/1.4 var(--font-body);
+  }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .check { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--touch-target); cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: var(--color-primary); }
+  .row-error { margin: var(--space-2) 0 0; padding-left: 1.1em; max-width: 22em; }
+</style>
