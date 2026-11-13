@@ -1,0 +1,18 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+import PublicLayout from '../layouts/PublicLayout.astro';
+
+// Shown by the middleware (a rewrite) when a signed-in user who isn't an admin opens an /admin page.
+Astro.response.status = 403;
+const Layout = Astro.locals.session ? AppLayout : PublicLayout;
+---
+
+<Layout title="No access">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">No access</h1>
+      <p class="lede">This area is for administrators. If you think you should have access, ask an admin to check your role.</p>
+    </div>
+    <p><a class="btn btn-primary" href="/stats">Go to your stats</a></p>
+  </div>
+</Layout>

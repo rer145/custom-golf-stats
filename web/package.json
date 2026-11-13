@@ -1,0 +1,33 @@
+{
+  "name": "custom-golf-stats-web",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node ./dist/server/entry.mjs",
+    "gen:api": "openapi-typescript ../src/CustomGolfStats.Api.Client/openapi/CustomGolfStats.Api.json -o src/api/schema.d.ts",
+    "check": "astro check && tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "fake-api": "tsx tests/fake-api.ts"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.12",
+    "astro": "^7.4.11",
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.19.2",
+    "openapi-typescript": "^7.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  }
+}

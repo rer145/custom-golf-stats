@@ -1,0 +1,53 @@
+[
+  {
+    "id": "a1a1a1a1-0000-4000-8000-000000000001",
+    "email": "user@example.test",
+    "password": "Fairway-123",
+    "role": "User",
+    "tier": "Free",
+    "expiresIn": 3600,
+    "firstName": "Pat",
+    "lastName": "Golfer"
+  },
+  {
+    "id": "a1a1a1a1-0000-4000-8000-000000000002",
+    "email": "admin@example.test",
+    "password": "Fairway-123",
+    "role": "Admin",
+    "tier": "Paid",
+    "expiresIn": 3600,
+    "firstName": "Alex",
+    "lastName": "Admin"
+  },
+  {
+    "id": "a1a1a1a1-0000-4000-8000-000000000003",
+    "email": "short@example.test",
+    "password": "Fairway-123",
+    "role": "User",
+    "tier": "Free",
+    "expiresIn": 30,
+    "firstName": "Sam",
+    "lastName": "Short"
+  },
+  {
+    "id": "a1a1a1a1-0000-4000-8000-000000000005",
+    "email": "short-revoked@example.test",
+    "password": "Fairway-123",
+    "role": "User",
+    "tier": "Free",
+    "expiresIn": 30,
+    "firstName": "Rae",
+    "lastName": "Voked"
+  },
+  {
+    "id": "a1a1a1a1-0000-4000-8000-000000000004",
+    "email": "disabled@example.test",
+    "password": "Fairway-123",
+    "role": "User",
+    "tier": "Free",
+    "expiresIn": 3600,
+    "disabled": true,
+    "firstName": "Dee",
+    "lastName": "Sabled"
+  }
+]

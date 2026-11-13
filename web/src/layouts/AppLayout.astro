@@ -1,0 +1,65 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+/**
+ * Layout for signed-in pages: the Fairway Ink header with the horizontal lockup and the main navigation
+ * (Admin only for admins; the middleware still guards /admin on every request).
+ */
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+const session = Astro.locals.session;
+const path = Astro.url.pathname;
+
+const nav = [
+  { href: '/stats', label: 'Stats' },
+  { href: '/rounds', label: 'Rounds' },
+  { href: '/courses', label: 'Courses' },
+  { href: '/profile', label: 'Profile' },
+  ...(session?.role === 'Admin' ? [{ href: '/admin', label: 'Admin' }] : []),
+];
+const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <BaseHead title={title} description={description} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header band">
+      <div class="container">
+        <a class="brand-link" href="/stats">
+          <img src="/logo/lockup-horizontal-on-dark.svg" alt="Custom Golf Stats" width="159" height="28" />
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <ul>
+            {
+              nav.map((item) => (
+                <li>
+                  <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+                    {item.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        <div class="header-actions">
+          <form method="post" action="/sign-out">
+            <button class="btn btn-secondary" type="submit">Sign out</button>
+          </form>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter />
+  </body>
+</html>

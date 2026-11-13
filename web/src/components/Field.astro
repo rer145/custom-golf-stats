@@ -1,0 +1,36 @@
+---
+import type { HTMLAttributes } from 'astro/types';
+import { fieldErrors, type ApiProblem } from '../api/client';
+
+/**
+ * A labelled input with its validation message. `name` is also the key looked up in the problem's field errors
+ * (case-insensitive), so a 400 from the API lands next to the right field. Pass `errorKey` when they differ.
+ */
+interface Props extends Omit<HTMLAttributes<'input'>, 'name'> {
+  name: string;
+  label: string;
+  problem?: ApiProblem | null | undefined;
+  errorKey?: string | undefined;
+  hint?: string | undefined;
+}
+
+const { name, label, problem, errorKey, hint, id = `field-${name.replace(/[^A-Za-z0-9_-]/g, '-')}`, ...input } = Astro.props;
+const errors = fieldErrors(problem, errorKey ?? name);
+const hasError = errors.length > 0;
+const hintId = hint ? `${id}-hint` : undefined;
+const errorId = hasError ? `${id}-error` : undefined;
+const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
+---
+
+<div class="field">
+  <label for={id}>{label}</label>
+  {hint && <p class="hint" id={hintId}>{hint}</p>}
+  <input id={id} name={name} aria-invalid={hasError ? 'true' : undefined} aria-describedby={describedBy} {...input} />
+  {
+    hasError && (
+      <div class="field-error" id={errorId}>
+        {errors.length === 1 ? <p>{errors[0]}</p> : <ul>{errors.map((e) => <li>{e}</li>)}</ul>}
+      </div>
+    )
+  }
+</div>
