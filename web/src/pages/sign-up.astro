@@ -6,14 +6,16 @@ import type { ApiProblem } from '../api/client';
 import { register, signIn } from '../lib/auth';
 import { serverConfig } from '../lib/config';
 import { writeSessionCookie } from '../lib/cookies';
+import { formText, notAForm, readForm } from '../lib/forms';
 
 let email = '';
 let problem: ApiProblem | null = null;
 
 if (Astro.request.method === 'POST') {
-  const form = await Astro.request.formData();
-  email = String(form.get('email') ?? '');
-  const password = String(form.get('password') ?? '');
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  email = formText(form, 'email');
+  const password = formText(form, 'password');
   const config = serverConfig();
   const target = { baseUrl: config.apiBaseUrl };
   const registered = await register(target, email, password);

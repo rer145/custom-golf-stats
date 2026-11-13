@@ -3,6 +3,7 @@ import { call, createApi } from './api/client';
 import { refreshTokens } from './lib/auth';
 import { serverConfig } from './lib/config';
 import { clearSessionCookie, writeSessionCookie } from './lib/cookies';
+import { endSession, isSessionEnded } from './lib/guard';
 import { declaresOversizedBody } from './lib/limits';
 import { routeAccess, signInRedirect } from './lib/routes';
 import { SESSION_COOKIE, resolveSession } from './lib/session';
@@ -42,11 +43,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (access === 'admin' && session) {
     const entitlements = await call(context.locals.api.GET('/me/entitlements'));
-    if (!entitlements.ok && entitlements.problem.status === 401) {
-      clearSessionCookie(context.cookies);
-      context.locals.session = null;
-      return context.redirect(signInRedirect(context.url), 303);
-    }
+    if (isSessionEnded(entitlements)) return endSession(context);
     const role = entitlements.ok ? entitlements.data.role : null;
     if (role !== null && role !== session.role) {
       session = { ...session, role };

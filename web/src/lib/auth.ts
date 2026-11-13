@@ -1,5 +1,5 @@
 import { call, createApi, toProblem, type ApiProblem } from '../api/client';
-import { sessionFromTokens, type RefreshOutcome, type Session } from './session';
+import { expiresAtFrom, sessionFromTokens, type RefreshOutcome, type Session } from './session';
 
 export interface ApiTarget {
   baseUrl: string;
@@ -50,8 +50,14 @@ export async function signIn(target: ApiTarget, rawEmail: string, password: stri
     }
     return { ok: false, problem };
   }
+  if (expiresAtFrom(login.data.expiresIn, now) === null) return { ok: false, problem: badAnswer() };
   const role = (await currentRole(target, login.data.accessToken)) ?? 'User';
-  return { ok: true, session: sessionFromTokens(login.data, { email, role }, now) };
+  const session = sessionFromTokens(login.data, { email, role }, now);
+  return session ? { ok: true, session } : { ok: false, problem: badAnswer() };
+}
+
+function badAnswer(): ApiProblem {
+  return { status: 502, message: 'Sign-in got an unexpected answer from the server. Try again in a minute.', fieldErrors: {} };
 }
 
 /** Identity's register errors are keyed by error code (`DuplicateUserName`, `PasswordTooShort`…); put them on the form's fields. */
@@ -86,13 +92,17 @@ export async function register(target: ApiTarget, rawEmail: string, password: st
   return { ok: false, problem: general.length > 0 && Object.keys(fieldErrors).length === 0 ? { ...mapped, message: general.join(' ') } : mapped };
 }
 
-/** `/auth/refresh` for the middleware. 4xx means the refresh token is no good; anything else is a temporary failure. */
+/**
+ * `/auth/refresh` for the middleware. Only 400 and 401 mean the refresh token is no good (sign out); any other failure,
+ * or an answer with an unusable `expiresIn`, is treated as temporary.
+ */
 export async function refreshTokens(target: ApiTarget, refreshToken: string): Promise<RefreshOutcome> {
   const r = await call(api(target).POST('/auth/refresh', { body: { refreshToken } }));
   if (!r.ok) {
     const s = r.problem.status;
-    return s >= 400 && s < 500 && s !== 408 && s !== 429 ? { kind: 'rejected' } : { kind: 'unavailable' };
+    return s === 400 || s === 401 ? { kind: 'rejected' } : { kind: 'unavailable' };
   }
+  if (expiresAtFrom(r.data.expiresIn, Date.now()) === null) return { kind: 'unavailable' };
   const role = await currentRole(target, r.data.accessToken);
   return { kind: 'ok', tokens: r.data, ...(role ? { role } : {}) };
 }

@@ -6,6 +6,7 @@ import type { ApiProblem } from '../api/client';
 import { signIn } from '../lib/auth';
 import { serverConfig } from '../lib/config';
 import { writeSessionCookie } from '../lib/cookies';
+import { formText, notAForm, readForm } from '../lib/forms';
 import { safeNext } from '../lib/routes';
 
 const next = safeNext(Astro.url.searchParams.get('next'));
@@ -13,10 +14,11 @@ let email = '';
 let problem: ApiProblem | null = null;
 
 if (Astro.request.method === 'POST') {
-  const form = await Astro.request.formData();
-  email = String(form.get('email') ?? '');
-  const password = String(form.get('password') ?? '');
-  const returnTo = safeNext(String(form.get('next') ?? ''));
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  email = formText(form, 'email');
+  const password = formText(form, 'password');
+  const returnTo = safeNext(formText(form, 'next'));
   const config = serverConfig();
   const now = Date.now();
   const result = await signIn({ baseUrl: config.apiBaseUrl }, email, password, now);

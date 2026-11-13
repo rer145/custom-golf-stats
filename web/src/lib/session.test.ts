@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   SESSION_LIFETIME_MS,
   REFRESH_MARGIN_MS,
+  expiresAtFrom,
   needsRefresh,
   resolveSession,
   sealSession,
@@ -88,9 +89,24 @@ describe('sealSession / unsealSession', () => {
 describe('sessionFromTokens', () => {
   it('computes the access token expiry from expiresIn (seconds, number or string)', () => {
     const s = sessionFromTokens({ accessToken: 'a', refreshToken: 'r', expiresIn: '3600' }, { email: 'e@x.test', role: 'Admin' }, now);
-    expect(s.accessExpiresAt).toBe(now + 3600_000);
-    expect(s.expiresAt).toBe(now + SESSION_LIFETIME_MS);
-    expect(s.role).toBe('Admin');
+    expect(s?.accessExpiresAt).toBe(now + 3600_000);
+    expect(s?.expiresAt).toBe(now + SESSION_LIFETIME_MS);
+    expect(s?.role).toBe('Admin');
+  });
+
+  it('refuses a missing, non-finite, zero or negative expiresIn', () => {
+    for (const expiresIn of [0, -5, '', 'soon', Number.NaN, Number.POSITIVE_INFINITY, '1e400']) {
+      expect(sessionFromTokens({ accessToken: 'a', refreshToken: 'r', expiresIn }, { email: 'e@x.test', role: 'User' }, now), String(expiresIn)).toBeNull();
+    }
+  });
+});
+
+describe('expiresAtFrom', () => {
+  it('is now + seconds for a positive finite value, otherwise null', () => {
+    expect(expiresAtFrom(60, now)).toBe(now + 60_000);
+    expect(expiresAtFrom('90', now)).toBe(now + 90_000);
+    expect(expiresAtFrom(0, now)).toBeNull();
+    expect(expiresAtFrom('x', now)).toBeNull();
   });
 });
 
@@ -153,6 +169,24 @@ describe('resolveSession', () => {
     expect(r.session).toMatchObject({ accessToken: 'access-new', refreshToken: 'refresh-new', accessExpiresAt: now + 3600_000, email: 'golfer@example.test', role: 'User' });
     // A refresh does not extend the absolute session lifetime.
     expect(r.session?.expiresAt).toBe(sample().expiresAt);
+  });
+
+  it('a refresh answer with a bad expiresIn counts as unavailable', async () => {
+    const valid = await resolveSession({
+      cookie: sealSession(sample({ accessExpiresAt: now + 30_000 }), secret),
+      secret,
+      now,
+      refresh: async () => ({ kind: 'ok', tokens: { ...refreshed, expiresIn: 0 } }),
+    });
+    expect(valid.cookie).toBe('none');
+    expect(valid.session?.accessToken).toBe('access-abc');
+    const expired = await resolveSession({
+      cookie: sealSession(sample({ accessExpiresAt: now - 1 }), secret),
+      secret,
+      now,
+      refresh: async () => ({ kind: 'ok', tokens: { ...refreshed, expiresIn: 'never' } }),
+    });
+    expect(expired).toEqual({ session: null, cookie: 'clear' });
   });
 
   it('refresh rejected: no session and the cookie is cleared', async () => {

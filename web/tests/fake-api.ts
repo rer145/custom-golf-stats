@@ -184,6 +184,12 @@ export async function startFakeApi(port: number, host = '127.0.0.1') {
         for (const [token, owner] of state.refreshTokens) if (owner === email) state.refreshTokens.delete(token);
         return send(res, ok({ ok: true }));
       }
+      if (url.pathname === '/__fake/expire-access' && method === 'POST') {
+        // Invalidates one user's access tokens (refresh tokens stay), so the next page-level API call gets a 401.
+        const email = String((body as { email?: string } | undefined)?.email ?? '');
+        for (const [token, owner] of state.accessTokens) if (owner.email === email) state.accessTokens.delete(token);
+        return send(res, ok({ ok: true }));
+      }
 
       const auth = req.headers.authorization ?? '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;

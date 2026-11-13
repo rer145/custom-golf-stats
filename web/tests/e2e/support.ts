@@ -32,5 +32,10 @@ export async function revokeRefreshTokens(email: string): Promise<void> {
   await fetch(`${FAKE_API_URL}/__fake/revoke`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
 }
 
+/** Makes the API reject a user's current access tokens (401) while their refresh tokens still work. */
+export async function expireAccessTokens(email: string): Promise<void> {
+  await fetch(`${FAKE_API_URL}/__fake/expire-access`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+}
+
 /** Every token string the fake API has ever issued (they all start with fake-access- / fake-refresh-). */
 export const TOKEN_PATTERN = /fake-(access|refresh)-[0-9a-f-]{36}/;

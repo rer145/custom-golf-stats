@@ -1,8 +1,16 @@
 ---
-// Placeholder until Task 3 (profile and handicap) replaces it.
+// Placeholder until Task 3 (profile and handicap) replaces it. It shows the page-level API pattern:
+// call through Astro.locals.api, and on a 401 end the session (cookie cleared, back to sign-in with ?next).
 import AppLayout from '../../layouts/AppLayout.astro';
+import Problem from '../../components/Problem.astro';
+import { call } from '../../api/client';
+import { endSession, isSessionEnded } from '../../lib/guard';
+
+const result = await call(Astro.locals.api.GET('/me'));
+if (isSessionEnded(result)) return endSession(Astro);
 
 const email = Astro.locals.session?.email ?? '';
+const name = result.ok ? `${result.data.firstName} ${result.data.lastName}`.trim() : '';
 ---
 
 <AppLayout title="Profile">
@@ -10,6 +18,8 @@ const email = Astro.locals.session?.email ?? '';
     <div class="page-header">
       <h1 class="display">Profile</h1>
       <p class="lede">Signed in as {email}.</p>
+      {name && <p class="muted">{name}</p>}
     </div>
+    <Problem problem={result.ok ? null : result.problem} />
   </div>
 </AppLayout>

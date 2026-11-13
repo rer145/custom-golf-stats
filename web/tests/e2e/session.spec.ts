@@ -1,6 +1,7 @@
 import { expect, test, type Response } from '@playwright/test';
 import { sealSession } from '../../src/lib/session';
-import { ADMIN, SESSION_COOKIE, SHORT, SHORT_REVOKED, TOKEN_PATTERN, USER, fakeCalls, revokeRefreshTokens, signIn } from './support';
+import { listPagePaths } from '../support/pages';
+import { ADMIN, SESSION_COOKIE, SHORT, SHORT_REVOKED, TOKEN_PATTERN, USER, expireAccessTokens, fakeCalls, revokeRefreshTokens, signIn } from './support';
 
 // Same test-only value as playwright.config.ts, so tests can forge cookies the way an attacker can't.
 const E2E_SECRET = 'e2e-only-session-secret-not-for-production-0123456789';
@@ -31,10 +32,13 @@ test('no token reaches the browser: HTML, scripts, styles, URLs, headers, storag
     void collect(res);
   });
 
+  // Every page file under src/pages (as in guard.spec.ts), visited as an admin so /admin pages render too.
+  const pages = listPagePaths();
+  expect(pages.length).toBeGreaterThanOrEqual(10);
   await signIn(page, ADMIN);
-  for (const path of ['/stats', '/rounds', '/courses', '/profile', '/admin', '/']) {
+  for (const { file, path } of pages) {
     await page.goto(path);
-    expect(await page.content(), path).not.toMatch(TOKEN_PATTERN);
+    expect(await page.content(), file).not.toMatch(TOKEN_PATTERN);
   }
   await page.waitForLoadState('networkidle');
 
@@ -123,6 +127,30 @@ test('cross-site form posts are refused', async ({ request }) => {
   });
   expect(res.status()).toBe(403);
 });
+
+test('a 401 from a page-level API call ends the session and returns to sign-in', async ({ page, context }) => {
+  // A dedicated user: expiring access tokens must not race other tests.
+  const email = `expire-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.test`;
+  await page.goto('/sign-up');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill('Brand-new-1');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page).toHaveURL('/profile');
+
+  await expireAccessTokens(email);
+  await page.goto('/profile');
+  await expect(page).toHaveURL('/sign-in?next=%2Fprofile');
+  expect((await context.cookies()).some((c) => c.name === SESSION_COOKIE)).toBe(false);
+});
+
+for (const path of ['/sign-in', '/sign-up']) {
+  test(`${path} refuses a non-form POST with 415, not a 500`, async ({ request }) => {
+    const json = await request.post(path, { data: { email: USER, password: 'x' }, headers: { origin: 'http://127.0.0.1:4321' }, maxRedirects: 0 });
+    expect(json.status()).toBe(415);
+    const text = await request.post(path, { data: 'email=a', headers: { 'content-type': 'text/plain', origin: 'http://127.0.0.1:4321' }, maxRedirects: 0 });
+    expect(text.status()).toBe(415);
+  });
+}
 
 test('oversized request bodies are refused with 413', async ({ request }) => {
   const res = await request.post('/sign-in', {

@@ -102,11 +102,20 @@ function parseSession(value: unknown): Session | null {
   };
 }
 
-export function sessionFromTokens(tokens: TokenResponse, who: { email: string; role: string }, now: number): Session {
+/** `now + expiresIn` seconds, or `null` when `expiresIn` isn't a finite number above zero. */
+export function expiresAtFrom(expiresIn: number | string, now: number): number | null {
+  const seconds = typeof expiresIn === 'number' ? expiresIn : expiresIn.trim() === '' ? Number.NaN : Number(expiresIn);
+  return Number.isFinite(seconds) && seconds > 0 ? now + seconds * 1000 : null;
+}
+
+/** A new session from `/auth/login`'s answer; `null` when the answer's `expiresIn` is unusable. */
+export function sessionFromTokens(tokens: TokenResponse, who: { email: string; role: string }, now: number): Session | null {
+  const accessExpiresAt = expiresAtFrom(tokens.expiresIn, now);
+  if (accessExpiresAt === null) return null;
   return {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    accessExpiresAt: now + Number(tokens.expiresIn) * 1000,
+    accessExpiresAt,
     expiresAt: now + SESSION_LIFETIME_MS,
     email: who.email,
     role: who.role,
@@ -144,21 +153,26 @@ export async function resolveSession(args: {
   if (!needsRefresh(session, now)) return { session, cookie: 'none' };
 
   const outcome = await args.refresh(session.refreshToken);
+  const unavailable = (): ResolvedSession => (session.accessExpiresAt > now ? { session, cookie: 'none' } : { session: null, cookie: 'clear' });
   switch (outcome.kind) {
-    case 'ok':
+    case 'ok': {
+      const accessExpiresAt = expiresAtFrom(outcome.tokens.expiresIn, now);
+      // A malformed answer is treated like an API failure: keep a still-valid session, otherwise sign out.
+      if (accessExpiresAt === null) return unavailable();
       return {
         session: {
           ...session,
           accessToken: outcome.tokens.accessToken,
           refreshToken: outcome.tokens.refreshToken,
-          accessExpiresAt: now + Number(outcome.tokens.expiresIn) * 1000,
+          accessExpiresAt,
           role: outcome.role ?? session.role,
         },
         cookie: 'set',
       };
+    }
     case 'rejected':
       return { session: null, cookie: 'clear' };
     case 'unavailable':
-      return session.accessExpiresAt > now ? { session, cookie: 'none' } : { session: null, cookie: 'clear' };
+      return unavailable();
   }
 }

@@ -72,6 +72,22 @@ describe('signIn', () => {
     expect(!r.ok && r.problem.status).toBe(503);
   });
 
+  it('a login answer with a bad expiresIn is a failed sign-in with a message', async () => {
+    for (const expiresIn of [0, -1, 'later']) {
+      const r = await signIn(
+        { baseUrl: base, fetch: fakeFetch({ 'POST /auth/login': () => json(200, { ...tokens, expiresIn }), 'GET /me/entitlements': () => json(200, {}) }) },
+        'a@b.test',
+        'x',
+        now,
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.problem.status).toBe(502);
+        expect(r.problem.message).toMatch(/unexpected answer/);
+      }
+    }
+  });
+
   it('entitlements failing still signs in, as a User', async () => {
     const r = await signIn({ baseUrl: base, fetch: fakeFetch({ 'POST /auth/login': () => json(200, tokens), 'GET /me/entitlements': () => json(500, {}) }) }, 'a@b.test', 'x', now);
     expect(r.ok && r.session.role).toBe('User');
@@ -124,9 +140,14 @@ describe('refreshTokens', () => {
     expect(seen[1]!.headers.get('authorization')).toBe('Bearer acc2');
   });
 
-  it('401 is rejected; 5xx and network failures are unavailable', async () => {
-    expect(await refreshTokens({ baseUrl: base, fetch: fakeFetch({ 'POST /auth/refresh': () => new Response(null, { status: 401 }) }) }, 'r')).toEqual({ kind: 'rejected' });
-    expect(await refreshTokens({ baseUrl: base, fetch: fakeFetch({ 'POST /auth/refresh': () => new Response(null, { status: 502 }) }) }, 'r')).toEqual({ kind: 'unavailable' });
+  it('only 400 and 401 are rejected; other statuses, bad answers and network failures are unavailable', async () => {
+    const status = (s: number) => refreshTokens({ baseUrl: base, fetch: fakeFetch({ 'POST /auth/refresh': () => new Response(null, { status: s }) }) }, 'r');
+    expect(await status(400)).toEqual({ kind: 'rejected' });
+    expect(await status(401)).toEqual({ kind: 'rejected' });
+    for (const s of [403, 404, 405, 408, 409, 429, 500, 502, 503]) expect(await status(s), String(s)).toEqual({ kind: 'unavailable' });
+    expect(
+      await refreshTokens({ baseUrl: base, fetch: fakeFetch({ 'POST /auth/refresh': () => json(200, { ...tokens, expiresIn: -1 }) }) }, 'r'),
+    ).toEqual({ kind: 'unavailable' });
     expect(
       await refreshTokens(
         {
