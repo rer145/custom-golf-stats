@@ -3,6 +3,7 @@ import { call, createApi } from './api/client';
 import { refreshTokens } from './lib/auth';
 import { serverConfig } from './lib/config';
 import { clearSessionCookie, writeSessionCookie } from './lib/cookies';
+import { declaresOversizedBody } from './lib/limits';
 import { routeAccess, signInRedirect } from './lib/routes';
 import { SESSION_COOKIE, resolveSession } from './lib/session';
 
@@ -14,6 +15,9 @@ import { SESSION_COOKIE, resolveSession } from './lib/session';
  * 4. For `/admin`, checks `role === 'Admin'` live with `/me/entitlements` and shows the 403 page otherwise.
  */
 export const onRequest = defineMiddleware(async (context, next) => {
+  if (declaresOversizedBody(context.request)) {
+    return new Response('Request body too large.', { status: 413, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+  }
   const config = serverConfig();
   const now = Date.now();
   const target = { baseUrl: config.apiBaseUrl };

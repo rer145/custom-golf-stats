@@ -8,3 +8,13 @@ declare namespace App {
     api: import('./api/client').Api;
   }
 }
+
+/** Server-side configuration, read at runtime from process.env (see src/lib/config.ts and README.md). */
+declare namespace NodeJS {
+  interface ProcessEnv {
+    API_BASE_URL?: string;
+    SESSION_SECRET?: string;
+    /** Build time only (astro.config.mjs). */
+    ALLOWED_HOSTS?: string;
+  }
+}

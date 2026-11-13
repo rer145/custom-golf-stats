@@ -123,3 +123,24 @@ test('cross-site form posts are refused', async ({ request }) => {
   });
   expect(res.status()).toBe(403);
 });
+
+test('oversized request bodies are refused with 413', async ({ request }) => {
+  const res = await request.post('/sign-in', {
+    data: `email=a%40b.test&password=${'x'.repeat(1024 * 1024)}`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'http://127.0.0.1:4321' },
+    maxRedirects: 0,
+  });
+  expect(res.status()).toBe(413);
+});
+
+test('a forged Host header does not steer redirects or pass the origin check', async ({ request }) => {
+  const get = await request.get('/stats', { headers: { host: 'evil.example' }, maxRedirects: 0 });
+  expect(get.status()).toBe(303);
+  expect(get.headers()['location']).not.toContain('evil.example');
+  const post = await request.post('/sign-in', {
+    form: { email: USER, password: 'x' },
+    headers: { host: 'evil.example', origin: 'http://evil.example' },
+    maxRedirects: 0,
+  });
+  expect(post.status()).toBe(403);
+});
