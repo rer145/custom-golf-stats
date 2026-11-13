@@ -54,9 +54,25 @@ public static class UiText
     public const string SignInOffline = "You need a connection to sign in.";
     public const string AccountCreatedSignInFailed = "Your account was created, but signing in did not work. Try signing in.";
     public const string AccountUnknown = "We could not confirm which account this is. Please try again.";
-    public static string UnsyncedFromAnotherAccount(int rounds, int courses) =>
-        $"This device has {rounds} round{(rounds == 1 ? "" : "s")}" + (courses > 0 ? $" and {courses} course{(courses == 1 ? "" : "s")}" : "") +
-        " that were never synced to the previous account. Signing in as someone else will remove them from this device.";
+    public static string UnsyncedFromAnotherAccount(int rounds, int courses, int unsavedHoles = 0)
+    {
+        var parts = new List<string>();
+        if (rounds > 0)
+            parts.Add(Count(rounds, "round"));
+        if (courses > 0)
+            parts.Add(Count(courses, "course"));
+        if (unsavedHoles > 0)
+            parts.Add(Count(unsavedHoles, "hole") + " being entered");
+        var what = parts.Count switch
+        {
+            0 => "data",
+            1 => parts[0],
+            _ => string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1],
+        };
+        return $"This device has {what} that the previous account never synced. Signing in as someone else will remove it from this device.";
+    }
+
+    private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
     public const string SignInError = "Something went wrong signing in. Please try again.";
 
     // ---- courses ----
@@ -97,6 +113,7 @@ public static class UiText
 
     // ---- extras / profile ----
     public const string SomethingWentWrong = "Something went wrong. Please try again.";
+    public const string CouldNotOpenRound = "The round was started but could not be opened. Find it on the home screen.";
     public const string CouldNotStartRound = "The round could not be started. Please try again.";
     public const string NotANumber = "Enter a number.";
     public const string NegativeNumber = "Enter zero or more.";

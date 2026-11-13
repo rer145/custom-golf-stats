@@ -69,10 +69,18 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
         TooLong(Country, CourseLimits.MaxCountryLength, errors);
 
         var layout = Holes.Select(h => new HoleInfo(h.Number, h.Par, h.Yardage, h.StrokeIndex)).ToList();
-        // A cleared number box reports NaN: treat a non-finite rating as missing rather than letting the decimal conversion throw.
-        decimal? rating = Rating is { } r && double.IsFinite(r) ? (decimal)r : null;
-        errors.AddRange(CourseValidator.Validate(rating, Slope, layout).Select(UiText.Describe));
+        errors.AddRange(CourseValidator.Validate(ToDecimalRating(Rating), Slope, layout).Select(UiText.Describe));
         return errors;
+    }
+
+    /// <summary>A cleared number box reports NaN: a non-finite rating is missing. A finite one too large for a decimal is clamped to a
+    /// value that is still far outside the limits, so it is reported as out of range instead of the conversion throwing.</summary>
+    private static decimal? ToDecimalRating(double? value)
+    {
+        const double Bound = 1e15;
+        if (value is not { } r || !double.IsFinite(r))
+            return null;
+        return (decimal)Math.Clamp(r, -Bound, Bound);
     }
 
     private static void TooLong(string? text, int max, List<string> errors)

@@ -51,7 +51,17 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
         Message = null;
         var term = Query.Trim();
 
-        var local = await db.Courses.SearchAsync(term);
+        List<CourseRow> local;
+        try
+        {
+            local = await db.Courses.SearchAsync(term);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (Current())
+                ErrorMessage = UiText.SomethingWentWrong;
+            return;
+        }
         if (!Current())
             return;
         LocalResults.Clear();
@@ -81,13 +91,11 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
             foreach (var found in provider)
                 ProviderResults.Add(found);
         }
-        catch (OperationCanceledException) when (!Current())
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or OperationCanceledException)
         {
-            // superseded by a newer search
-        }
-        catch (Exception ex) when (Current() && ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
-        {
-            Message = UiText.ProviderSearchFailed;
+            // A superseded search's failure (including its cancellation) is dropped whenever it arrives; only the current one is reported.
+            if (Current())
+                Message = UiText.ProviderSearchFailed;
         }
         finally
         {
@@ -157,8 +165,8 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
     [RelayCommand]
     private async Task ToggleFavoriteAsync(CourseRow course)
     {
-        await db.Courses.SetFavoriteAsync(course.Id, !course.IsFavorite);
-        await SearchAsync();
+        if (await TryAsync(() => db.Courses.SetFavoriteAsync(course.Id, !course.IsFavorite)))
+            await SearchAsync();
     }
 
     [RelayCommand]

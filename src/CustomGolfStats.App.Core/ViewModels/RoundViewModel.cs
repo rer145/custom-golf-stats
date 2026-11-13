@@ -108,7 +108,12 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
     [RelayCommand]
     private async Task DeleteHoleAsync(HoleListItem hole)
     {
-        if (await TryAsync(() => db.Rounds.DeleteHoleAsync(_roundId, hole.EntrySequence), UiText.RoundNotFound))
+        // An unsaved shot-by-shot edit of that hole goes with it, so it is not restored later or counted as unsynced work.
+        if (await TryAsync(async () =>
+            {
+                await db.Rounds.DeleteHoleAsync(_roundId, hole.EntrySequence);
+                await db.Drafts.ClearAsync(_roundId, hole.EntrySequence);
+            }, UiText.RoundNotFound))
             await ReloadAsync();
     }
 

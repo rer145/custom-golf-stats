@@ -33,7 +33,11 @@ public sealed class SyncRig : IAsyncDisposable
         return rig;
     }
 
-    private async Task SeedCourseAsync() => await Temp.Db.Courses.SaveFromServerAsync(Samples.Course());
+    private async Task SeedCourseAsync()
+    {
+        await Temp.Db.Courses.SaveFromServerAsync(Samples.Course());
+        await new Storage.AccountSwitchService(Temp.Db).CheckAsync("rig@example.com"); // a verified account: sync may run
+    }
 
     private HttpResponseMessage Dispatch(Recorded r) => (r.Method.Method, r.Path) switch
     {

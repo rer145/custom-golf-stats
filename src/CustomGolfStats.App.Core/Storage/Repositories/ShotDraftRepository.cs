@@ -28,5 +28,9 @@ public sealed class ShotDraftRepository(SQLiteAsyncConnection db)
     public Task ClearAsync(Guid roundId, int entrySequence) =>
         db.ExecuteAsync("DELETE FROM ShotDraftRow WHERE RoundId = ? AND EntrySequence = ?", roundId, entrySequence);
 
+    /// <summary>How many holes have a draft (unsaved shot-by-shot entry).</summary>
+    public Task<int> CountHolesAsync() =>
+        db.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM (SELECT DISTINCT RoundId, EntrySequence FROM ShotDraftRow)");
+
     public Task ClearForRoundAsync(Guid roundId) => db.ExecuteAsync("DELETE FROM ShotDraftRow WHERE RoundId = ?", roundId);
 }

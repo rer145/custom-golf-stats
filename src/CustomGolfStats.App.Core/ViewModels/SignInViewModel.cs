@@ -25,13 +25,19 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
     /// <see cref="PendingSwitchMessage"/> with Confirm and Cancel; nothing syncs until one is chosen.</summary>
     [ObservableProperty] private AccountSwitchPrompt? _pendingSwitch;
 
-    public string? PendingSwitchMessage => PendingSwitch is { } p ? UiText.UnsyncedFromAnotherAccount(p.UnsyncedRounds, p.PendingCourses) : null;
+    public string? PendingSwitchMessage => PendingSwitch is { } p ? UiText.UnsyncedFromAnotherAccount(p.UnsyncedRounds, p.PendingCourses, p.UnsavedHoles) : null;
 
     partial void OnPendingSwitchChanged(AccountSwitchPrompt? value) => OnPropertyChanged(nameof(PendingSwitchMessage));
 
-    /// <summary>Resumes an unanswered account question, or goes straight home when a session already exists.</summary>
+    /// <summary>Undoes a sign-in whose account was never checked (the app closed or failed in between), resumes an unanswered
+    /// account question, or goes straight home when a verified session exists.</summary>
     public async Task InitializeAsync()
     {
+        if (await accounts.HasUnverifiedSignInAsync())
+        {
+            await TryAsync(UndoSignInAsync);
+            return;
+        }
         if (await accounts.GetPendingAsync() is { } pending)
         {
             _pendingAccountKey = pending.AccountKey;
@@ -95,11 +101,13 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
     [RelayCommand]
     private async Task CancelAccountSwitchAsync()
     {
-        await TryAsync(async () =>
-        {
-            await tokens.SignOutAsync();
-            await accounts.CancelSwitchAsync();
-        });
+        // Only once the new session's tokens are gone may the question be dropped; otherwise it stays open (and sync stays blocked).
+        if (!await TryAsync(async () =>
+            {
+                await tokens.SignOutAsync();
+                await accounts.CancelSwitchAsync();
+            }))
+            return;
         PendingSwitch = null;
         _pendingAccountKey = null;
     }
@@ -109,18 +117,22 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
         if (IsBusy)
             return;
         IsBusy = true;
+        var verified = false;
         try
         {
+            // Block sync before any token can be stored; only the account check below lifts it.
+            await accounts.BeginSignInAsync();
             await signIn();
 
             var key = await AccountKeyAsync(typedEmail);
             if (key is null)
             {
-                await tokens.SignOutAsync(); // never carry on without knowing whose data this is
-                ErrorMessage = UiText.AccountUnknown;
+                ErrorMessage = UiText.AccountUnknown; // never carry on without knowing whose data this is
                 return;
             }
-            if (await accounts.CheckAsync(key) is { } prompt)
+            var prompt = await accounts.CheckAsync(key);
+            verified = true; // the account is known: either adopted or waiting on the golfer's answer
+            if (prompt is not null)
             {
                 _pendingAccountKey = key;
                 PendingSwitch = prompt;
@@ -149,7 +161,29 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
         }
         finally
         {
+            if (!verified)
+                await UndoSignInQuietlyAsync();
             IsBusy = false;
+        }
+    }
+
+    /// <summary>Removes any tokens the sign-in stored, then lifts the sync block. If removing the tokens fails the block stays, and the
+    /// next start of the sign-in screen tries again.</summary>
+    private async Task UndoSignInAsync()
+    {
+        await tokens.SignOutAsync();
+        await accounts.AbandonSignInAsync();
+    }
+
+    private async Task UndoSignInQuietlyAsync()
+    {
+        try
+        {
+            await UndoSignInAsync();
+        }
+        catch (Exception)
+        {
+            // The marker (if it was stored) keeps sync blocked; InitializeAsync retries on the next start.
         }
     }
 

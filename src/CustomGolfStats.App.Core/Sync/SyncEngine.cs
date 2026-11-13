@@ -41,8 +41,10 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         var run = new Run();
         try
         {
-            // A different account signed in while this device still holds unsynced data: nothing may be sent until the golfer decides.
-            if (await db.SyncState.GetAsync("pendingAccount") is not null)
+            // Nothing is sent or received unless the signed-in account was verified for the stored session: not before the first
+            // verified sign-in, not while a sign-in is between saving its tokens and checking the account, and not while a different
+            // account's sign-in waits on the golfer's decision about this device's unsynced data.
+            if (!await AccountSwitchService.IsSyncAllowedAsync(db).ConfigureAwait(false))
             {
                 run.SignedOut = true;
                 return run.ToResult();
@@ -205,42 +207,45 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             var since = await db.SyncState.GetNextSinceAsync().ConfigureAwait(false);
             var changes = await api.SyncChangesAsync(since?.ToString("O", CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
 
-            // A record that cannot be mapped is skipped and reported; one bad record must not block sync forever.
+            // A record that cannot be mapped or stored is skipped and reported; one bad record must not block sync forever.
             // Courses first so rounds always find their course.
             foreach (var dto in changes.Courses ?? [])
             {
-                if (!TryMap(run, $"course {dto.Id}", () => ApiMapper.ToRecord(dto), out var course))
-                    continue;
-                await db.Courses.SaveFromServerAsync(course).ConfigureAwait(false);
-                run.PulledCourses++;
+                if (TryMap(run, $"course {dto.Id}", () => ApiMapper.ToRecord(dto), out var course)
+                    && await TryStoreAsync(run, $"course {dto.Id}", () => db.Courses.SaveFromServerAsync(course)).ConfigureAwait(false))
+                    run.PulledCourses++;
             }
 
             var handicap = new List<HandicapRow>();
             foreach (var dto in changes.HandicapEntries ?? [])
                 if (TryMap(run, $"handicap entry {dto.Id}", () => ApiMapper.ToRow(dto), out var row))
                     handicap.Add(row);
-            await db.Handicap.UpsertAsync(handicap).ConfigureAwait(false);
-            run.PulledHandicap += handicap.Count;
+            foreach (var row in handicap)
+                if (await TryStoreAsync(run, $"handicap entry {row.Id}", () => db.Handicap.UpsertAsync([row])).ConfigureAwait(false))
+                    run.PulledHandicap++;
 
             // The server is the source of truth for entitlements. After an offline trial round that has not been pushed yet, this
             // can restore a higher trial count than the local decrement left; spec section 2 tolerates that.
             if (changes.Entitlements is { Tier: not null, Role: not null } entitlements
                 && TryMap(run, "entitlements", () => ApiMapper.ToRow(entitlements), out var entitlementsRow))
-                await db.Entitlements.SaveAsync(entitlementsRow).ConfigureAwait(false);
+                await TryStoreAsync(run, "entitlements", () => db.Entitlements.SaveAsync(entitlementsRow)).ConfigureAwait(false);
 
             foreach (var dto in changes.Rounds ?? [])
             {
                 if (!TryMap(run, $"round {dto.Id}", () => ApiMapper.ToRecord(dto), out var record))
                     continue;
-                var local = await db.Connection.FindAsync<RoundRow>(dto.Id).ConfigureAwait(false);
-                if (local is not null && local.Version > dto.Version)
+                var outcome = PullOutcome.Failed;
+                await TryStoreAsync(run, $"round {dto.Id}", async () =>
                 {
-                    run.SkippedPulled++; // an older copy of what we already hold
-                    continue;
-                }
-                if (await db.Rounds.SaveFromServerAsync(record, ServerWriteMode.Pull))
+                    var local = await db.Connection.FindAsync<RoundRow>(dto.Id).ConfigureAwait(false);
+                    if (local is not null && local.Version > dto.Version)
+                        outcome = PullOutcome.Skipped; // an older copy of what we already hold
+                    else
+                        outcome = await db.Rounds.SaveFromServerAsync(record, ServerWriteMode.Pull).ConfigureAwait(false) ? PullOutcome.Saved : PullOutcome.Skipped;
+                }).ConfigureAwait(false);
+                if (outcome == PullOutcome.Saved)
                     run.PulledRounds++;
-                else
+                else if (outcome == PullOutcome.Skipped)
                     run.SkippedPulled++;
             }
 
@@ -269,6 +274,24 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         {
             run.Failures.Add($"pulled {what} could not be read and was skipped");
             value = default!;
+            return false;
+        }
+    }
+
+    private enum PullOutcome { Failed, Skipped, Saved }
+
+    /// <summary>Stores one pulled record. A storage failure (a constraint the record breaks, for example) is reported and skipped like
+    /// a record that cannot be mapped; cancellation still propagates.</summary>
+    private static async Task<bool> TryStoreAsync(Run run, string what, Func<Task> store)
+    {
+        try
+        {
+            await store().ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Failures.Add($"pulled {what} could not be stored and was skipped");
             return false;
         }
     }

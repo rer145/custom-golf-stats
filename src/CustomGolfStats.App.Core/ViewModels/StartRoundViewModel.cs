@@ -168,7 +168,15 @@ public sealed partial class StartRoundViewModel(
                 return;
             }
 
-            await navigator.NavigateAsync(Route.Round, new RoundArgs(round.Id));
+            try
+            {
+                await navigator.NavigateAsync(Route.Round, new RoundArgs(round.Id));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The round is saved (and the trial, if any, rightly spent): it is on the home screen, so say that rather than "not started".
+                ErrorMessage = UiText.CouldNotOpenRound;
+            }
             if (round.StartedAt is { } startedAt && connectivity.IsOnline)
             {
                 var course = _course.Course;

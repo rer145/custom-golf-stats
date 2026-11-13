@@ -171,6 +171,7 @@ public class HomeViewModelTests
     private static async Task<Rig> CreateAsync()
     {
         var vm = await VmRig.CreateAsync();
+        await new Storage.AccountSwitchService(vm.Db).CheckAsync("home@example.com"); // a verified account: sync may run
         Rig? rig = null;
         var stub = new StubHandler(r => r.Method.Method == "PUT" ? rig!.PutRound(r) : r.Path == "/sync/changes" ? rig!.Changes(r) : StubHandler.Status(HttpStatusCode.NotFound));
         var home = new HomeViewModel(vm.Db, new SyncEngine(vm.Db, stub.Client()), vm.Nav);
