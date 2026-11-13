@@ -14,7 +14,7 @@ public class RoundViewModelTests
         var roundId = await rig.CreateRoundAsync(mode);
         await rig.Db.Rounds.UpdateHeaderAsync(roundId, r => r.StartedAt = started ? rig.Temp.Clock.UtcNow : null);
         var pedometer = new FakePedometer();
-        var vm = new RoundViewModel(rig.Db, rig.Temp.Clock, rig.Nav, pedometer);
+        var vm = new RoundViewModel(rig.Db, rig.Temp.Clock, rig.Nav, pedometer) { PedometerTimeout = TimeSpan.FromSeconds(30) };
         await vm.LoadAsync(new RoundArgs(roundId));
         return (rig, vm, pedometer, roundId);
     }

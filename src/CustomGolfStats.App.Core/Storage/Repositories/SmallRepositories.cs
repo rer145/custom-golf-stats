@@ -29,7 +29,7 @@ public sealed class EntitlementsRepository(SQLiteAsyncConnection db, IClock cloc
     {
         row.Id = EntitlementsRow.SingletonId;
         row.UpdatedAt = clock.UtcNow;
-        await db.InsertOrReplaceAsync(row);
+        await db.InsertOrReplaceAsync(row).ConfigureAwait(false);
     }
 
     /// <summary>Gives back a trial round consumed by <see cref="TryConsumeTrialRoundAsync"/> when the round could not be created.</summary>
@@ -93,7 +93,7 @@ public sealed class SyncStateRepository(SQLiteAsyncConnection db)
 
     /// <summary>The server's <c>nextSince</c> from the last successful pull, or null before the first sync.</summary>
     public async Task<DateTimeOffset?> GetNextSinceAsync() =>
-        await GetAsync(NextSinceKey) is { } text ? DateTimeOffset.Parse(text, CultureInfo.InvariantCulture) : null;
+        await GetAsync(NextSinceKey).ConfigureAwait(false) is { } text ? DateTimeOffset.Parse(text, CultureInfo.InvariantCulture) : null;
 
     public Task SetNextSinceAsync(DateTimeOffset value) => SetAsync(NextSinceKey, value.ToString("O", CultureInfo.InvariantCulture));
 }

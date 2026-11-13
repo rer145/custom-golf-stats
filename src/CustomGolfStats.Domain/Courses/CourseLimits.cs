@@ -17,6 +17,20 @@ public static class CourseLimits
     public const decimal MinRating = 1.0m;
     public const decimal MaxRating = 99.9m;
 
+    // Text lengths (after trimming).
+    public const int MaxNameLength = 200;
+    public const int MaxClubNameLength = 200;
+    public const int MaxAddressLength = 300;
+    public const int MaxCityLength = 100;
+    public const int MaxRegionLength = 100;
+    public const int MaxCountryLength = 100;
+    public const int MaxPhoneLength = 50;
+    public const int MaxWebsiteLength = 300;
+    public const int MaxTeeNameLength = 100;
+
+    /// <summary>Effective date of a tee's first version: before any round anyone could have played.</summary>
+    public static readonly DateOnly DefaultEffectiveFrom = new(1900, 1, 1);
+
     /// <summary>Slope of a course of standard difficulty; used when a source gives none.</summary>
     public const int StandardSlope = 113;
 }

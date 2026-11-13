@@ -8,7 +8,7 @@ namespace CustomGolfStats.Api.Features.Courses;
 public static class CourseRules
 {
     /// <summary>Effective date of a tee's first version: before any round anyone could have played.</summary>
-    public static readonly DateOnly DefaultEffectiveFrom = new(1900, 1, 1);
+    public static readonly DateOnly DefaultEffectiveFrom = CourseLimits.DefaultEffectiveFrom;
 
     // The numeric limits live in the shared Domain so the app checks hand-made courses against exactly what the API accepts.
     public const int MaxHoles = CourseLimits.MaxHoles;
@@ -32,14 +32,14 @@ public static class CourseRules
             errors.Add(prefix + "name", "Name is required.");
         }
 
-        MaxLength(details.Name, 200, prefix + "name", errors);
-        MaxLength(details.ClubName, 200, prefix + "clubName", errors);
-        MaxLength(details.Address, 300, prefix + "address", errors);
-        MaxLength(details.City, 100, prefix + "city", errors);
-        MaxLength(details.Region, 100, prefix + "region", errors);
-        MaxLength(details.Country, 100, prefix + "country", errors);
-        MaxLength(details.Phone, 50, prefix + "phone", errors);
-        MaxLength(details.Website, 300, prefix + "website", errors);
+        MaxLength(details.Name, CourseLimits.MaxNameLength, prefix + "name", errors);
+        MaxLength(details.ClubName, CourseLimits.MaxClubNameLength, prefix + "clubName", errors);
+        MaxLength(details.Address, CourseLimits.MaxAddressLength, prefix + "address", errors);
+        MaxLength(details.City, CourseLimits.MaxCityLength, prefix + "city", errors);
+        MaxLength(details.Region, CourseLimits.MaxRegionLength, prefix + "region", errors);
+        MaxLength(details.Country, CourseLimits.MaxCountryLength, prefix + "country", errors);
+        MaxLength(details.Phone, CourseLimits.MaxPhoneLength, prefix + "phone", errors);
+        MaxLength(details.Website, CourseLimits.MaxWebsiteLength, prefix + "website", errors);
 
         if (details.Latitude is { } lat && (lat < -90 || lat > 90 || double.IsNaN(lat)))
         {

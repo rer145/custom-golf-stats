@@ -1,5 +1,6 @@
 using CustomGolfStats.App.Core.Platform;
 using CustomGolfStats.App.Core.Storage.Rows;
+using CustomGolfStats.Domain.Stats;
 using SQLite;
 
 namespace CustomGolfStats.App.Core.Storage.Repositories;
@@ -11,7 +12,7 @@ namespace CustomGolfStats.App.Core.Storage.Repositories;
 public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
 {
     /// <summary>Saves a local change: replaces the round's holes and shots, sets Dirty and ClientUpdatedAt = now.
-    /// Server-owned fields (Version, ModifiedAt, TrialCounted) are taken from the stored row, not from <paramref name="record"/>.
+    /// Server-owned fields (Version, ModifiedAt, TrialCounted, and TeeVersionId once synced) are taken from the stored row, not from <paramref name="record"/>.
     /// The caller's objects are not modified; the write is one transaction, so a failure leaves the stored round untouched.</summary>
     public Task SaveAsync(RoundRecord record)
     {
@@ -26,6 +27,8 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
                 round.Version = stored.Version;
                 round.ModifiedAt = stored.ModifiedAt;
                 round.TrialCounted = stored.TrialCounted;
+                if (stored.ModifiedAt is not null)
+                    round.TeeVersionId = stored.TeeVersionId; // server-owned once the server has seen the round
             }
             round.ClientUpdatedAt = now;
             round.Dirty = true;
@@ -57,6 +60,7 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
                     local.Version = record.Round.Version;
                     local.ModifiedAt = record.Round.ModifiedAt;
                     local.TrialCounted = record.Round.TrialCounted;
+                    local.TeeVersionId = record.Round.TeeVersionId; // the server resolves the version, so its id is the real one
                     c.Update(local);
                     return;
             }
@@ -117,6 +121,7 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         round.Dirty = true;
         c.Update(round);
         DeleteChildren(c, roundId);
+        c.Execute("DELETE FROM ShotDraftRow WHERE RoundId = ?", roundId);
     });
 
     /// <summary>Removes a tombstone row once its DELETE has been pushed. Returns false (and removes nothing) if the round is
@@ -129,6 +134,7 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             if (c.Find<RoundRow>(roundId) is not { DeletedAt: not null })
                 return;
             DeleteChildren(c, roundId);
+            c.Execute("DELETE FROM ShotDraftRow WHERE RoundId = ?", roundId);
             c.Delete<RoundRow>(roundId);
             purged = true;
         });
@@ -154,7 +160,7 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
 
     public async Task<RoundRecord?> GetAsync(Guid roundId, bool includeDeleted = false)
     {
-        var round = await db.FindAsync<RoundRow>(roundId);
+        var round = await db.FindAsync<RoundRow>(roundId).ConfigureAwait(false);
         if (round is null || (round.DeletedAt is not null && !includeDeleted))
             return null;
         return (await LoadAsync([round]))[0];
@@ -164,11 +170,32 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
     public Task<List<RoundRow>> ListAsync() =>
         db.Table<RoundRow>().Where(r => r.DeletedAt == null).OrderByDescending(r => r.PlayedOn).ThenByDescending(r => r.ClientUpdatedAt).ToListAsync();
 
+    /// <summary>The newest rounds with their totals from a single query (no per-round loads), for lists. <paramref name="limit"/> null means all.</summary>
+    public Task<List<RoundTotals>> ListTotalsAsync(int? limit = null) => db.QueryAsync<RoundTotals>(
+        "SELECT r.Id AS Id, r.CourseName AS CourseName, r.PlayedOn AS PlayedOn, r.FinishedAt AS FinishedAt, r.Dirty AS Dirty, " +
+        "COUNT(h.Id) AS Holes, COALESCE(SUM(h.Score), 0) AS Score, COALESCE(SUM(h.Par), 0) AS Par " +
+        "FROM RoundRow r LEFT JOIN HoleRow h ON h.RoundId = r.Id WHERE r.DeletedAt IS NULL " +
+        "GROUP BY r.Id ORDER BY r.PlayedOn DESC, r.ClientUpdatedAt DESC LIMIT ?", limit ?? -1);
+
+    /// <summary>How many rounds are live (not deleted).</summary>
+    public Task<int> CountLiveAsync() => db.Table<RoundRow>().Where(r => r.DeletedAt == null).CountAsync();
+
+    /// <summary>Every live round as domain <see cref="RoundData"/> for stats, using two queries in total (rounds, then all holes).
+    /// Shots are not loaded.</summary>
+    public async Task<List<RoundData>> ListRoundDataAsync()
+    {
+        var rounds = await db.Table<RoundRow>().Where(r => r.DeletedAt == null).ToListAsync().ConfigureAwait(false);
+        var holes = await db.Table<HoleRow>().ToListAsync().ConfigureAwait(false);
+        var byRound = holes.ToLookup(h => h.RoundId);
+        return rounds.Select(r => new RoundData(r.Id, DateOnly.FromDateTime(r.PlayedOn), r.CourseId, r.CourseName, r.TeeId, r.TeeName,
+            byRound[r.Id].OrderBy(h => h.EntrySequence).Select(h => h.ToSummary()).ToList())).ToList();
+    }
+
     /// <summary>Rounds (and tombstones) with changes not yet pushed, oldest edit first, with holes and shots.</summary>
     public async Task<List<RoundRecord>> GetDirtyAsync()
     {
         var rows = await db.Table<RoundRow>().Where(r => r.Dirty).OrderBy(r => r.ClientUpdatedAt).ToListAsync();
-        return await LoadAsync(rows);
+        return await LoadAsync(rows).ConfigureAwait(false);
     }
 
     public Task<int> CountDirtyAsync() => db.Table<RoundRow>().Where(r => r.Dirty).CountAsync();
@@ -192,7 +219,10 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         c.InsertOrReplace(record.Round);
         DeleteChildren(c, id);
         if (record.Round.DeletedAt is not null)
+        {
+            c.Execute("DELETE FROM ShotDraftRow WHERE RoundId = ?", id); // a deleted round has nothing to finish
             return;
+        }
         foreach (var hole in record.Holes.OrderBy(h => h.Hole.EntrySequence))
             InsertHole(c, id, hole);
     }
@@ -266,4 +296,17 @@ public abstract record ServerWriteMode
     internal sealed record PushAcceptedMode(DateTimeOffset PushedClientUpdatedAt) : GuardedMode(PushedClientUpdatedAt);
     internal sealed record ServerWinsMode(DateTimeOffset PushedClientUpdatedAt) : GuardedMode(PushedClientUpdatedAt);
     internal sealed record OverwriteMode : ServerWriteMode;
+}
+
+/// <summary>A round header with its totals, as returned by <see cref="RoundRepository.ListTotalsAsync"/>.</summary>
+public sealed class RoundTotals
+{
+    public Guid Id { get; set; }
+    public string CourseName { get; set; } = "";
+    public DateTime PlayedOn { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+    public bool Dirty { get; set; }
+    public int Holes { get; set; }
+    public int Score { get; set; }
+    public int Par { get; set; }
 }

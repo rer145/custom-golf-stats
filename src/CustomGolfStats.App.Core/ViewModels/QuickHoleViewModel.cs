@@ -182,8 +182,8 @@ public sealed partial class QuickHoleViewModel(LocalDb db, INavigator navigator)
         if (!CanSave)
             return;
         var row = HoleRow.FromSummary(_roundId, Summary(), isDerived: false);
-        await db.Rounds.SaveHoleAsync(_roundId, new HoleRecord(row, []));
-        await navigator.GoBackAsync();
+        if (await TryAsync(() => db.Rounds.SaveHoleAsync(_roundId, new HoleRecord(row, [])), UiText.RoundNotFound))
+            await navigator.GoBackAsync();
     }
 
     /// <summary>Removes this playing of the hole from the round.</summary>
@@ -195,7 +195,7 @@ public sealed partial class QuickHoleViewModel(LocalDb db, INavigator navigator)
             await navigator.GoBackAsync();
             return;
         }
-        await db.Rounds.DeleteHoleAsync(_roundId, EntrySequence);
-        await navigator.GoBackAsync();
+        if (await TryAsync(() => db.Rounds.DeleteHoleAsync(_roundId, EntrySequence), UiText.RoundNotFound))
+            await navigator.GoBackAsync();
     }
 }

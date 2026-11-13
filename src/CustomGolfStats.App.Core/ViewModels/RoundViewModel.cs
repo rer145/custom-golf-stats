@@ -108,8 +108,8 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
     [RelayCommand]
     private async Task DeleteHoleAsync(HoleListItem hole)
     {
-        await db.Rounds.DeleteHoleAsync(_roundId, hole.EntrySequence);
-        await ReloadAsync();
+        if (await TryAsync(() => db.Rounds.DeleteHoleAsync(_roundId, hole.EntrySequence), UiText.RoundNotFound))
+            await ReloadAsync();
     }
 
     /// <summary>Finishes the round: end time, duration from start to finish, and steps and distance from the pedometer. Anything
@@ -136,7 +136,8 @@ public sealed partial class RoundViewModel(LocalDb db, IClock clock, INavigator 
             try
             {
                 using var cts = new CancellationTokenSource(PedometerTimeout);
-                reading = await pedometer.ReadAsync(startedAt, finishedAt, cts.Token);
+                // WaitAsync enforces the timeout even if the platform implementation ignores the token.
+                reading = await pedometer.ReadAsync(startedAt, finishedAt, cts.Token).WaitAsync(PedometerTimeout);
             }
             catch (Exception)
             {

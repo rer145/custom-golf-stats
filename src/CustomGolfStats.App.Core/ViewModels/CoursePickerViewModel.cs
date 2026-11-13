@@ -34,19 +34,32 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
 
     public async Task LoadAsync() => await SearchAsync();
 
-    [RelayCommand]
+    private CancellationTokenSource? _searchCts;
+    private int _searchGeneration;
+
+    /// <summary>Searches saved courses at once and, online, the shared database and provider. The latest query wins: starting a new
+    /// search cancels the one in flight, and a late answer to an older query never replaces newer results.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task SearchAsync()
     {
+        _searchCts?.Cancel();
+        var cts = _searchCts = new CancellationTokenSource();
+        var generation = ++_searchGeneration;
+        bool Current() => generation == _searchGeneration;
+
         ErrorMessage = null;
         Message = null;
         var term = Query.Trim();
 
+        var local = await db.Courses.SearchAsync(term);
+        if (!Current())
+            return;
         LocalResults.Clear();
-        foreach (var course in await db.Courses.SearchAsync(term))
+        foreach (var course in local)
             LocalResults.Add(course);
-
         OnlineResults.Clear();
         ProviderResults.Clear();
+        IsSearchingOnline = false;
         if (term.Length < 2)
             return;
         if (!connectivity.IsOnline)
@@ -58,19 +71,28 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
         IsSearchingOnline = true;
         try
         {
-            foreach (var found in await api.CoursesSearchAsync(term, null))
+            var shared = await api.CoursesSearchAsync(term, null, cts.Token);
+            var provider = await api.CoursesProviderSearchAsync(term, cts.Token);
+            if (!Current())
+                return;
+            foreach (var found in shared)
                 if (LocalResults.All(l => l.Id != found.Id))
                     OnlineResults.Add(found);
-            foreach (var found in await api.CoursesProviderSearchAsync(term))
+            foreach (var found in provider)
                 ProviderResults.Add(found);
         }
-        catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
+        catch (OperationCanceledException) when (!Current())
+        {
+            // superseded by a newer search
+        }
+        catch (Exception ex) when (Current() && ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
         {
             Message = UiText.ProviderSearchFailed;
         }
         finally
         {
-            IsSearchingOnline = false;
+            if (Current())
+                IsSearchingOnline = false;
         }
     }
 
@@ -121,6 +143,10 @@ public sealed partial class CoursePickerViewModel(LocalDb db, ICustomGolfStatsAp
         catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
         {
             ErrorMessage = UiText.ImportFailed;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorMessage = UiText.SomethingWentWrong; // e.g. the local save failed
         }
         finally
         {

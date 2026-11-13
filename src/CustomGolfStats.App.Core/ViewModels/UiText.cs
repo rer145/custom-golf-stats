@@ -52,12 +52,18 @@ public static class UiText
     public const string SignInFailed = "That email and password did not match.";
     public const string RegisterFailed = "We could not create that account. Check the details or try signing in.";
     public const string SignInOffline = "You need a connection to sign in.";
+    public const string AccountCreatedSignInFailed = "Your account was created, but signing in did not work. Try signing in.";
+    public const string AccountUnknown = "We could not confirm which account this is. Please try again.";
+    public static string UnsyncedFromAnotherAccount(int rounds, int courses) =>
+        $"This device has {rounds} round{(rounds == 1 ? "" : "s")}" + (courses > 0 ? $" and {courses} course{(courses == 1 ? "" : "s")}" : "") +
+        " that were never synced to the previous account. Signing in as someone else will remove them from this device.";
     public const string SignInError = "Something went wrong signing in. Please try again.";
 
     // ---- courses ----
     public const string CourseNameMissing = "Enter the course name.";
     public const string TeeNameMissing = "Enter the tee name.";
     public const string DefaultTeeName = "White";
+    public static string TextTooLong(int max) => $"Use at most {max} characters.";
 
     /// <summary>The message for a tee layout problem; every number comes from <see cref="CourseLimits"/>, the same limits the server enforces.</summary>
     public static string Describe(CourseError error) => error switch
@@ -90,6 +96,9 @@ public static class UiText
     public const string CourseHasNoTees = "This course has no tees yet.";
 
     // ---- extras / profile ----
+    public const string SomethingWentWrong = "Something went wrong. Please try again.";
+    public const string CouldNotStartRound = "The round could not be started. Please try again.";
+    public const string NotANumber = "Enter a number.";
     public const string NegativeNumber = "Enter zero or more.";
     public const string WindDirectionInvalid = "Wind direction is between 0 and 359 degrees.";
     public const string HandicapInvalid = "A handicap index is between -10.0 and 54.0.";

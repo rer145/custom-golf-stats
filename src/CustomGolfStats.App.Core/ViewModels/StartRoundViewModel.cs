@@ -159,12 +159,13 @@ public sealed partial class StartRoundViewModel(
             {
                 await db.Rounds.SaveAsync(new RoundRecord(round, []));
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Only a failed save needs the trial round back.
+                // Only a failed save needs the trial round back. Show the problem instead of throwing at the UI.
                 if (trialUsed)
                     await db.Entitlements.RefundTrialRoundAsync();
-                throw;
+                ErrorMessage = UiText.CouldNotStartRound;
+                return;
             }
 
             await navigator.NavigateAsync(Route.Round, new RoundArgs(round.Id));
@@ -173,6 +174,10 @@ public sealed partial class StartRoundViewModel(
                 var course = _course.Course;
                 WeatherTask = Task.Run(() => ApplyWeatherAsync(round.Id, course, startedAt)); // off the caller so nothing here can hold up the round
             }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorMessage = UiText.CouldNotStartRound;
         }
         finally
         {
@@ -189,13 +194,13 @@ public sealed partial class StartRoundViewModel(
             double? lat = course.Latitude, lon = course.Longitude;
             if (lat is null || lon is null)
             {
-                var point = await location.GetCoarseLocationAsync(cts.Token);
+                var point = await location.GetCoarseLocationAsync(cts.Token).WaitAsync(WeatherTimeout);
                 if (point is null)
                     return;
                 (lat, lon) = (point.Latitude, point.Longitude);
             }
 
-            var weather = await api.WeatherGetAsync(lat, lon, startedAt, cts.Token);
+            var weather = await api.WeatherGetAsync(lat, lon, startedAt, cts.Token).WaitAsync(WeatherTimeout);
             await db.Rounds.UpdateHeaderAsync(roundId, r =>
             {
                 r.WeatherConditions ??= weather.Conditions;

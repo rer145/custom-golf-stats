@@ -61,9 +61,24 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
         if (string.IsNullOrWhiteSpace(TeeName))
             errors.Add(UiText.TeeNameMissing);
 
+        TooLong(Name, CourseLimits.MaxNameLength, errors);
+        TooLong(ClubName, CourseLimits.MaxClubNameLength, errors);
+        TooLong(TeeName, CourseLimits.MaxTeeNameLength, errors);
+        TooLong(City, CourseLimits.MaxCityLength, errors);
+        TooLong(Region, CourseLimits.MaxRegionLength, errors);
+        TooLong(Country, CourseLimits.MaxCountryLength, errors);
+
         var layout = Holes.Select(h => new HoleInfo(h.Number, h.Par, h.Yardage, h.StrokeIndex)).ToList();
-        errors.AddRange(CourseValidator.Validate((decimal?)Rating, Slope, layout).Select(UiText.Describe));
+        // A cleared number box reports NaN: treat a non-finite rating as missing rather than letting the decimal conversion throw.
+        decimal? rating = Rating is { } r && double.IsFinite(r) ? (decimal)r : null;
+        errors.AddRange(CourseValidator.Validate(rating, Slope, layout).Select(UiText.Describe));
         return errors;
+    }
+
+    private static void TooLong(string? text, int max, List<string> errors)
+    {
+        if (text is not null && text.Trim().Length > max && !errors.Contains(UiText.TextTooLong(max)))
+            errors.Add(UiText.TextTooLong(max));
     }
 
     [RelayCommand]
@@ -81,7 +96,8 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
         var holes = Holes.Select(h => new TeeHoleRow { TeeVersionId = versionId, Number = h.Number, Par = h.Par, Yardage = h.Yardage, StrokeIndex = h.StrokeIndex }).ToList();
         var version = new TeeVersionRow
         {
-            Id = versionId, TeeId = teeId, EffectiveFrom = clock.UtcNow.LocalDateTime.Date, Par = holes.Sum(h => h.Par),
+            // In effect for every date, like the first version the API creates for a tee.
+            Id = versionId, TeeId = teeId, EffectiveFrom = CourseLimits.DefaultEffectiveFrom.ToDateTime(TimeOnly.MinValue), Par = holes.Sum(h => h.Par),
             Rating = Rating!.Value, Slope = Slope!.Value,
         };
         var course = new CourseRow
@@ -90,8 +106,9 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
             Status = CourseStatus.UserEdited, Source = CourseSource.Manual, UpdatedAt = clock.UtcNow,
         };
         var tee = new TeeRow { Id = teeId, CourseId = courseId, Name = TeeName.Trim(), Gender = Gender };
-        await db.Courses.SaveLocalAsync(new CourseRecord(course, [new TeeRecord(tee, [new TeeVersionRecord(version, holes)])]));
-        await navigator.NavigateAsync(Route.StartRound, new CourseArgs(courseId));
+        var record = new CourseRecord(course, [new TeeRecord(tee, [new TeeVersionRecord(version, holes)])]);
+        if (await TryAsync(() => db.Courses.SaveLocalAsync(record)))
+            await navigator.NavigateAsync(Route.StartRound, new CourseArgs(courseId));
     }
 
     private static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
