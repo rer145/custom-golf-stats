@@ -176,7 +176,7 @@ public class RoundRepositoryTests
         await t.Db.Rounds.SaveAsync(local);
 
         var server = new RoundRecord(Samples.Round(local.Round.Id, EntryMode.Quick), [Samples.QuickHole(local.Round.Id, 1, 4, 5, 2)]);
-        await t.Db.Rounds.SaveFromServerAsync(server, ServerWriteMode.ServerWins);
+        await t.Db.Rounds.SaveFromServerAsync(server, ServerWriteMode.Overwrite);
 
         var loaded = (await t.Db.Rounds.GetAsync(local.Round.Id))!;
         Assert.Single(loaded.Holes);
@@ -343,7 +343,7 @@ public class RoundRepositoryTests
         var round = Samples.FullShotRound();
         await t.Db.Rounds.SaveAsync(round);
 
-        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 5, t.Clock.UtcNow.AddDays(1)), ServerWriteMode.ServerWins));
+        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 5, t.Clock.UtcNow.AddDays(1)), ServerWriteMode.Overwrite));
 
         var row = (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round;
         Assert.False(row.Dirty);
@@ -351,7 +351,7 @@ public class RoundRepositoryTests
         Assert.Equal(5, row.Version);
 
         await t.Db.Rounds.MarkDeletedAsync(round.Round.Id); // synced now, so this is a tombstone
-        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 6, t.Clock.UtcNow.AddDays(2)), ServerWriteMode.ServerWins));
+        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 6, t.Clock.UtcNow.AddDays(2)), ServerWriteMode.Overwrite));
         Assert.NotNull(await t.Db.Rounds.GetAsync(round.Round.Id));
         Assert.Equal(0, await t.Db.Rounds.CountDirtyAsync());
     }
