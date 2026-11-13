@@ -18,9 +18,11 @@ public static class ParityReport
         md.Paragraph(
             "golftrack's numbers come from its own statistics procedures; the new numbers from the domain stats over the " +
             "imported rounds of this golfer. **match**: equal (counts, to-par and dates exactly; averages and percentages " +
-            "within ±0.05, golftrack's rounding). **intended**: different, and golftrack's value is exactly what golftrack's " +
-            "definition gives on the imported data, for one of the rules below. **unexplained**: any other difference. " +
-            "**not compared**: golftrack columns with no counterpart, missing columns and failed procedures. Percentages are 0-100.");
+            "within ±0.006, golftrack's rounding to 2 decimals). **intended**: different, and both sides are explained by the " +
+            "row's rules: golftrack's value equals golftrack's definition recomputed on the imported data, and the new value " +
+            "equals the rules' definition recomputed independently of the new engine. **unexplained**: any other difference. " +
+            "**not compared**: golftrack columns with no counterpart, or values that can't be read as numbers. " +
+            "**missing**: a column missing in golftrack, or a failed procedure. Percentages are 0-100.");
         md.Paragraph(
             "Note: Stats_ScoringStats, Stats_DrivingStats, Stats_ApproachStats, Stats_PuttingStats and Round_SeasonSummary " +
             "take only a year and read every golfer's rounds; see \"other golfers' rounds\" in each year's context.");
@@ -30,7 +32,7 @@ public static class ParityReport
 
         md.Heading("Summary");
         md.Table(
-            ["Year", "Match", "Intended", "Unexplained", "Not compared"],
+            ["Year", "Match", "Intended", "Unexplained", "Not compared", "Missing or failed"],
             result.Years
                 .Select(y =>
                 {
@@ -78,8 +80,9 @@ public static class ParityReport
         var text = row.Verdict switch
         {
             Verdict.Match => "match",
-            Verdict.Intended => $"intended: {row.Rule!.Name}",
+            Verdict.Intended => "intended: " + string.Join(" + ", row.Rules.Select(r => r.Name)),
             Verdict.Unexplained => "**unexplained**",
+            Verdict.Missing => "missing",
             _ => "not compared",
         };
         return row.Note is null ? text : $"{text} ({row.Note})";

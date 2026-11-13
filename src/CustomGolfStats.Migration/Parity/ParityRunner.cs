@@ -20,6 +20,7 @@ public sealed class ParityRunner(GolftrackReader source, LegacyStatsReader legac
         var accountId = await AccountLookup.FindAsync(target, accountEmail, cancellationToken);
         var legacy = await source.ReadAsync(golferId, cancellationToken);
         var legacyRounds = legacy.Rounds.ToDictionary(r => DeterministicIds.For("Round", r.Id));
+        var legacyByImportedId = new ParityLegacyRounds(legacyRounds, legacy.Tees.ToDictionary(t => t.Id));
         var imported = (await new RoundDataLoader(target, NullLogger<RoundDataLoader>.Instance).LoadAsync(accountId, cancellationToken))
             .Where(r => legacyRounds.ContainsKey(r.Id))
             .ToList();
@@ -59,7 +60,8 @@ public sealed class ParityRunner(GolftrackReader source, LegacyStatsReader legac
                 fact?.HolesPlayedDiffers ?? 0,
                 findings.OfType<RoundSkipped>().Count(f => f.PlayedOn.Year == year),
                 findings.OfType<RoundTeeReplaced>().Count(f => f.PlayedOn.Year == year));
-            results.Add(new ParityYear(year, context, ParityComparer.Compare(year, rounds, legacyRounds, legacyYear)));
+            results.Add(new ParityYear(
+                year, context, ParityComparer.Compare(year, rounds, legacyByImportedId, legacyYear, context.OtherGolfersRounds)));
         }
 
         return new ParityResult(golferId, accountId, results);

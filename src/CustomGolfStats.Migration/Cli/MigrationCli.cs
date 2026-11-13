@@ -56,7 +56,7 @@ public static class MigrationCli
         var command = new Command("import", "Import one golftrack golfer's rounds, courses and handicap history into an account.");
         common.AddTo(command);
         command.Options.Add(dryRun);
-        command.SetAction((result, token) => RunAsync(settings, common, result, async (source, db, reportPath, state, ct) =>
+        command.SetAction((result, token) => RunAsync(settings, common, result, new Messages("Failed, nothing was committed: ", "Cancelled. Nothing was committed."), async (source, db, reportPath, state, ct) =>
         {
             var golferId = result.GetValue(common.Golfer);
             var email = result.GetValue(common.Email)!;
@@ -89,7 +89,7 @@ public static class MigrationCli
         var common = new CommonOptions("Email of the Custom Golf Stats account the golfer was imported into.", DefaultParityReportPath);
         var command = new Command("parity", "Compare golftrack's statistics with the new stats over the imported rounds, year by year.");
         common.AddTo(command);
-        command.SetAction((result, token) => RunAsync(settings, common, result, async (source, db, reportPath, _, ct) =>
+        command.SetAction((result, token) => RunAsync(settings, common, result, new Messages("Parity failed: ", "Cancelled."), async (source, db, reportPath, _, ct) =>
         {
             var golferId = result.GetValue(common.Golfer);
             var email = result.GetValue(common.Email)!;
@@ -116,6 +116,7 @@ public static class MigrationCli
         Settings settings,
         CommonOptions common,
         ParseResult result,
+        Messages messages,
         Func<string, AppDbContext, string, RunState, CancellationToken, Task> work,
         CancellationToken cancellationToken)
     {
@@ -167,7 +168,7 @@ public static class MigrationCli
         {
             await error.WriteLineAsync(state.Committed
                 ? "Cancelled after the import was committed: the data is in the target, but the report may be missing."
-                : "Cancelled. Nothing was committed.");
+                : messages.Cancelled);
             return Failure;
         }
 #pragma warning disable CA1031 // Any failure ends the run with exit code 1 and a redacted message (never a stack trace).
@@ -177,7 +178,7 @@ public static class MigrationCli
             var message = redactor.Redact(SecretRedactor.Describe(e));
             await error.WriteLineAsync(state.Committed
                 ? "The import WAS committed, but writing the report failed: " + message
-                : "Failed, nothing was committed: " + message);
+                : messages.FailurePrefix + message);
             return Failure;
         }
     }
@@ -203,6 +204,9 @@ public static class MigrationCli
             }
         }
     }
+
+    /// <summary>What a command says when it fails or is cancelled before committing anything.</summary>
+    private sealed record Messages(string FailurePrefix, string Cancelled);
 
     private sealed record Settings(TextWriter Output, TextWriter Error, Func<string, string?> Environment, SecretRedactor Redactor);
 

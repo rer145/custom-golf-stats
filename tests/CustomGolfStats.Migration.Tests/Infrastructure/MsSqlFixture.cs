@@ -23,6 +23,29 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
         ALTER TABLE [dbo].[Course] ADD [Latitude] [decimal](18, 10) NULL, [Longitude] [decimal](18, 10) NULL;
         """;
 
+    /// <summary>
+    /// The live database's Round_SeasonSummary (as the controller read it from production), applied after 03-sprocs.sql
+    /// so the parity tests run golftrack's real definition.
+    /// </summary>
+    private const string LiveRoundSeasonSummary = """
+        ALTER PROCEDURE [dbo].[Round_SeasonSummary]
+            @year int
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            select count(r.Id) as Rounds, 0 as Rounds9, 0 as Rounds18,
+                count(case when r.Score < 80 then r.Id end) as RoundsUnder80,
+                count(case when r.Score >= 80 and r.Score < 90 then r.Id end) as Rounds8089,
+                count(case when r.Score >= 90 then r.Id end) as RoundsOver90
+            from [Round] r
+            inner join Tee t on t.Id = r.TeeId
+            inner join Course c on c.Id = t.CourseId
+            inner join Hole h on h.TeeId = t.Id
+            inner join [RoundDetail] rd on rd.HoleId = h.Id and rd.RoundId = r.Id
+            where datepart(yyyy, r.PlayedOn) = @year and r.IsActive = 1
+        END
+        """;
+
     // The image starts slowly under emulation.
     private static readonly TimeSpan StartTimeout = TimeSpan.FromMinutes(10);
 
@@ -38,7 +61,7 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
 
     /// <summary>
     /// Creates a new golftrack database with the full schema (and, when asked, golftrack's stored procedures from
-    /// <c>03-sprocs.sql</c>) and returns its connection string.
+    /// <c>03-sprocs.sql</c> with the live Round_SeasonSummary) and returns its connection string.
     /// </summary>
     public async Task<string> CreateDatabaseAsync(bool withProcedures = false)
     {
@@ -56,7 +79,7 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
         var batches = SplitBatches(await ReadScriptAsync("01-tables.sql")).Append(ProductionColumns);
         if (withProcedures)
         {
-            batches = batches.Concat(SplitBatches(await ReadScriptAsync("03-sprocs.sql")));
+            batches = batches.Concat(SplitBatches(await ReadScriptAsync("03-sprocs.sql"))).Append(LiveRoundSeasonSummary);
         }
 
         foreach (var batch in batches)

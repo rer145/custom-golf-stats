@@ -16,6 +16,8 @@ namespace CustomGolfStats.Migration.Tests.Parity;
 /// strokes, 0 putts, GIR). Fairway flag on holes 1, 2 and on hole 3 (a par 3), tee shot left on hole 5, a sand shot on 6.</item>
 /// <item>2024-06-01, 18 holes: all pars, 2 putts, GIR, fairways hit on the par 4s and 5s.</item>
 /// <item>2024-07-01, 9 holes (front nine): bogeys.</item>
+/// <item>2024-08-01, 18 holes: all pars, on tee White but every detail on the holes of tee "Old White" (same course),
+/// so it is imported on Old White.</item>
 /// <item>2023-08-01, 18 holes: all pars.</item>
 /// </list>
 /// </summary>
@@ -51,11 +53,12 @@ public sealed class ParityTests(MsSqlFixture sql, PostgresFixture postgres) : IA
 
         Assert.Equal([2023, 2024], result.Years.Select(y => y.Year));
         var y2024 = result.Years.Single(y => y.Year == 2024);
-        Assert.Equal(3, y2024.Context.ImportedRounds);
+        Assert.Equal(4, y2024.Context.ImportedRounds);
+        Assert.Equal(1, y2024.Context.RoundsMovedToTheirHolesTee);
         Assert.Equal(0, y2024.Context.OtherGolfersRounds);
 
         Assert.Equal(Verdict.Match, Row(y2024, "Scoring", "TotalHoles").Verdict);
-        Assert.Equal(45, Row(y2024, "Scoring", "TotalHoles").New);
+        Assert.Equal(63, Row(y2024, "Scoring", "TotalHoles").New);
         Assert.Equal(Verdict.Match, Row(y2024, "Scoring", "Birdies").Verdict);
         Assert.Equal(Verdict.Match, Row(y2024, "Scoring", "Avg18HoleScore").Verdict);
         Assert.Equal(Verdict.Match, Row(y2024, "Putting", "AvgPutts9Holes").Verdict);
@@ -65,23 +68,31 @@ public sealed class ParityTests(MsSqlFixture sql, PostgresFixture postgres) : IA
         var eagles = Row(y2024, "Scoring", "Eagles");
         Assert.Equal((0d, 1d), (eagles.Golftrack!.Value, eagles.New!.Value));
         Assert.Equal(Verdict.Intended, eagles.Verdict);
-        Assert.Equal(IntendedRules.EaglesIncludeAlbatrosses, eagles.Rule);
+        Assert.Equal([IntendedRules.EaglesIncludeAlbatrosses], eagles.Rules);
         Assert.Equal(Verdict.Intended, Row(y2024, "Scoring", "ParBreakers").Verdict);
         Assert.Equal(Verdict.Intended, Row(y2024, "Off the tee", "FairwaysHit").Verdict);
-        Assert.Equal(IntendedRules.ParThreeTeeShotsIgnored, Row(y2024, "Approach", "TeeShotFairway").Rule);
+        Assert.Equal([IntendedRules.ParThreeTeeShotsIgnored], Row(y2024, "Approach", "TeeShotFairway").Rules);
 
-        // Only golftrack's Round_SeasonSummary (which counts holes, not rounds) differs without a rule.
-        var unexplained = result.Years.SelectMany(y => y.Sections).Where(s => s.Rows.Any(r => r.Verdict == Verdict.Unexplained));
-        Assert.All(unexplained, s => Assert.Equal("Round_SeasonSummary", s.Procedure));
+        // golftrack's season summary defect (hole rows; the moved round has none in its join) is a named rule.
+        var rounds = Row(y2024, "Season", "Rounds");
+        Assert.Equal((45d, 4d, Verdict.Intended), (rounds.Golftrack!.Value, rounds.New!.Value, rounds.Verdict));
+        Assert.Equal(Verdict.Intended, Row(y2024, "Season", "Rounds18").Verdict);
+        Assert.Equal(Verdict.Intended, Row(y2024, "Season", "RoundsUnder80").Verdict);
+
+        // The moved round drops out of golftrack's course stats; the new side has it on Old White.
+        var white = Assert.Single(y2024.Sections, s => s.Title == "Course: Parity Links / White");
+        Assert.All(white.Rows.Where(r => r.Verdict != Verdict.NotCompared), r => Assert.Equal(Verdict.Match, r.Verdict));
+        var oldWhite = Assert.Single(y2024.Sections, s => s.Title == "Course: Parity Links / Old White");
+        Assert.All(oldWhite.Rows, r => Assert.Equal(Verdict.Intended, r.Verdict));
+        Assert.Contains(IntendedRules.RoundMovedToHolesTee, oldWhite.Rows[0].Rules);
+
+        Assert.DoesNotContain(result.Years.SelectMany(y => y.Sections).SelectMany(s => s.Rows), r => r.Verdict is Verdict.Unexplained or Verdict.Missing);
         Assert.Equal(Verdict.NotCompared, Row(y2024, "Off the tee", "ShortTeeHit").Verdict);
-
-        var course = Assert.Single(y2024.Sections, s => s.Procedure == "Stats_CourseStats");
-        Assert.Equal("Course: Parity Links / White", course.Title);
-        Assert.DoesNotContain(course.Rows, r => r.Verdict == Verdict.Unexplained);
+        Assert.Equal(ParityComparerTests.ComputedHere, Row(y2024, "Putting", "TwoPutts").Note);
 
         var markdown = ParityReport.ToMarkdown(result, Email, DateTimeOffset.UnixEpoch);
         Assert.Contains("| Eagles | 0 | 1 | +1 | intended: Eagles include albatrosses |", markdown, StringComparison.Ordinal);
-        Assert.Contains("| TotalHoles | 45 | 45 | 0 | match |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| TotalHoles | 63 | 63 | 0 | match (new value computed by the parity tool (no domain stat)) |", markdown, StringComparison.Ordinal);
         Assert.Contains("## Intended differences", markdown, StringComparison.Ordinal);
     }
 
@@ -178,6 +189,14 @@ public sealed class ParityTests(MsSqlFixture sql, PostgresFixture postgres) : IA
             await seed.RoundDetailAsync(nine, holes[i], score: Pars[i] + 1, putts: 2);
         }
 
+        var oldTee = await seed.TeeAsync(course, "Old White");
+        var oldHoles = new List<int>();
+        for (var i = 0; i < 18; i++)
+        {
+            oldHoles.Add(await seed.HoleAsync(oldTee, i + 1, par: Pars[i]));
+        }
+
+        await AllParsAsync(seed, tee, oldHoles, new DateTime(2024, 8, 1)); // round on White, details on Old White's holes
         await AllParsAsync(seed, tee, holes, new DateTime(2023, 8, 1));
     }
 

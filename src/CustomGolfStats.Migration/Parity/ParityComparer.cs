@@ -16,290 +16,430 @@ public sealed record LegacyYearResults(
     LegacyResult Career,
     LegacyResult Courses);
 
+/// <summary>The golftrack rows behind the imported rounds: rounds by imported round id, and tees by golftrack id.</summary>
+public sealed record ParityLegacyRounds(IReadOnlyDictionary<Guid, LegacyRound> Rounds, IReadOnlyDictionary<int, LegacyTee> Tees)
+{
+    public static readonly ParityLegacyRounds None = new(new Dictionary<Guid, LegacyRound>(), new Dictionary<int, LegacyTee>());
+}
+
 /// <summary>
 /// Compares golftrack's numbers with the new domain stats over the imported rounds of one year, column by column.
-/// Verdicts:
 /// <list type="bullet">
-/// <item><b>Match</b>: equal. Counts, to-par and dates exactly; averages and percentages (as 0-100) within ±0.05, which
-/// only absorbs golftrack's rounding to 2 decimals (averages) or 4 decimals of a fraction (percentages).</item>
-/// <item><b>Intended</b>: different, the column has a rule, and golftrack's value equals the value golftrack's own
-/// definition gives on the imported data (computed here). So a rule never excuses a data difference.</item>
+/// <item><b>Match</b>: equal. Counts, to-par and dates exactly; averages and percentages (as 0-100) within ±0.006,
+/// which only absorbs golftrack's rounding to 2 decimals (averages) or 4 decimals of a fraction (percentages).</item>
+/// <item><b>Intended</b>: different, and both sides are explained by the row's rules. golftrack's value must equal
+/// golftrack's definition recomputed here on the imported data (<see cref="Spec.LegacyDefinition"/>), and the new value
+/// must equal the rules' definition recomputed here independently of the domain (<see cref="Spec.RuleDefinition"/>).
+/// So a rule excuses neither a data difference nor a domain bug.</item>
 /// <item><b>Unexplained</b>: any other difference, including a missing golftrack row.</item>
-/// <item><b>Not compared</b>: golftrack columns without a counterpart, missing columns and failed procedures, all listed.</item>
+/// <item><b>Not compared</b>: golftrack columns without a counterpart, and values that can't be read as numbers.</item>
+/// <item><b>Missing</b>: a column missing in golftrack, or a failed procedure.</item>
 /// </list>
 /// Pure: no I/O.
 /// </summary>
 public static class ParityComparer
 {
-    private const double Rounding = 0.05;
+    public const double Tolerance = 0.006;
+
     private const double Exact = 1e-9;
+    private const string ComputedHere = "new value computed by the parity tool (no domain stat)";
 
     private static readonly HashSet<string> IdentityColumns = new(StringComparer.OrdinalIgnoreCase) { "Year", "Id", "CourseName", "TeeName" };
+    private static readonly HashSet<string> LengthColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "RoundsPlayed9", "RoundsPlayed18", "ScoringAvg9", "ScoringAvg18", "Low9HoleScore", "Low18HoleScore", "High9HoleScore", "High18HoleScore",
+    };
 
     public static IReadOnlyList<ParitySection> Compare(
-        int year, IReadOnlyList<RoundData> rounds, IReadOnlyDictionary<Guid, LegacyRound> legacyRounds, LegacyYearResults legacy)
+        int year, IReadOnlyList<RoundData> rounds, ParityLegacyRounds legacy, LegacyYearResults results, int otherGolfersRounds = 0)
     {
-        var data = new YearData(rounds, legacyRounds);
+        var data = new Rounds(rounds, legacy);
+        var others = otherGolfersRounds > 0
+            ? $"golftrack's numbers in this section include {otherGolfersRounds} active rounds of other golfers (the procedure takes only a year)."
+            : null;
         var sections = new List<ParitySection>
         {
-            Section("Scoring", legacy.Scoring, legacy.Scoring.Rows.FirstOrDefault(), ScoringSpecs(data), data.Empty),
-            Section("Off the tee", legacy.Driving, legacy.Driving.Rows.FirstOrDefault(), DrivingSpecs(data), data.Empty),
-            Section("Approach", legacy.Approach, legacy.Approach.Rows.FirstOrDefault(), ApproachSpecs(data), data.Empty),
-            Section("Putting", legacy.Putting, legacy.Putting.Rows.FirstOrDefault(), PuttingSpecs(data), data.Empty),
-            Section("Season", legacy.Season, legacy.Season.Rows.FirstOrDefault(), SeasonSpecs(data), data.Empty,
-                "golftrack's Round_SeasonSummary counts round-detail rows (holes), not rounds, over rounds of every length, " +
-                "and always returns 0 for Rounds9 and Rounds18. No phase 1 rule covers that, so those rows show as unexplained."),
+            Section("Scoring", results.Scoring, results.Scoring.Rows.FirstOrDefault(), ScoringSpecs(data), data.Empty, others),
+            Section("Off the tee", results.Driving, results.Driving.Rows.FirstOrDefault(), DrivingSpecs(data), data.Empty, others),
+            Section("Approach", results.Approach, results.Approach.Rows.FirstOrDefault(), ApproachSpecs(data), data.Empty, others),
+            Section("Putting", results.Putting, results.Putting.Rows.FirstOrDefault(), PuttingSpecs(data), data.Empty, others),
+            Section("Season", results.Season, results.Season.Rows.FirstOrDefault(), SeasonSpecs(data), data.Empty, others),
             Section(
                 "Career (this year)",
-                legacy.Career,
-                legacy.Career.Rows.FirstOrDefault(r => Number(r.GetValueOrDefault("Year")) == year),
-                CareerSpecs(data, CareerStats.ByYear(rounds).SingleOrDefault(), averagesNullAsZero: false),
+                results.Career,
+                results.Career.Rows.FirstOrDefault(r => Number(r.GetValueOrDefault("Year")) == year),
+                CareerSpecs(data),
                 data.Empty),
         };
-        sections.AddRange(CourseSections(legacy.Courses, rounds, legacyRounds));
+        sections.AddRange(CourseSections(results.Courses, data));
         return sections;
     }
 
-    // ---- Sections ----
-
-    private static IReadOnlyList<Spec> ScoringSpecs(YearData d)
+    /// <summary>The verdict for one value. <paramref name="rules"/> empty: Match or Unexplained only.</summary>
+    public static Verdict Judge(
+        double? golftrack, double? newValue, ValueKind kind, IReadOnlyCollection<IntendedRule> rules, double? legacyDefinition, double? ruleDefinition)
     {
-        var s = ScoringStats.Calculate(d.Rounds);
+        if (Same(golftrack, newValue, kind))
+        {
+            return Verdict.Match;
+        }
+
+        return rules.Count > 0 && Same(golftrack, legacyDefinition, kind) && Same(newValue, ruleDefinition, kind)
+            ? Verdict.Intended
+            : Verdict.Unexplained;
+    }
+
+    // ---- Year sections ----
+
+    private static IReadOnlyList<Spec> ScoringSpecs(Rounds d)
+    {
+        var s = ScoringStats.Calculate(d.All);
+        IntendedRule[] albatross = [IntendedRules.EaglesIncludeAlbatrosses];
+        IntendedRule[] length = [IntendedRules.ExactRoundLength];
         return
         [
-            new("TotalHoles", ValueKind.Count, d.Holes.Count),
-            new("TotalPar3Holes", ValueKind.Count, s.Par3Average.Count),
-            new("TotalPar4Holes", ValueKind.Count, s.Par4Average.Count),
-            new("TotalPar5Holes", ValueKind.Count, s.Par5Average.Count),
-            new("Total9HoleRounds", ValueKind.Count, s.ScoringAverage9.Count, IntendedRules.ExactRoundLength, d.ByHolesPlayed(9).Count),
-            new("Total18HoleRounds", ValueKind.Count, s.ScoringAverage18.Count, IntendedRules.ExactRoundLength, d.ByHolesPlayed(18).Count),
-            new("Birdies", ValueKind.Count, s.Birdies),
-            new("Eagles", ValueKind.Count, s.Eagles, IntendedRules.EaglesIncludeAlbatrosses, d.Holes.Count(h => h.ToPar == -2)),
-            new("BirdiesAndEagles", ValueKind.Count, s.Birdies + s.Eagles, IntendedRules.EaglesIncludeAlbatrosses,
-                d.Holes.Count(h => h.ToPar is -1 or -2)),
-            new("TotalPar3Score", ValueKind.Count, s.Par3Average.Total),
-            new("TotalPar4Score", ValueKind.Count, s.Par4Average.Total),
-            new("TotalPar5Score", ValueKind.Count, s.Par5Average.Total),
-            new("Low9HoleRound", ValueKind.Count, s.Lowest9 ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(9).Select(r => r.Score).DefaultIfEmpty().Min()),
-            new("High9HoleRound", ValueKind.Count, s.Highest9 ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(9).Select(r => r.Score).DefaultIfEmpty().Max()),
-            new("Low18HoleRound", ValueKind.Count, s.Lowest18 ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(18).Select(r => r.Score).DefaultIfEmpty().Min()),
-            new("High18HoleRound", ValueKind.Count, s.Highest18 ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(18).Select(r => r.Score).DefaultIfEmpty().Max()),
-            new("Avg9HoleScore", ValueKind.Average, s.ScoringAverage9.Value ?? 0, IntendedRules.ExactRoundLength, AverageOrZero(d.ByHolesPlayed(9).Select(r => r.Score))),
-            new("Avg18HoleScore", ValueKind.Average, s.ScoringAverage18.Value ?? 0, IntendedRules.ExactRoundLength, AverageOrZero(d.ByHolesPlayed(18).Select(r => r.Score))),
-            new("ParBreakers", ValueKind.Percent, Percent(s.ParBreakers) ?? 0, IntendedRules.EaglesIncludeAlbatrosses,
-                Percent(new Ratio(d.Holes.Count(h => h.ToPar is -1 or -2), d.Holes.Count)) ?? 0),
-            new("BirdieOrBetterAvg", ValueKind.Percent, Percent(s.BirdieOrBetter) ?? 0, IntendedRules.EaglesIncludeAlbatrosses,
-                Percent(new Ratio(d.Holes.Count(h => h.ToPar is -1 or -2), d.Holes.Count)) ?? 0),
-            new("Par3Avg", ValueKind.Average, s.Par3Average.Value ?? 0),
-            new("Par4Avg", ValueKind.Average, s.Par4Average.Value ?? 0),
-            new("Par5Avg", ValueKind.Average, s.Par5Average.Value ?? 0),
+            Plain("TotalHoles", ValueKind.Count, d.Holes.Count, ComputedHere),
+            Plain("TotalPar3Holes", ValueKind.Count, s.Par3Average.Count),
+            Plain("TotalPar4Holes", ValueKind.Count, s.Par4Average.Count),
+            Plain("TotalPar5Holes", ValueKind.Count, s.Par5Average.Count),
+            Ruled("Total9HoleRounds", ValueKind.Count, s.ScoringAverage9.Count, length, d.ByHolesPlayed(9).Count, d.ByLength(9).Count),
+            Ruled("Total18HoleRounds", ValueKind.Count, s.ScoringAverage18.Count, length, d.ByHolesPlayed(18).Count, d.ByLength(18).Count),
+            Plain("Birdies", ValueKind.Count, s.Birdies),
+            Ruled("Eagles", ValueKind.Count, s.Eagles, albatross, d.Holes.Count(h => ToPar(h) == -2), d.Holes.Count(h => ToPar(h) <= -2)),
+            Ruled("BirdiesAndEagles", ValueKind.Count, s.Birdies + s.Eagles, albatross,
+                d.Holes.Count(h => ToPar(h) is -1 or -2), d.Holes.Count(h => ToPar(h) <= -1)),
+            Plain("TotalPar3Score", ValueKind.Count, s.Par3Average.Total),
+            Plain("TotalPar4Score", ValueKind.Count, s.Par4Average.Total),
+            Plain("TotalPar5Score", ValueKind.Count, s.Par5Average.Total),
+            Ruled("Low9HoleRound", ValueKind.Count, s.Lowest9 ?? 0, length, MinOrZero(d.ByHolesPlayed(9)), MinOrZero(d.ByLength(9))),
+            Ruled("High9HoleRound", ValueKind.Count, s.Highest9 ?? 0, length, MaxOrZero(d.ByHolesPlayed(9)), MaxOrZero(d.ByLength(9))),
+            Ruled("Low18HoleRound", ValueKind.Count, s.Lowest18 ?? 0, length, MinOrZero(d.ByHolesPlayed(18)), MinOrZero(d.ByLength(18))),
+            Ruled("High18HoleRound", ValueKind.Count, s.Highest18 ?? 0, length, MaxOrZero(d.ByHolesPlayed(18)), MaxOrZero(d.ByLength(18))),
+            Ruled("Avg9HoleScore", ValueKind.Average, s.ScoringAverage9.Value ?? 0, length,
+                Avg(d.ByHolesPlayed(9).Select(Score)) ?? 0, Avg(d.ByLength(9).Select(Score)) ?? 0),
+            Ruled("Avg18HoleScore", ValueKind.Average, s.ScoringAverage18.Value ?? 0, length,
+                Avg(d.ByHolesPlayed(18).Select(Score)) ?? 0, Avg(d.ByLength(18).Select(Score)) ?? 0),
+            Ruled("ParBreakers", ValueKind.Percent, Percent(s.ParBreakers) ?? 0, albatross,
+                Pct(d.Holes.Count(h => ToPar(h) is -1 or -2), d.Holes.Count) ?? 0, Pct(d.Holes.Count(h => ToPar(h) <= -1), d.Holes.Count) ?? 0),
+            Ruled("BirdieOrBetterAvg", ValueKind.Percent, Percent(s.BirdieOrBetter) ?? 0, albatross,
+                Pct(d.Holes.Count(h => ToPar(h) is -1 or -2), d.Holes.Count) ?? 0, Pct(d.Holes.Count(h => ToPar(h) <= -1), d.Holes.Count) ?? 0),
+            Plain("Par3Avg", ValueKind.Average, s.Par3Average.Value ?? 0),
+            Plain("Par4Avg", ValueKind.Average, s.Par4Average.Value ?? 0),
+            Plain("Par5Avg", ValueKind.Average, s.Par5Average.Value ?? 0),
         ];
     }
 
-    private static IReadOnlyList<Spec> DrivingSpecs(YearData d)
+    private static IReadOnlyList<Spec> DrivingSpecs(Rounds d)
     {
-        var o = OffTheTeeStats.Calculate(d.Rounds);
+        var o = OffTheTeeStats.Calculate(d.All);
+        IntendedRule[] par3 = [IntendedRules.ParThreeTeeShotsIgnored];
         var notPar3 = d.Holes.Count(h => h.Par != 3);
+        int All(Func<HoleSummary, bool> flag) => d.Holes.Count(flag);
+        int OffPar3(Func<HoleSummary, bool> flag) => d.Holes.Count(h => h.Par != 3 && flag(h));
         double? ScoreFrom(Average toPar, int par) => toPar.Value is { } v ? v + par : 0;
         return
         [
-            new("TotalHoles", ValueKind.Count, d.Holes.Count),
-            new("DrivingHoles", ValueKind.Count, o.DrivingAccuracy.Denominator),
-            new("FairwaysHit", ValueKind.Count, o.DrivingAccuracy.Numerator, IntendedRules.ParThreeTeeShotsIgnored, d.Holes.Count(h => h.FairwayHit)),
-            new("LeftRoughHit", ValueKind.Count, o.LeftTendency.Numerator, IntendedRules.ParThreeTeeShotsIgnored, d.Holes.Count(h => h.TeeShotLeft)),
-            new("RightRoughHit", ValueKind.Count, o.RightTendency.Numerator, IntendedRules.ParThreeTeeShotsIgnored, d.Holes.Count(h => h.TeeShotRight)),
-            new("TotalPar4s", ValueKind.Count, d.Holes.Count(h => h.Par == 4)),
-            new("TotalPar5s", ValueKind.Count, d.Holes.Count(h => h.Par == 5)),
-            new("FairwayHitAvg", ValueKind.Percent, Percent(o.DrivingAccuracy), IntendedRules.ParThreeTeeShotsIgnored,
-                Percent(new Ratio(d.Holes.Count(h => h.FairwayHit), notPar3))),
-            new("LeftRoughAvg", ValueKind.Percent, Percent(o.LeftTendency), IntendedRules.ParThreeTeeShotsIgnored,
-                Percent(new Ratio(d.Holes.Count(h => h.TeeShotLeft), notPar3))),
-            new("RightRoughAvg", ValueKind.Percent, Percent(o.RightTendency), IntendedRules.ParThreeTeeShotsIgnored,
-                Percent(new Ratio(d.Holes.Count(h => h.TeeShotRight), notPar3))),
-            new("Par4FairwayHitAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromFairway, 4)),
-            new("Par4LeftRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromLeft, 4)),
-            new("Par4RightRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromRight, 4)),
-            new("Par5FairwayHitAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromFairway, 5)),
-            new("Par5LeftRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromLeft, 5)),
-            new("Par5RightRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromRight, 5)),
+            Plain("TotalHoles", ValueKind.Count, d.Holes.Count, ComputedHere),
+            Plain("DrivingHoles", ValueKind.Count, o.DrivingAccuracy.Denominator),
+            Ruled("FairwaysHit", ValueKind.Count, o.DrivingAccuracy.Numerator, par3, All(h => h.FairwayHit), OffPar3(h => h.FairwayHit)),
+            Ruled("LeftRoughHit", ValueKind.Count, o.LeftTendency.Numerator, par3, All(h => h.TeeShotLeft), OffPar3(h => h.TeeShotLeft)),
+            Ruled("RightRoughHit", ValueKind.Count, o.RightTendency.Numerator, par3, All(h => h.TeeShotRight), OffPar3(h => h.TeeShotRight)),
+            Plain("TotalPar4s", ValueKind.Count, d.Holes.Count(h => h.Par == 4), ComputedHere),
+            Plain("TotalPar5s", ValueKind.Count, d.Holes.Count(h => h.Par == 5), ComputedHere),
+            Ruled("FairwayHitAvg", ValueKind.Percent, Percent(o.DrivingAccuracy), par3,
+                Pct(All(h => h.FairwayHit), notPar3), Pct(OffPar3(h => h.FairwayHit), notPar3)),
+            Ruled("LeftRoughAvg", ValueKind.Percent, Percent(o.LeftTendency), par3,
+                Pct(All(h => h.TeeShotLeft), notPar3), Pct(OffPar3(h => h.TeeShotLeft), notPar3)),
+            Ruled("RightRoughAvg", ValueKind.Percent, Percent(o.RightTendency), par3,
+                Pct(All(h => h.TeeShotRight), notPar3), Pct(OffPar3(h => h.TeeShotRight), notPar3)),
+            Plain("Par4FairwayHitAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromFairway, 4)),
+            Plain("Par4LeftRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromLeft, 4)),
+            Plain("Par4RightRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par4ToParFromRight, 4)),
+            Plain("Par5FairwayHitAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromFairway, 5)),
+            Plain("Par5LeftRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromLeft, 5)),
+            Plain("Par5RightRoughAvgScore", ValueKind.Average, ScoreFrom(o.Par5ToParFromRight, 5)),
         ];
     }
 
-    private static IReadOnlyList<Spec> ApproachSpecs(YearData d)
+    private static IReadOnlyList<Spec> ApproachSpecs(Rounds d)
     {
-        var a = ApproachStats.Calculate(d.Rounds);
-        Ratio GirAfter(Func<HoleSummary, bool> teeShot) =>
-            new(d.Holes.Count(h => teeShot(h) && h.Gir), d.Holes.Count(teeShot));
+        var a = ApproachStats.Calculate(d.All);
+        IntendedRule[] par3 = [IntendedRules.ParThreeTeeShotsIgnored];
+        IntendedRule[] sand = [IntendedRules.SandSavesGreensideOnly];
+        int Tee(Func<HoleSummary, bool> flag, bool offPar3) => d.Holes.Count(h => flag(h) && (!offPar3 || h.Par != 3));
+        int GirAfter(Func<HoleSummary, bool> flag, bool offPar3) => d.Holes.Count(h => flag(h) && h.Gir && (!offPar3 || h.Par != 3));
+        Spec TeeShot(string column, Ratio ratio, Func<HoleSummary, bool> flag) =>
+            Ruled(column, ValueKind.Count, ratio.Denominator, par3, Tee(flag, false), Tee(flag, true));
+        Spec GirFrom(string column, Ratio ratio, Func<HoleSummary, bool> flag) =>
+            Ruled(column, ValueKind.Count, ratio.Numerator, par3, GirAfter(flag, false), GirAfter(flag, true));
+        Spec GirAvg(string column, Ratio ratio, Func<HoleSummary, bool> flag) =>
+            Ruled(column, ValueKind.Percent, Percent(ratio) ?? 0, par3,
+                Pct(GirAfter(flag, false), Tee(flag, false)) ?? 0, Pct(GirAfter(flag, true), Tee(flag, true)) ?? 0);
+
         var anySand = d.Holes.Where(h => h.GreensideSandShots + h.FairwaySandShots > 0).ToList();
-        var legacySandSave = new Ratio(anySand.Count(h => h.ToPar <= 0), anySand.Count);
+        var greenside = d.Holes.Where(h => h.GreensideSandShots > 0).ToList();
         return
         [
-            new("TotalHoles", ValueKind.Count, d.Holes.Count),
-            new("GreensInRegulation", ValueKind.Count, a.Gir.Numerator),
-            new("MissedGIR", ValueKind.Count, a.Gir.Denominator - a.Gir.Numerator),
-            new("HoleOuts", ValueKind.Count, a.HoleOut.Numerator),
-            new("HoleOutAvg", ValueKind.Percent, Percent(a.HoleOut) ?? 0),
-            new("GIRAvg", ValueKind.Percent, Percent(a.Gir) ?? 0),
-            new("GIRFairwayAvg", ValueKind.Percent, Percent(a.GirFromFairway) ?? 0, IntendedRules.ParThreeTeeShotsIgnored, Percent(GirAfter(h => h.FairwayHit)) ?? 0),
-            new("GIRLeftRoughAvg", ValueKind.Percent, Percent(a.GirFromLeft) ?? 0, IntendedRules.ParThreeTeeShotsIgnored, Percent(GirAfter(h => h.TeeShotLeft)) ?? 0),
-            new("GIRRightRoughAvg", ValueKind.Percent, Percent(a.GirFromRight) ?? 0, IntendedRules.ParThreeTeeShotsIgnored, Percent(GirAfter(h => h.TeeShotRight)) ?? 0),
-            new("TeeShotFairway", ValueKind.Count, a.GirFromFairway.Denominator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.FairwayHit).Denominator),
-            new("TeeShotLeft", ValueKind.Count, a.GirFromLeft.Denominator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.TeeShotLeft).Denominator),
-            new("TeeShotRight", ValueKind.Count, a.GirFromRight.Denominator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.TeeShotRight).Denominator),
-            new("GIRFromFairway", ValueKind.Count, a.GirFromFairway.Numerator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.FairwayHit).Numerator),
-            new("GIRFromLeft", ValueKind.Count, a.GirFromLeft.Numerator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.TeeShotLeft).Numerator),
-            new("GIRFromRight", ValueKind.Count, a.GirFromRight.Numerator, IntendedRules.ParThreeTeeShotsIgnored, GirAfter(h => h.TeeShotRight).Numerator),
-            new("TotalSandShots", ValueKind.Count, d.Holes.Sum(h => h.GreensideSandShots + h.FairwaySandShots)),
-            new("HolesWithSandShots", ValueKind.Count, a.SandSave.Denominator, IntendedRules.SandSavesGreensideOnly, legacySandSave.Denominator),
-            new("SandSaves", ValueKind.Count, a.SandSave.Numerator, IntendedRules.SandSavesGreensideOnly, legacySandSave.Numerator),
-            new("SandSaveAvg", ValueKind.Percent, Percent(a.SandSave) ?? 0, IntendedRules.SandSavesGreensideOnly, Percent(legacySandSave) ?? 0),
-            new("MissedGIRScrambling", ValueKind.Count, a.Scrambling.Numerator),
-            new("ScramblingAvg", ValueKind.Percent, Percent(a.Scrambling) ?? 0),
+            Plain("TotalHoles", ValueKind.Count, d.Holes.Count, ComputedHere),
+            Plain("GreensInRegulation", ValueKind.Count, a.Gir.Numerator),
+            Plain("MissedGIR", ValueKind.Count, a.Gir.Denominator - a.Gir.Numerator),
+            Plain("HoleOuts", ValueKind.Count, a.HoleOut.Numerator),
+            Plain("HoleOutAvg", ValueKind.Percent, Percent(a.HoleOut) ?? 0),
+            Plain("GIRAvg", ValueKind.Percent, Percent(a.Gir) ?? 0),
+            GirAvg("GIRFairwayAvg", a.GirFromFairway, h => h.FairwayHit),
+            GirAvg("GIRLeftRoughAvg", a.GirFromLeft, h => h.TeeShotLeft),
+            GirAvg("GIRRightRoughAvg", a.GirFromRight, h => h.TeeShotRight),
+            TeeShot("TeeShotFairway", a.GirFromFairway, h => h.FairwayHit),
+            TeeShot("TeeShotLeft", a.GirFromLeft, h => h.TeeShotLeft),
+            TeeShot("TeeShotRight", a.GirFromRight, h => h.TeeShotRight),
+            GirFrom("GIRFromFairway", a.GirFromFairway, h => h.FairwayHit),
+            GirFrom("GIRFromLeft", a.GirFromLeft, h => h.TeeShotLeft),
+            GirFrom("GIRFromRight", a.GirFromRight, h => h.TeeShotRight),
+            Plain("TotalSandShots", ValueKind.Count, d.Holes.Sum(h => h.GreensideSandShots + h.FairwaySandShots), ComputedHere),
+            Ruled("HolesWithSandShots", ValueKind.Count, a.SandSave.Denominator, sand, anySand.Count, greenside.Count),
+            Ruled("SandSaves", ValueKind.Count, a.SandSave.Numerator, sand, anySand.Count(h => ToPar(h) <= 0), greenside.Count(h => ToPar(h) <= 0)),
+            Ruled("SandSaveAvg", ValueKind.Percent, Percent(a.SandSave) ?? 0, sand,
+                Pct(anySand.Count(h => ToPar(h) <= 0), anySand.Count) ?? 0, Pct(greenside.Count(h => ToPar(h) <= 0), greenside.Count) ?? 0),
+            Plain("MissedGIRScrambling", ValueKind.Count, a.Scrambling.Numerator),
+            Plain("ScramblingAvg", ValueKind.Percent, Percent(a.Scrambling) ?? 0),
         ];
     }
 
-    private static IReadOnlyList<Spec> PuttingSpecs(YearData d)
+    private static IReadOnlyList<Spec> PuttingSpecs(Rounds d)
     {
-        var p = PuttingStats.Calculate(d.Rounds);
-        var birdiesAnywhere = new Ratio(d.Holes.Count(h => h.ToPar <= -1), p.PuttsPerGir.Count);
-        double PuttsPerRound(int holesPlayed) => AverageOrZero(d.ByHolesPlayed(holesPlayed).Select(r => r.Putts));
+        var p = PuttingStats.Calculate(d.All);
+        IntendedRule[] length = [IntendedRules.ExactRoundLength];
+        IntendedRule[] girOnly = [IntendedRules.BirdieConversionGirOnly];
+        var gir = d.Holes.Count(h => h.Gir);
+        var birdiesAnywhere = d.Holes.Count(h => ToPar(h) <= -1);
+        var girBirdies = d.Holes.Count(h => h.Gir && ToPar(h) <= -1);
         return
         [
-            new("TotalRounds", ValueKind.Count, d.Rounds.Count),
-            new("9HoleRounds", ValueKind.Count, p.PuttsPerRound9.Count, IntendedRules.ExactRoundLength, d.ByHolesPlayed(9).Count),
-            new("18HoleRounds", ValueKind.Count, p.PuttsPerRound18.Count, IntendedRules.ExactRoundLength, d.ByHolesPlayed(18).Count),
-            new("TotalHoles", ValueKind.Count, d.Holes.Count),
-            new("TotalGIRHoles", ValueKind.Count, p.PuttsPerGir.Count),
-            new("TotalPutts", ValueKind.Count, p.PuttsPerHole.Total),
-            new("TotalPuttsGIR", ValueKind.Count, p.PuttsPerGir.Total),
-            new("OnePutts", ValueKind.Count, p.OnePutt.Numerator),
-            new("TwoPutts", ValueKind.Count, d.Holes.Count(h => h.Putts == 2)),
-            new("ThreePuttsPlus", ValueKind.Count, p.ThreePuttRate.Numerator),
-            new("TotalBirdiesPlus", ValueKind.Count, p.BirdieConversion.Numerator, IntendedRules.BirdieConversionGirOnly, birdiesAnywhere.Numerator),
-            new("AvgPuttsGIR", ValueKind.Average, p.PuttsPerGir.Value ?? 0),
-            new("AvgPutts", ValueKind.Average, p.PuttsPerHole.Value ?? 0),
-            new("OnePuttAvg", ValueKind.Percent, Percent(p.OnePutt) ?? 0),
-            new("ThreePuttAvg", ValueKind.Percent, Percent(p.ThreePuttRate) ?? 0),
-            new("AvgPutts9Holes", ValueKind.Average, p.PuttsPerRound9.Value ?? 0, IntendedRules.ExactRoundLength, PuttsPerRound(9)),
-            new("AvgPutts18Holes", ValueKind.Average, p.PuttsPerRound18.Value ?? 0, IntendedRules.ExactRoundLength, PuttsPerRound(18)),
-            new("BirdieConversion", ValueKind.Percent, Percent(p.BirdieConversion) ?? 0, IntendedRules.BirdieConversionGirOnly, Percent(birdiesAnywhere) ?? 0),
-        ];
-    }
-
-    private static IReadOnlyList<Spec> SeasonSpecs(YearData d)
-    {
-        var s = SeasonStats.Season(d.Rounds);
-        return
-        [
-            new("Rounds", ValueKind.Count, d.Rounds.Count),
-            new("Rounds9", ValueKind.Count, s.Rounds9),
-            new("Rounds18", ValueKind.Count, s.Rounds18),
-            new("RoundsUnder80", ValueKind.Count, s.Histogram18[0].Count),
-            new("Rounds8089", ValueKind.Count, s.Histogram18[1].Count),
-            new("RoundsOver90", ValueKind.Count, s.Histogram18[2].Count, IntendedRules.FourBucketHistogram,
-                s.Histogram18[2].Count + s.Histogram18[3].Count, "new: 90-99 bucket"),
-        ];
-    }
-
-    /// <summary>Stats_CareerStats (one year) and Stats_CourseStats (one course and tee name) share their columns.</summary>
-    private static IReadOnlyList<Spec> CareerSpecs(YearData d, CareerRow? c, bool averagesNullAsZero)
-    {
-        double? OrZero(double? value) => averagesNullAsZero ? value ?? 0 : value;
-        double? Average(IEnumerable<int> values) => averagesNullAsZero ? AverageOrZero(values) : values.ToList() is { Count: > 0 } l ? l.Average() : null;
-        double? Low(int holesPlayed) => OrZero(d.ByHolesPlayed(holesPlayed).Select(r => (int?)r.Score).Min());
-        double? High(int holesPlayed) => OrZero(d.ByHolesPlayed(holesPlayed).Select(r => (int?)r.Score).Max());
-        return
-        [
-            new("RoundsPlayed", ValueKind.Count, d.Rounds.Count),
-            new("RoundsPlayed9", ValueKind.Count, c?.Nine.Rounds ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(9).Count),
-            new("RoundsPlayed18", ValueKind.Count, c?.Eighteen.Rounds ?? 0, IntendedRules.ExactRoundLength, d.ByHolesPlayed(18).Count),
-            new("HolesPlayed", ValueKind.Count, c?.Holes ?? 0),
-            new("ScoringAvg9", ValueKind.Average, OrZero(c?.Nine.Average.Value), IntendedRules.ExactRoundLength, Average(d.ByHolesPlayed(9).Select(r => r.Score))),
-            new("ScoringAvg18", ValueKind.Average, OrZero(c?.Eighteen.Average.Value), IntendedRules.ExactRoundLength, Average(d.ByHolesPlayed(18).Select(r => r.Score))),
-            new("RelatedToPar", ValueKind.ToPar, c?.ToPar),
-            new("Putts", ValueKind.Count, c?.PuttsPerHole.Total),
-            new("PuttingAvg", ValueKind.Average, c?.PuttsPerHole.Value),
-            new("GIR", ValueKind.Percent, c is null ? null : Percent(c.Gir)),
-            new("DrivingAccuracy", ValueKind.Percent, c is null ? null : Percent(c.DrivingAccuracy)),
-            new("Low9HoleScore", ValueKind.Count, OrZero(c?.Nine.Low), IntendedRules.ExactRoundLength, Low(9)),
-            new("Low18HoleScore", ValueKind.Count, OrZero(c?.Eighteen.Low), IntendedRules.ExactRoundLength, Low(18)),
-            new("High9HoleScore", ValueKind.Count, OrZero(c?.Nine.High), IntendedRules.ExactRoundLength, High(9)),
-            new("High18HoleScore", ValueKind.Count, OrZero(c?.Eighteen.High), IntendedRules.ExactRoundLength, High(18)),
-            new("EarliestRound", ValueKind.Date, c?.Earliest.DayNumber),
-            new("LatestRound", ValueKind.Date, c?.Latest.DayNumber),
-            new("TotalCourses", ValueKind.Count, d.Rounds.Select(r => r.CourseId).Distinct().Count()),
+            Plain("TotalRounds", ValueKind.Count, d.All.Count, ComputedHere),
+            Ruled("9HoleRounds", ValueKind.Count, p.PuttsPerRound9.Count, length, d.ByHolesPlayed(9).Count, d.ByLength(9).Count),
+            Ruled("18HoleRounds", ValueKind.Count, p.PuttsPerRound18.Count, length, d.ByHolesPlayed(18).Count, d.ByLength(18).Count),
+            Plain("TotalHoles", ValueKind.Count, d.Holes.Count, ComputedHere),
+            Plain("TotalGIRHoles", ValueKind.Count, p.PuttsPerGir.Count),
+            Plain("TotalPutts", ValueKind.Count, p.PuttsPerHole.Total),
+            Plain("TotalPuttsGIR", ValueKind.Count, p.PuttsPerGir.Total),
+            Plain("OnePutts", ValueKind.Count, p.OnePutt.Numerator),
+            Plain("TwoPutts", ValueKind.Count, d.Holes.Count(h => h.Putts == 2), ComputedHere),
+            Plain("ThreePuttsPlus", ValueKind.Count, p.ThreePuttRate.Numerator),
+            Ruled("TotalBirdiesPlus", ValueKind.Count, p.BirdieConversion.Numerator, girOnly, birdiesAnywhere, girBirdies),
+            Plain("AvgPuttsGIR", ValueKind.Average, p.PuttsPerGir.Value ?? 0),
+            Plain("AvgPutts", ValueKind.Average, p.PuttsPerHole.Value ?? 0),
+            Plain("OnePuttAvg", ValueKind.Percent, Percent(p.OnePutt) ?? 0),
+            Plain("ThreePuttAvg", ValueKind.Percent, Percent(p.ThreePuttRate) ?? 0),
+            Ruled("AvgPutts9Holes", ValueKind.Average, p.PuttsPerRound9.Value ?? 0, length,
+                Avg(d.ByHolesPlayed(9).Select(Putts)) ?? 0, Avg(d.ByLength(9).Select(Putts)) ?? 0),
+            Ruled("AvgPutts18Holes", ValueKind.Average, p.PuttsPerRound18.Value ?? 0, length,
+                Avg(d.ByHolesPlayed(18).Select(Putts)) ?? 0, Avg(d.ByLength(18).Select(Putts)) ?? 0),
+            Ruled("BirdieConversion", ValueKind.Percent, Percent(p.BirdieConversion) ?? 0, girOnly,
+                Pct(birdiesAnywhere, gir) ?? 0, Pct(girBirdies, gir) ?? 0),
         ];
     }
 
     /// <summary>
-    /// Stats_CourseStats groups by course and tee <em>name</em>; the new rows are grouped the same way (by course and
-    /// tee name) so that tees sharing a name are compared together. Rows on one side only are unexplained.
+    /// Round_SeasonSummary counts joined detail rows: a round contributes one row per hole whose hole is on the round's
+    /// own tee (none for a round moved to its holes' tee), bucketed by the round's stored Score whatever its length.
     /// </summary>
-    private static IEnumerable<ParitySection> CourseSections(
-        LegacyResult legacy, IReadOnlyList<RoundData> rounds, IReadOnlyDictionary<Guid, LegacyRound> legacyRounds)
+    private static IReadOnlyList<Spec> SeasonSpecs(Rounds d)
+    {
+        var s = SeasonStats.Season(d.All);
+        IntendedRule[] defect = [IntendedRules.SeasonSummaryCountsHoleRows];
+        int Rows(Func<int, bool> storedScore) =>
+            d.All.Where(r => d.StoredScore(r) is { } score && storedScore(score)).Sum(r => d.IsMoved(r) ? 0 : r.Holes.Count);
+        int Eighteens(Func<int, bool> score) => d.ByLength(18).Count(r => score(Score(r)));
+        return
+        [
+            Ruled("Rounds", ValueKind.Count, d.All.Count, defect, Rows(_ => true), d.All.Count, ComputedHere),
+            Ruled("Rounds9", ValueKind.Count, s.Rounds9, defect, 0, d.ByLength(9).Count),
+            Ruled("Rounds18", ValueKind.Count, s.Rounds18, defect, 0, d.ByLength(18).Count),
+            Ruled("RoundsUnder80", ValueKind.Count, s.Histogram18[0].Count, defect, Rows(x => x < 80), Eighteens(x => x < 80)),
+            Ruled("Rounds8089", ValueKind.Count, s.Histogram18[1].Count, defect, Rows(x => x is >= 80 and < 90), Eighteens(x => x is >= 80 and < 90)),
+            Ruled("RoundsOver90", ValueKind.Count, s.Histogram18[2].Count, [IntendedRules.SeasonSummaryCountsHoleRows, IntendedRules.FourBucketHistogram],
+                Rows(x => x >= 90), Eighteens(x => x is >= 90 and < 100), "new: the 90-99 bucket"),
+        ];
+    }
+
+    private static IReadOnlyList<Spec> CareerSpecs(Rounds d)
+    {
+        var c = CareerStats.ByYear(d.All).SingleOrDefault();
+        var legacy = Figures(d.All, d.HolesPlayed, golftrackDriving: true, nullAsZero: false);
+        var rule = Figures(d.All, r => r.Holes.Count, golftrackDriving: false, nullAsZero: false);
+        return
+        [
+            .. FigureSpecs(Career(c, d.All.Count), legacy, rule, ruleFor: column => LengthColumns.Contains(column) ? [IntendedRules.ExactRoundLength] : []),
+            Plain("TotalCourses", ValueKind.Count, d.All.Select(r => r.CourseId).Distinct().Count(), ComputedHere),
+        ];
+    }
+
+    // ---- Courses ----
+
+    /// <summary>
+    /// Stats_CourseStats groups by course and tee <em>name</em> and only joins holes of the round's own tee. The new rows
+    /// are grouped by course and tee name too. Groups holding rounds moved to their holes' tee get the "moved" rule:
+    /// golftrack's side is recomputed without them (they have no rows in its join), the new side with them.
+    /// </summary>
+    private static IEnumerable<ParitySection> CourseSections(LegacyResult legacy, Rounds d)
     {
         if (legacy.Error is not null)
         {
-            yield return Section("Courses", legacy, null, [], newIsEmpty: rounds.Count == 0);
+            yield return Section("Courses", legacy, null, [], d.Empty);
             yield break;
         }
 
-        var groups = rounds.GroupBy(r => (r.CourseId, TeeName: r.TeeName.Trim())).ToDictionary(g => g.Key, g => g.ToList());
-        var seen = new HashSet<(Guid, string)>();
-        foreach (var row in legacy.Rows)
-        {
-            var courseId = DeterministicIds.For("Course", (int)(Number(row.GetValueOrDefault("Id")) ?? 0));
-            var teeName = (row.GetValueOrDefault("TeeName") as string ?? "").Trim();
-            var key = (courseId, teeName);
-            seen.Add(key);
-            var group = groups.GetValueOrDefault(key) ?? [];
-            yield return CourseSection($"{row.GetValueOrDefault("CourseName")} / {teeName}", legacy, row, group, legacyRounds);
-        }
-
-        foreach (var (key, group) in groups.Where(g => !seen.Contains(g.Key)))
-        {
-            yield return CourseSection($"{group[0].CourseName} / {key.TeeName}", legacy, null, group, legacyRounds);
-        }
-    }
-
-    private static ParitySection CourseSection(
-        string title, LegacyResult legacy, IReadOnlyDictionary<string, object?>? row, List<RoundData> group,
-        IReadOnlyDictionary<Guid, LegacyRound> legacyRounds)
-    {
-        // One synthetic tee id per name, so CareerStats.ByCourseAndTee merges same-named tees as golftrack does.
-        var byName = group.Select(r => r with { TeeId = DeterministicIds.Create(DeterministicIds.Namespace, $"parity:{r.CourseId}:{r.TeeName.Trim()}") }).ToList();
-        var courseRow = CareerStats.ByCourseAndTee(byName).SingleOrDefault();
-        var data = new YearData(group, legacyRounds);
-        var specs = CareerSpecs(data, courseRow is null ? null : AsCareerRow(courseRow), averagesNullAsZero: true)
-            .Where(s => s.Column != "TotalCourses")
+        var legacyRows = legacy.Rows
+            .Select(row => (Key: (DeterministicIds.For("Course", (int)(Number(row.GetValueOrDefault("Id")) ?? 0)), Name((row.GetValueOrDefault("TeeName") as string) ?? "")), Row: row))
             .ToList();
-        return Section($"Course: {title}", legacy, row, specs, data.Empty);
+        var keys = legacyRows.Select(r => r.Key).Concat(d.All.Select(r => (r.CourseId, Name(r.TeeName)))).Distinct().ToList();
+        foreach (var key in keys)
+        {
+            var row = legacyRows.FirstOrDefault(r => r.Key == key).Row;
+            var group = d.All.Where(r => (r.CourseId, Name(r.TeeName)) == key).ToList();
+            var golftrackGroup = d.All.Where(r => !d.IsMoved(r) && d.LegacyTeeKey(r) == key).ToList();
+            var moved = group.Any(d.IsMoved);
+
+            // One synthetic tee id per name, so CareerStats.ByCourseAndTee merges same-named tees as golftrack does.
+            var byName = group.Select(r => r with { TeeId = DeterministicIds.Create(DeterministicIds.Namespace, $"parity:{r.CourseId}:{Name(r.TeeName)}") }).ToList();
+            var courseRow = CareerStats.ByCourseAndTee(byName).SingleOrDefault();
+            var asCareer = courseRow is null
+                ? null
+                : new CareerRow(0, courseRow.Nine, courseRow.Eighteen, courseRow.Holes, courseRow.ToPar, courseRow.PuttsPerHole,
+                    courseRow.Gir, courseRow.DrivingAccuracy, courseRow.Earliest, courseRow.Latest);
+            var specs = FigureSpecs(
+                Career(asCareer, group.Count, zero: true),
+                Figures(golftrackGroup, d.HolesPlayed, golftrackDriving: true, nullAsZero: true),
+                Figures(group, r => r.Holes.Count, golftrackDriving: false, nullAsZero: true),
+                ruleFor: column => (LengthColumns.Contains(column) ? new[] { IntendedRules.ExactRoundLength } : [])
+                    .Concat(moved ? [IntendedRules.RoundMovedToHolesTee] : [])
+                    .ToArray());
+            var title = (row?.GetValueOrDefault("CourseName") as string) ?? group.FirstOrDefault()?.CourseName ?? "?";
+            yield return Section($"Course: {title} / {key.Item2}", legacy, row, specs, group.Count == 0,
+                noRowExpected: moved && golftrackGroup.Count == 0);
+        }
+
+        static string Name(string teeName) => teeName.Trim();
     }
 
-    private static CareerRow AsCareerRow(CourseRow c) =>
-        new(0, c.Nine, c.Eighteen, c.Holes, c.ToPar, c.PuttsPerHole, c.Gir, c.DrivingAccuracy, c.Earliest, c.Latest);
+    // ---- Career and course figures ----
+
+    /// <summary>
+    /// The new values of the columns Stats_CareerStats and Stats_CourseStats share, from the domain's row (the round count
+    /// is counted here: the domain row has 9 and 18-hole counts only).
+    /// </summary>
+    private static Dictionary<string, double?> Career(CareerRow? c, int roundCount, bool zero = false)
+    {
+        double? Z(double? v) => zero ? v ?? 0 : v;
+        return new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["RoundsPlayed"] = roundCount,
+            ["RoundsPlayed9"] = c?.Nine.Rounds ?? 0,
+            ["RoundsPlayed18"] = c?.Eighteen.Rounds ?? 0,
+            ["HolesPlayed"] = c?.Holes ?? 0,
+            ["ScoringAvg9"] = Z(c?.Nine.Average.Value),
+            ["ScoringAvg18"] = Z(c?.Eighteen.Average.Value),
+            ["RelatedToPar"] = c?.ToPar,
+            ["Putts"] = c?.PuttsPerHole.Total,
+            ["PuttingAvg"] = c?.PuttsPerHole.Value,
+            ["GIR"] = c is null ? null : Percent(c.Gir),
+            ["DrivingAccuracy"] = c is null ? null : Percent(c.DrivingAccuracy),
+            ["Low9HoleScore"] = Z(c?.Nine.Low),
+            ["Low18HoleScore"] = Z(c?.Eighteen.Low),
+            ["High9HoleScore"] = Z(c?.Nine.High),
+            ["High18HoleScore"] = Z(c?.Eighteen.High),
+            ["EarliestRound"] = c?.Earliest.DayNumber,
+            ["LatestRound"] = c?.Latest.DayNumber,
+        };
+    }
+
+    /// <summary>
+    /// The same columns recomputed here, independently of the domain: with golftrack's definitions (length from
+    /// HolesPlayed, driving over holes that aren't par 3) or with the new rules (length from the holes recorded,
+    /// driving over par 4 and 5).
+    /// </summary>
+    private static Dictionary<string, double?> Figures(
+        IReadOnlyList<RoundData> rounds, Func<RoundData, int?> lengthOf, bool golftrackDriving, bool nullAsZero)
+    {
+        var holes = rounds.SelectMany(r => r.Holes).ToList();
+        double? Z(double? v) => nullAsZero ? v ?? 0 : v;
+        List<int> Scores(int length) => rounds.Where(r => lengthOf(r) == length).Select(Score).ToList();
+        double? Low(int length) => Scores(length) is { Count: > 0 } s ? s.Min() : null;
+        double? High(int length) => Scores(length) is { Count: > 0 } s ? s.Max() : null;
+        var driving = holes.Where(h => golftrackDriving ? h.Par != 3 : h.Par >= 4).ToList();
+        var empty = holes.Count == 0;
+        return new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["RoundsPlayed"] = rounds.Count,
+            ["RoundsPlayed9"] = Scores(9).Count,
+            ["RoundsPlayed18"] = Scores(18).Count,
+            ["HolesPlayed"] = holes.Count,
+            ["ScoringAvg9"] = Z(Avg(Scores(9))),
+            ["ScoringAvg18"] = Z(Avg(Scores(18))),
+            ["RelatedToPar"] = empty ? null : holes.Sum(ToPar),
+            ["Putts"] = empty ? null : holes.Sum(h => h.Putts),
+            ["PuttingAvg"] = empty ? null : (double)holes.Sum(h => h.Putts) / holes.Count,
+            ["GIR"] = Pct(holes.Count(h => h.Gir), holes.Count),
+            ["DrivingAccuracy"] = Pct(driving.Count(h => h.FairwayHit), driving.Count),
+            ["Low9HoleScore"] = Z(Low(9)),
+            ["Low18HoleScore"] = Z(Low(18)),
+            ["High9HoleScore"] = Z(High(9)),
+            ["High18HoleScore"] = Z(High(18)),
+            ["EarliestRound"] = rounds.Count == 0 ? null : rounds.Min(r => r.PlayedOn).DayNumber,
+            ["LatestRound"] = rounds.Count == 0 ? null : rounds.Max(r => r.PlayedOn).DayNumber,
+        };
+    }
+
+    private static IReadOnlyList<Spec> FigureSpecs(
+        Dictionary<string, double?> newValues,
+        Dictionary<string, double?> golftrackDefinition,
+        Dictionary<string, double?> ruleDefinition,
+        Func<string, IntendedRule[]> ruleFor) =>
+        newValues
+            .Select(kv =>
+            {
+                var kind = kv.Key switch
+                {
+                    "ScoringAvg9" or "ScoringAvg18" or "PuttingAvg" => ValueKind.Average,
+                    "GIR" or "DrivingAccuracy" => ValueKind.Percent,
+                    "RelatedToPar" => ValueKind.ToPar,
+                    "EarliestRound" or "LatestRound" => ValueKind.Date,
+                    _ => ValueKind.Count,
+                };
+                var rules = ruleFor(kv.Key);
+                var note = kv.Key == "RoundsPlayed" ? ComputedHere : null;
+                return rules.Length == 0
+                    ? Plain(kv.Key, kind, kv.Value, note)
+                    : Ruled(kv.Key, kind, kv.Value, rules, golftrackDefinition[kv.Key], ruleDefinition[kv.Key], note);
+            })
+            .ToList();
 
     // ---- Comparison ----
 
     private static ParitySection Section(
         string title, LegacyResult legacy, IReadOnlyDictionary<string, object?>? row, IReadOnlyList<Spec> specs, bool newIsEmpty,
-        string? note = null)
+        string? note = null, bool noRowExpected = false)
     {
         if (legacy.Error is not null)
         {
             return new ParitySection(
                 title, legacy.Procedure,
-                [new ParityRow("(procedure)", ValueKind.Count, null, null, Verdict.NotCompared, Note: $"golftrack procedure failed: {legacy.Error}")],
+                [new ParityRow("(procedure)", ValueKind.Count, null, null, Verdict.Missing, [], $"golftrack procedure failed: {legacy.Error}")],
                 note);
         }
 
         if (row is null)
         {
-            // Every new number is still shown; without a golftrack row none of them can match.
-            var verdict = newIsEmpty ? Verdict.NotCompared : Verdict.Unexplained;
+            // Every new number is still shown. Without a golftrack row nothing matches; it is intended only when
+            // golftrack's definition gives no row (all rounds moved away) and the new value is the rules' value.
             return new ParitySection(
                 title, legacy.Procedure,
-                specs.Select(s => new ParityRow(s.Column, s.Kind, null, s.New, verdict, Note: "golftrack returned no row")).ToList(),
+                specs.Select(s =>
+                {
+                    var intended = noRowExpected && s.Rules.Count > 0 && Same(s.New, s.RuleDefinition, s.Kind);
+                    var verdict = intended ? Verdict.Intended : newIsEmpty ? Verdict.NotCompared : Verdict.Unexplained;
+                    return new ParityRow(s.Column, s.Kind, null, s.New, verdict, intended ? s.Rules : [], JoinNotes("golftrack returned no row", s.Note));
+                }).ToList(),
                 note);
         }
 
@@ -308,15 +448,20 @@ public static class ParityComparer
         {
             if (!row.TryGetValue(spec.Column, out var raw))
             {
-                rows.Add(new ParityRow(spec.Column, spec.Kind, null, spec.New, Verdict.NotCompared, Note: "column missing in golftrack"));
+                rows.Add(new ParityRow(spec.Column, spec.Kind, null, spec.New, Verdict.Missing, [], JoinNotes("column missing in golftrack", spec.Note)));
                 continue;
             }
 
             var golftrack = Read(raw, spec.Kind);
-            var verdict = Same(golftrack, spec.New, spec.Kind) ? Verdict.Match
-                : spec.Rule is not null && Same(golftrack, spec.LegacyDefinition, spec.Kind) ? Verdict.Intended
-                : Verdict.Unexplained;
-            rows.Add(new ParityRow(spec.Column, spec.Kind, golftrack, spec.New, verdict, verdict == Verdict.Intended ? spec.Rule : null, spec.Note));
+            if (golftrack is null && raw is not null)
+            {
+                rows.Add(new ParityRow(spec.Column, spec.Kind, null, spec.New, Verdict.NotCompared, [],
+                    JoinNotes($"unparseable golftrack value: {raw}", spec.Note)));
+                continue;
+            }
+
+            var verdict = Judge(golftrack, spec.New, spec.Kind, spec.Rules, spec.LegacyDefinition, spec.RuleDefinition);
+            rows.Add(new ParityRow(spec.Column, spec.Kind, golftrack, spec.New, verdict, verdict == Verdict.Intended ? spec.Rules : [], spec.Note));
         }
 
         var compared = specs.Select(s => s.Column).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -324,17 +469,19 @@ public static class ParityComparer
         {
             var value = Number(raw);
             var kind = raw is int or long or short or byte ? ValueKind.Count : ValueKind.Average;
-            rows.Add(new ParityRow(column, kind, value, null, Verdict.NotCompared,
-                Note: value is null && raw is not null ? $"no counterpart; golftrack: {raw}" : "no counterpart"));
+            rows.Add(new ParityRow(column, kind, value, null, Verdict.NotCompared, [],
+                value is null && raw is not null ? $"no counterpart; golftrack: {raw}" : "no counterpart"));
         }
 
         return new ParitySection(title, legacy.Procedure, rows, note);
     }
 
+    private static string? JoinNotes(string first, string? second) => second is null ? first : $"{first}; {second}";
+
     private static bool Same(double? a, double? b, ValueKind kind) =>
         a is null || b is null
             ? a is null && b is null
-            : Math.Abs(a.Value - b.Value) <= (kind is ValueKind.Average or ValueKind.Percent ? Rounding + Exact : Exact);
+            : Math.Abs(a.Value - b.Value) <= (kind is ValueKind.Average or ValueKind.Percent ? Tolerance + Exact : Exact);
 
     private static double? Read(object? raw, ValueKind kind) => kind switch
     {
@@ -355,24 +502,60 @@ public static class ParityComparer
         _ => null,
     };
 
+    private static int ToPar(HoleSummary h) => h.Score - h.Par;
+
+    private static int Score(RoundData r) => r.Holes.Sum(h => h.Score);
+
+    private static int Putts(RoundData r) => r.Holes.Sum(h => h.Putts);
+
     private static double? Percent(Ratio ratio) => ratio.Value * 100;
 
-    private static double AverageOrZero(IEnumerable<int> values) => values.ToList() is { Count: > 0 } list ? list.Average() : 0;
+    private static double? Pct(int numerator, int denominator) => denominator == 0 ? null : 100.0 * numerator / denominator;
 
-    /// <param name="LegacyDefinition">The column computed on the imported data with golftrack's definition (only with a rule).</param>
+    private static double? Avg(IEnumerable<int> values) => values.ToList() is { Count: > 0 } list ? list.Average() : null;
+
+    private static int MinOrZero(IEnumerable<RoundData> rounds) => rounds.Select(Score).DefaultIfEmpty().Min();
+
+    private static int MaxOrZero(IEnumerable<RoundData> rounds) => rounds.Select(Score).DefaultIfEmpty().Max();
+
+    private static Spec Plain(string column, ValueKind kind, double? newValue, string? note = null) =>
+        new(column, kind, newValue, [], null, null, note);
+
+    private static Spec Ruled(
+        string column, ValueKind kind, double? newValue, IntendedRule[] rules, double? legacyDefinition, double? ruleDefinition, string? note = null) =>
+        new(column, kind, newValue, rules, legacyDefinition, ruleDefinition, note);
+
+    /// <param name="LegacyDefinition">The column computed here on the imported data with golftrack's definition.</param>
+    /// <param name="RuleDefinition">The column computed here, independently of the domain, with the rules' definition.</param>
     private sealed record Spec(
-        string Column, ValueKind Kind, double? New, IntendedRule? Rule = null, double? LegacyDefinition = null, string? Note = null);
+        string Column, ValueKind Kind, double? New, IReadOnlyList<IntendedRule> Rules, double? LegacyDefinition, double? RuleDefinition, string? Note);
 
-    private sealed class YearData(IReadOnlyList<RoundData> rounds, IReadOnlyDictionary<Guid, LegacyRound> legacyRounds)
+    private sealed class Rounds(IReadOnlyList<RoundData> rounds, ParityLegacyRounds legacy)
     {
-        public IReadOnlyList<RoundData> Rounds { get; } = rounds;
+        public IReadOnlyList<RoundData> All { get; } = rounds;
 
         public IReadOnlyList<HoleSummary> Holes { get; } = rounds.SelectMany(r => r.Holes).ToList();
 
         public bool Empty => Holes.Count == 0;
 
+        public int? HolesPlayed(RoundData r) => legacy.Rounds.TryGetValue(r.Id, out var l) ? l.HolesPlayed : null;
+
+        public int? StoredScore(RoundData r) => legacy.Rounds.TryGetValue(r.Id, out var l) ? l.Score : null;
+
         /// <summary>golftrack's 9/18 classification: the round's HolesPlayed field (scores still from the imported holes).</summary>
-        public IReadOnlyList<RoundData> ByHolesPlayed(int holesPlayed) =>
-            Rounds.Where(r => legacyRounds.TryGetValue(r.Id, out var l) && l.HolesPlayed == holesPlayed).ToList();
+        public IReadOnlyList<RoundData> ByHolesPlayed(int holesPlayed) => All.Where(r => HolesPlayed(r) == holesPlayed).ToList();
+
+        /// <summary>The new classification, recomputed here: the number of holes recorded.</summary>
+        public IReadOnlyList<RoundData> ByLength(int holes) => All.Where(r => r.Holes.Count == holes).ToList();
+
+        /// <summary>Imported on another tee than the golftrack round's own (moved to the tee of its holes).</summary>
+        public bool IsMoved(RoundData r) =>
+            legacy.Rounds.TryGetValue(r.Id, out var l) && DeterministicIds.For("Tee", l.TeeId) != r.TeeId;
+
+        /// <summary>(course, tee name) of the golftrack round's own tee.</summary>
+        public (Guid, string)? LegacyTeeKey(RoundData r) =>
+            legacy.Rounds.TryGetValue(r.Id, out var l) && legacy.Tees.TryGetValue(l.TeeId, out var t)
+                ? (DeterministicIds.For("Course", t.CourseId), t.Name.Trim())
+                : null;
     }
 }
