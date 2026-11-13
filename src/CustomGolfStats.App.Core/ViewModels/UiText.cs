@@ -77,6 +77,10 @@ public static class UiText
     public const string SignInError = "Something went wrong signing in. Please try again.";
 
     // ---- courses ----
+    public const string StartDistanceMissing = "Enter the distance the shot started from.";
+    public static string HoleParMissing(int hole) => $"Enter the par for hole {hole}.";
+    public static string HoleYardageMissing(int hole) => $"Enter the yardage for hole {hole}.";
+    public static string HoleStrokeIndexMissing(int hole) => $"Enter the stroke index for hole {hole}.";
     public const string CourseNameMissing = "Enter the course name.";
     public const string TeeNameMissing = "Enter the tee name.";
     public const string DefaultTeeName = "White";

@@ -198,8 +198,15 @@ public sealed partial class StartRoundViewModel(
     {
         try
         {
-            using var cts = new CancellationTokenSource(WeatherTimeout);
             double? lat = course.Latitude, lon = course.Longitude;
+            if (lat is null || lon is null)
+            {
+                // The permission prompt waits for the golfer; only the reading and the request below are time limited.
+                if (!await location.RequestAccessAsync(CancellationToken.None))
+                    return;
+            }
+
+            using var cts = new CancellationTokenSource(WeatherTimeout);
             if (lat is null || lon is null)
             {
                 var point = await location.GetCoarseLocationAsync(cts.Token).WaitAsync(WeatherTimeout);

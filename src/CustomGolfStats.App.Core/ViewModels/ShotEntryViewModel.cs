@@ -68,7 +68,8 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
 
     // ---- the shot being entered ----
     [ObservableProperty] private Lie _startLie = Lie.Tee;
-    [ObservableProperty] private int _startDistance;
+    /// <summary>Null while the box is empty: a shot cannot be added until a distance is entered.</summary>
+    [ObservableProperty] private int? _startDistance;
     [ObservableProperty] private Club _club = Club.Driver;
     [ObservableProperty] private ShotType _shotType = ShotType.Tee;
     [ObservableProperty] private Lie _endLie = Lie.Fairway;
@@ -277,7 +278,8 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
             return;
         // Moving on or off the green changes the unit. Keep the physical distance (15 yd becomes 45 ft) rather than the digits,
         // so a distance typed before choosing the lie is not silently wrong and nothing the golfer typed is thrown away.
-        StartDistance = DistanceUnits.Convert(StartDistance, oldValue, newValue);
+        if (StartDistance is { } typed)
+            StartDistance = DistanceUnits.Convert(typed, oldValue, newValue);
         ApplyDefaultsForStartLie();
     }
 
@@ -334,8 +336,13 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
     private async Task AddShotAsync()
     {
         DraftErrors.Clear();
+        if (StartDistance is not { } startDistance)
+        {
+            DraftErrors.Add(UiText.StartDistanceMissing);
+            return;
+        }
         var index = EditingIndex ?? Shots.Count;
-        var shot = new Shot(index + 1, StartLie, StartDistance, Club, ShotType, EndLie, IsHoled ? null : EndDistance, Direction, Shape, PenaltyStrokes);
+        var shot = new Shot(index + 1, StartLie, startDistance, Club, ShotType, EndLie, IsHoled ? null : EndDistance, Direction, Shape, PenaltyStrokes);
 
         var candidate = Shots.Select(s => s.Shot).ToList();
         if (EditingIndex is { } edit)

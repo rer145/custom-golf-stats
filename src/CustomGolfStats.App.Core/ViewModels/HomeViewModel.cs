@@ -103,7 +103,8 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
         {
             IsSyncing = false;
         }
-        await LoadAsync();
+        // The list refresh must not throw either: HomePage starts this command without awaiting it.
+        await TryAsync(LoadAsync);
     }
 
     /// <summary>Shows a sync result: the status line and any new notices.</summary>

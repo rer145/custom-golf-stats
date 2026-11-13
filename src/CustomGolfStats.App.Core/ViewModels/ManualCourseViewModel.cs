@@ -16,9 +16,10 @@ namespace CustomGolfStats.App.Core.ViewModels;
 public sealed partial class ManualHoleEntry(int number) : ObservableObject
 {
     public int Number { get; } = number;
-    [ObservableProperty] private int _par = 4;
-    [ObservableProperty] private int _yardage = 350;
-    [ObservableProperty] private int _strokeIndex = number;
+    // Null while the golfer has cleared the box; Validate reports it.
+    [ObservableProperty] private int? _par = 4;
+    [ObservableProperty] private int? _yardage = 350;
+    [ObservableProperty] private int? _strokeIndex = number;
 }
 
 /// <summary>Create a course by hand, offline. It gets client-generated ids, is saved as pending and goes to the server on the next sync.</summary>
@@ -68,7 +69,19 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
         TooLong(Region, CourseLimits.MaxRegionLength, errors);
         TooLong(Country, CourseLimits.MaxCountryLength, errors);
 
-        var layout = Holes.Select(h => new HoleInfo(h.Number, h.Par, h.Yardage, h.StrokeIndex)).ToList();
+        foreach (var h in Holes)
+        {
+            if (h.Par is null)
+                errors.Add(UiText.HoleParMissing(h.Number));
+            if (h.Yardage is null)
+                errors.Add(UiText.HoleYardageMissing(h.Number));
+            if (h.StrokeIndex is null)
+                errors.Add(UiText.HoleStrokeIndexMissing(h.Number));
+        }
+        if (Holes.Any(h => h.Par is null || h.Yardage is null || h.StrokeIndex is null))
+            return errors; // the layout check needs every number
+
+        var layout = Holes.Select(h => new HoleInfo(h.Number, h.Par!.Value, h.Yardage!.Value, h.StrokeIndex!.Value)).ToList();
         errors.AddRange(CourseValidator.Validate(ToDecimalRating(Rating), Slope, layout).Select(UiText.Describe));
         return errors;
     }
@@ -101,7 +114,7 @@ public sealed partial class ManualCourseViewModel(LocalDb db, IClock clock, INav
         var courseId = Guid.NewGuid();
         var teeId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
-        var holes = Holes.Select(h => new TeeHoleRow { TeeVersionId = versionId, Number = h.Number, Par = h.Par, Yardage = h.Yardage, StrokeIndex = h.StrokeIndex }).ToList();
+        var holes = Holes.Select(h => new TeeHoleRow { TeeVersionId = versionId, Number = h.Number, Par = h.Par!.Value, Yardage = h.Yardage!.Value, StrokeIndex = h.StrokeIndex!.Value }).ToList();
         var version = new TeeVersionRow
         {
             // In effect for every date, like the first version the API creates for a tee.

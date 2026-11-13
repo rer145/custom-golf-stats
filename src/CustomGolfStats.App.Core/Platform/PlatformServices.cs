@@ -13,6 +13,10 @@ public sealed record GeoPoint(double Latitude, double Longitude);
 
 public interface ILocationOnce
 {
+    /// <summary>Asks for (coarse, when-in-use) location permission if it was never asked, and says whether it is granted. Waits
+    /// for the golfer's answer, however long that takes: callers start their own time limits only after this.</summary>
+    Task<bool> RequestAccessAsync(CancellationToken ct);
+
     /// <summary>One coarse location reading, or null when unavailable or not permitted. No tracking.</summary>
     Task<GeoPoint?> GetCoarseLocationAsync(CancellationToken ct);
 }

@@ -241,6 +241,37 @@ public class StartRoundViewModelTests
     }
 
     [Fact]
+    public async Task A_slow_location_permission_answer_does_not_use_up_the_weather_time()
+    {
+        var (s, _, loc) = await OpenWithFakesAsync(lat: null, lon: null);
+        await using var _s = s;
+        s.Vm.WeatherTimeout = TimeSpan.FromMilliseconds(300);
+        loc.Point = new GeoPoint(40.1, -75.2);
+        loc.AccessDelay = TimeSpan.FromMilliseconds(900); // the golfer reads the permission prompt
+
+        var id = await StartedRoundIdAsync(s);
+        await s.Vm.WeatherTask;
+
+        Assert.Equal(1, loc.AccessRequests);
+        Assert.Equal("Sunny", (await s.Rig.Db.Rounds.GetAsync(id))!.Round.WeatherConditions);
+    }
+
+    [Fact]
+    public async Task Location_permission_refused_means_no_reading_and_no_weather()
+    {
+        var (s, _, loc) = await OpenWithFakesAsync(lat: null, lon: null);
+        await using var _s = s;
+        loc.Point = new GeoPoint(40.1, -75.2);
+        loc.Granted = false;
+
+        await StartedRoundIdAsync(s);
+        await s.Vm.WeatherTask;
+
+        Assert.Equal(0, loc.Calls);
+        Assert.Empty(s.Server.To("GET", "/weather"));
+    }
+
+    [Fact]
     public async Task No_location_means_no_weather_request_and_the_round_still_starts()
     {
         var (s, _, loc) = await OpenWithFakesAsync(lat: null, lon: null);

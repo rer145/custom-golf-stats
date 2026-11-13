@@ -54,6 +54,17 @@ public sealed class FakeLocation : ILocationOnce
 {
     public GeoPoint? Point { get; set; }
     public int Calls { get; private set; }
+    public bool Granted { get; set; } = true;
+    public TimeSpan AccessDelay { get; set; }
+    public int AccessRequests { get; private set; }
+
+    public async Task<bool> RequestAccessAsync(CancellationToken ct)
+    {
+        AccessRequests++;
+        if (AccessDelay > TimeSpan.Zero)
+            await Task.Delay(AccessDelay, ct);
+        return Granted;
+    }
 
     public Task<GeoPoint?> GetCoarseLocationAsync(CancellationToken ct)
     {
