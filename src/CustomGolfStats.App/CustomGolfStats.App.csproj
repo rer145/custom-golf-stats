@@ -47,6 +47,18 @@
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);UHR001;MT0079</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
+  <!--
+    iOS Release (built in CI on a GitHub macOS runner, see .github/workflows/mobile.yml): trim only the platform SDK
+    assemblies, like Debug. The app's own assemblies, App.Core and the generated API client stay whole (they use reflection
+    for sqlite-net and System.Text.Json), so the trim analysis warnings they raise are about code the trimmer never removes;
+    they are suppressed rather than turned into errors by TreatWarningsAsErrors. Revisit with a source-generated
+    JsonSerializerContext if full trimming is ever wanted. Verify on a device via TestFlight (phase 6).
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Release'">
+    <MtouchLink>SdkOnly</MtouchLink>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+  </PropertyGroup>
+
   <!-- Simulator builds are signed ad hoc so the Keychain entitlement (Platforms/iOS/Entitlements.plist) applies without a
        developer certificate. Device builds use a real signing identity (CodesignKey / provisioning profile). -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug' and !$(RuntimeIdentifier.StartsWith('ios-'))">
