@@ -15,6 +15,9 @@ public sealed partial class ShotEntryPage : RoutePage
 
     protected override Task LoadAsync(object? parameter) => ViewModel.LoadAsync((HoleArgs)parameter!);
 
+    public static Visibility EntryVisible(bool complete, int? editingIndex) =>
+        !complete || editingIndex is not null ? Visibility.Visible : Visibility.Collapsed;
+
     private void OnShotClick(object sender, ItemClickEventArgs e) => ViewModel.EditShotCommand.Execute(e.ClickedItem);
 
     private void OnDeleteShot(object sender, RoutedEventArgs e)

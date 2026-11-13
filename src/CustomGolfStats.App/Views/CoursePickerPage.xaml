@@ -56,7 +56,8 @@
                   </Grid.ColumnDefinitions>
                   <StackPanel VerticalAlignment="Center" Spacing="2">
                     <TextBlock Text="{x:Bind Name}" Style="{StaticResource BrandTextBodyStrongStyle}" />
-                    <TextBlock Text="{x:Bind local:Display.Place(ClubName, City, Region)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+                    <TextBlock Text="{x:Bind local:Display.Place(ClubName, City, Region)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}"
+                               Visibility="{x:Bind local:Display.PlaceVisibility(ClubName, City, Region)}" />
                   </StackPanel>
                   <Button Grid.Column="1" Click="OnToggleFavorite" Style="{StaticResource BrandIconButtonStyle}"
                           AutomationProperties.Name="{x:Bind local:Display.FavoriteName(IsFavorite)}">

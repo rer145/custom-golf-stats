@@ -19,5 +19,5 @@ public sealed partial class OverallStatsPage : RoutePage
     public static IReadOnlyList<Bar> Bars9(SeasonSection? season) => Display.Bars(season?.Histogram9);
     public static string HolesText(OverallTiles? tiles) => tiles is null ? "To par" : $"To par over {Display.Holes(tiles.HolesPlayed)}";
     public static string ResultLine(DateOnly playedOn, int holes, int putts, Ratio gir) =>
-        $"{Display.Date(playedOn)}  ·  {Display.Holes(holes)}  ·  {putts} putts  ·  GIR {Display.Percent(gir)}";
+        $"{Display.Date(playedOn)}  ·  {Display.Holes(holes)}  ·  {putts} putt{(putts == 1 ? "" : "s")}  ·  GIR {Display.Percent(gir)}";
 }

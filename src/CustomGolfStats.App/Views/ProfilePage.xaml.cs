@@ -11,8 +11,8 @@ public sealed partial class ProfilePage : RoutePage
 
     public ProfileViewModel ViewModel { get; } = Resolve<ProfileViewModel>();
 
-    /// <summary>The API's unit values.</summary>
-    public static IReadOnlyList<string> UnitChoices { get; } = ["Imperial", "Metric"];
+    /// <summary>The API's distance unit values (DistanceUnits).</summary>
+    public static IReadOnlyList<string> UnitChoices { get; } = ["Yards", "Meters"];
 
     protected override Task LoadAsync(object? parameter) => ViewModel.LoadAsync();
 }

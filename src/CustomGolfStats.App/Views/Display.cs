@@ -82,6 +82,9 @@ public static class Display
         return string.Join("  ·  ", new[] { club, where }.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
+    public static Visibility PlaceVisibility(string? club, string? city, string? region) =>
+        Place(club, city, region).Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
     public static string FavoriteGlyph(bool favorite) => favorite ? "\uE735" : "\uE734";
     public static string FavoriteName(bool favorite) => favorite ? "Remove from favorites" : "Add to favorites";
     public static string ImportText(bool alreadyImported) => alreadyImported ? "Use" : "Import";

@@ -39,6 +39,8 @@
       <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
       <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
       <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
+      <!-- Round header band: Fairway Ink on light. -->
+      <StaticResource x:Key="BrandRoundHeaderBandBrush" ResourceKey="BrandPaletteInkBrush" />
       <!-- Cards: 1 px border on light. -->
       <StaticResource x:Key="BrandCardBorderBrush" ResourceKey="BrandBorderBrush" />
     </ResourceDictionary>
@@ -72,6 +74,8 @@
       <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
       <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
       <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
+      <!-- Round header band: the page is already Fairway Ink on dark, so the band lifts to the dark surface to stay a band. -->
+      <StaticResource x:Key="BrandRoundHeaderBandBrush" ResourceKey="BrandSurfaceBrush" />
       <!-- Cards: no border on dark (BRAND.md section 5). -->
       <SolidColorBrush x:Key="BrandCardBorderBrush" Color="Transparent" />
       <!-- Focused inputs underline in the brand primary instead of the system accent. -->
@@ -180,7 +184,7 @@
 
   <!-- Round header band: Fairway Ink (surfaceInverse on light, the dark surface on dark) with the score in statXL. -->
   <Style x:Key="BrandRoundHeaderBandStyle" TargetType="Border">
-    <Setter Property="Background" Value="{StaticResource BrandPaletteInkBrush}" />
+    <Setter Property="Background" Value="{ThemeResource BrandRoundHeaderBandBrush}" />
     <Setter Property="Padding" Value="20,16,20,20" />
   </Style>
   <Style x:Key="BrandRoundHeaderScoreStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatXLStyle}">

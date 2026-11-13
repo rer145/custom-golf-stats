@@ -74,8 +74,9 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <!-- The shot being entered -->
-        <Border Style="{StaticResource BrandCardStyle}" Padding="12">
+        <!-- The shot being entered (hidden once the hole is holed, unless a shot is being edited) -->
+        <Border Style="{StaticResource BrandCardStyle}" Padding="12"
+                Visibility="{x:Bind local:ShotEntryPage.EntryVisible(ViewModel.IsComplete, ViewModel.EditingIndex), Mode=OneWay}">
           <StackPanel Spacing="8">
             <TextBlock Text="{x:Bind local:Display.ShotHeading(ViewModel.EditingIndex, ViewModel.Shots.Count), Mode=OneWay}"
                        Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />

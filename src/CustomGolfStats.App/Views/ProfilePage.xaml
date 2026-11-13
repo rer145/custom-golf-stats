@@ -39,15 +39,9 @@
           <ComboBox Grid.Column="1" Header="Units" ItemsSource="{x:Bind local:ProfilePage.UnitChoices}" SelectedItem="{Binding Units, Mode=TwoWay}"
                     HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" />
         </Grid>
-        <Grid ColumnSpacing="8">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <Button Content="Save profile" Command="{x:Bind ViewModel.SaveProfileCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
-          <TextBlock Grid.Column="1" Text="Saved" VerticalAlignment="Center" Style="{StaticResource BrandTextCaptionStyle}" Foreground="{ThemeResource BrandPositiveBrush}"
-                     Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsSaved), Mode=OneWay}" />
-        </Grid>
+        <Button Content="Save profile" Command="{x:Bind ViewModel.SaveProfileCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+        <TextBlock Text="Profile saved." Style="{StaticResource BrandTextCaptionStyle}" Foreground="{ThemeResource BrandPositiveBrush}"
+                   Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsSaved), Mode=OneWay}" />
         <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
                    Style="{StaticResource BrandTextErrorStyle}" />
 
@@ -65,7 +59,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <TextBox InputScope="Number" Header="New index" PlaceholderText="12.4" Text="{Binding NewHandicapIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="Number" Header="New index" PlaceholderText="e.g. 12.4" Text="{Binding NewHandicapIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
           <CalendarDatePicker Grid.Column="1" Header="Effective" Date="{Binding NewHandicapDate, Mode=TwoWay, Converter={StaticResource DateOffset}}"
                               HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" DateFormat="{}{day.integer} {month.abbreviated} {year.full}" />
           <Button Grid.Column="2" Content="+ Add" Command="{x:Bind ViewModel.AddHandicapCommand}" Style="{StaticResource BrandAccentButtonStyle}" VerticalAlignment="Bottom" />
