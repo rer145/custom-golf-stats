@@ -13,6 +13,8 @@ public sealed class MigrationUserException(string message) : Exception(message);
 /// <param name="CoursesReused">Mapped golftrack courses that were kept as they are because something else uses them.</param>
 /// <param name="TeesWritten">Tees written, on new courses and (missing tees only) on reused ones.</param>
 /// <param name="RoundsRemoved">Previously imported rounds cleared before writing (the same for handicap entries and courses).</param>
+/// <param name="RoundsRemovedFromOtherGolfers">Of <paramref name="RoundsRemoved"/>, those imported from a different golftrack
+/// golfer than this run's (an earlier run with another --golfer-id).</param>
 public sealed record ImportCounts(
     int CoursesWritten,
     int CoursesReused,
@@ -23,7 +25,8 @@ public sealed record ImportCounts(
     int HandicapEntries,
     int RoundsRemoved,
     int HandicapEntriesRemoved,
-    int CoursesRemoved);
+    int CoursesRemoved,
+    int RoundsRemovedFromOtherGolfers = 0);
 
 public sealed record ImportResult(Guid AccountId, int GolferId, bool Committed, ImportCounts Counts, MappedImport Mapped);
 
@@ -57,13 +60,17 @@ public sealed class Importer(GolftrackReader source, AppDbContext target, TimePr
 
         await using var transaction = await target.Database.BeginTransactionAsync(cancellationToken);
 
-        var importableRoundIds = allIds.RoundIds.Select(id => DeterministicIds.For("Round", id)).ToList();
+        var golferByRoundId = allIds.RoundGolfers.ToDictionary(r => DeterministicIds.For("Round", r.Key), r => r.Value);
+        var importableRoundIds = golferByRoundId.Keys.ToList();
         var importableHandicapIds = allIds.HandicapIds.Select(id => DeterministicIds.For("HandicapHistory", id)).ToList();
         var importableCourseIds = allIds.CourseIds.Select(id => DeterministicIds.For("Course", id)).ToList();
 
-        var roundsRemoved = await target.Rounds
+        var previousRoundIds = await target.Rounds
             .Where(r => r.AccountId == accountId && importableRoundIds.Contains(r.Id))
-            .ExecuteDeleteAsync(cancellationToken);
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+        var roundsRemoved = await target.Rounds.Where(r => previousRoundIds.Contains(r.Id)).ExecuteDeleteAsync(cancellationToken);
+        var removedFromOtherGolfers = previousRoundIds.Count(id => golferByRoundId[id] != golferId);
         var handicapsRemoved = await target.HandicapEntries
             .Where(h => h.AccountId == accountId && importableHandicapIds.Contains(h.Id))
             .ExecuteDeleteAsync(cancellationToken);
@@ -102,7 +109,8 @@ public sealed class Importer(GolftrackReader source, AppDbContext target, TimePr
             mapped.HandicapEntries.Count,
             roundsRemoved,
             handicapsRemoved,
-            coursesRemoved);
+            coursesRemoved,
+            removedFromOtherGolfers);
         return new ImportResult(accountId, golferId, !dryRun, counts, mapped);
     }
 

@@ -474,6 +474,65 @@ public sealed class GolftrackMapperTests
     }
 
     [Fact]
+    public void Round_whose_holes_are_all_on_another_tee_of_the_course_is_imported_on_that_tee()
+    {
+        var course = _legacy.Course("Course #1");
+        var old = _legacy.Tee(course, "Course #1 - 2020");
+        var oldHoles = _legacy.Holes(old);
+        var current = _legacy.Tee(course, "Course #1 - 2022");
+        _legacy.Holes(current);
+        var round = _legacy.Round(current, new DateTime(2022, 7, 9));
+        _legacy.Details(round, oldHoles);
+
+        var result = Map();
+
+        var mapped = Assert.Single(result.Rounds);
+        Assert.Equal(DeterministicIds.For("TeeVersion", old.Id), mapped.TeeVersionId);
+        Assert.Equal(18, mapped.HoleResults.Count);
+        Assert.Equal(
+            new RoundTeeReplaced(round.Id, new DateOnly(2022, 7, 9), current.Id, "Course #1 - 2022", old.Id, "Course #1 - 2020"),
+            Assert.Single(result.Findings));
+    }
+
+    [Fact]
+    public void Round_whose_tee_has_no_holes_uses_the_holes_tee()
+    {
+        var course = _legacy.Course();
+        var old = _legacy.Tee(course, "Old");
+        var oldHoles = _legacy.Holes(old, 9);
+        var empty = _legacy.Tee(course, "Empty");
+        var round = _legacy.Round(empty);
+        _legacy.Details(round, oldHoles);
+
+        var result = Map();
+
+        Assert.Equal(DeterministicIds.For("TeeVersion", old.Id), Assert.Single(result.Rounds).TeeVersionId);
+        Assert.Single(result.Findings.OfType<RoundTeeReplaced>());
+    }
+
+    [Fact]
+    public void Round_with_holes_on_two_tees_or_another_course_is_still_skipped()
+    {
+        var course = _legacy.Course();
+        var white = _legacy.Tee(course, "White");
+        var whiteHoles = _legacy.Holes(white);
+        var red = _legacy.Tee(course, "Red");
+        var redHoles = _legacy.Holes(red);
+        var elsewhere = _legacy.Tee(_legacy.Course("Elsewhere"), "Blue");
+        var elsewhereHoles = _legacy.Holes(elsewhere);
+        var mixed = _legacy.Round(white);
+        _legacy.Details(mixed, whiteHoles.Take(9).Concat(redHoles.Skip(9)));
+        var otherCourse = _legacy.Round(white);
+        _legacy.Details(otherCourse, elsewhereHoles);
+
+        var result = Map();
+
+        Assert.Empty(result.Rounds);
+        Assert.Equal([mixed.Id, otherCourse.Id], result.Findings.OfType<RoundSkipped>().Select(f => f.LegacyRoundId));
+        Assert.Empty(result.Findings.OfType<RoundTeeReplaced>());
+    }
+
+    [Fact]
     public void Round_with_a_missing_tee_or_no_holes_is_skipped_and_reported()
     {
         var course = _legacy.Course();
@@ -575,6 +634,10 @@ public sealed class GolftrackMapperTests
     [InlineData("04:15:29", 255)]
     [InlineData("255", 255)]
     [InlineData(" 90 ", 90)]
+    [InlineData("2:11h", 131)]
+    [InlineData("4:00h", 240)]
+    [InlineData("4:00H", 240)]
+    [InlineData(" 3:45 h ", 225)]
     public void Duration_is_parsed(string duration, int expected)
     {
         var tee = _legacy.Tee(_legacy.Course());
@@ -596,6 +659,9 @@ public sealed class GolftrackMapperTests
     [InlineData("99999999:00")]
     [InlineData("35791395:00")]
     [InlineData("99999999999")]
+    [InlineData("4:00:00h")]
+    [InlineData("4h")]
+    [InlineData(":30h")]
     public void Unparseable_duration_is_dropped_and_reported(string duration)
     {
         var tee = _legacy.Tee(_legacy.Course());

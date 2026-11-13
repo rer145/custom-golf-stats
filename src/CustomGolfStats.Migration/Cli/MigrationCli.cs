@@ -78,7 +78,7 @@ public static class MigrationCli
 
             return await ImportAsync(
                 source, target, result.GetValue(golferOption), result.GetValue(emailOption)!, result.GetValue(dryRunOption),
-                Path.GetFullPath(result.GetValue(reportOption) ?? DefaultReportPath), output, error, redactor, token);
+                result.GetValue(reportOption) ?? DefaultReportPath, output, error, redactor, token);
         });
 
         return await parse.InvokeAsync(
@@ -94,12 +94,26 @@ public static class MigrationCli
         int golferId,
         string accountEmail,
         bool dryRun,
-        string reportPath,
+        string reportOption,
         TextWriter output,
         TextWriter error,
         SecretRedactor redactor,
         CancellationToken cancellationToken)
     {
+        string reportPath;
+        try
+        {
+            // Before importing, so a bad path costs nothing.
+            reportPath = Path.GetFullPath(reportOption);
+            Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            await error.WriteLineAsync(redactor.Redact($"Can't write the report to {reportOption}: {e.Message}"));
+            return UserError;
+        }
+
+        ImportResult? result = null;
         try
         {
             var options = new DbContextOptionsBuilder<AppDbContext>().UseAppDatabase(target).Options;
@@ -111,13 +125,18 @@ public static class MigrationCli
             }
 
             var importer = new Importer(new GolftrackReader(source), db, TimeProvider.System);
-            var result = await importer.RunAsync(golferId, accountEmail, dryRun, cancellationToken);
-
-            var markdown = MigrationReport.ToMarkdown(result, accountEmail, TimeProvider.System.GetUtcNow());
-            Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-            await File.WriteAllTextAsync(reportPath, markdown, cancellationToken);
+            result = await importer.RunAsync(golferId, accountEmail, dryRun, cancellationToken);
 
             var c = result.Counts;
+            if (c.RoundsRemovedFromOtherGolfers > 0)
+            {
+                await error.WriteLineAsync(string.Create(CultureInfo.InvariantCulture,
+                    $"Warning: cleared {c.RoundsRemovedFromOtherGolfers} previously imported rounds that came from a different golftrack golfer than {golferId}."));
+            }
+
+            var markdown = MigrationReport.ToMarkdown(result, accountEmail, TimeProvider.System.GetUtcNow());
+            await File.WriteAllTextAsync(reportPath, markdown, CancellationToken.None);
+
             await output.WriteLineAsync(string.Create(CultureInfo.InvariantCulture, $"""
                 {(result.Committed ? "Imported" : "Dry run: nothing was committed. Would import")} golftrack golfer {golferId} into {accountEmail.Trim()}:
                   {c.Rounds} rounds ({c.HoleResults} hole results), {c.HandicapEntries} handicap entries,
@@ -135,14 +154,19 @@ public static class MigrationCli
         }
         catch (OperationCanceledException)
         {
-            await error.WriteLineAsync("Cancelled. Nothing was committed.");
+            await error.WriteLineAsync(result is { Committed: true }
+                ? "Cancelled after the import was committed: the data is in the target, but the report may be missing."
+                : "Cancelled. Nothing was committed.");
             return Failure;
         }
 #pragma warning disable CA1031 // Any failure ends the run with exit code 1 and a redacted message (never a stack trace).
         catch (Exception e)
 #pragma warning restore CA1031
         {
-            await error.WriteLineAsync("Import failed: " + redactor.Redact(SecretRedactor.Describe(e)));
+            await error.WriteLineAsync(
+                (result is { Committed: true }
+                    ? "The import WAS committed, but writing the report failed: "
+                    : "Import failed, nothing was committed: ") + redactor.Redact(SecretRedactor.Describe(e)));
             return Failure;
         }
     }

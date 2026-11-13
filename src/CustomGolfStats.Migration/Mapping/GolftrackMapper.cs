@@ -70,13 +70,16 @@ public static class GolftrackMapper
         }
 
         var detailsByRound = data.RoundDetails.GroupBy(d => d.RoundId).ToDictionary(g => g.Key, g => g.OrderBy(d => d.Id).ToList());
-        var rounds = new List<(LegacyRound Legacy, Round Round)>();
+        var holesById = data.Holes.ToDictionary(h => h.Id);
+        var rounds = new List<(LegacyRound Legacy, int TeeId, Round Round)>();
         foreach (var legacyRound in data.Rounds.OrderBy(r => r.Id))
         {
-            var round = MapRound(data, legacyRound, tees, detailsByRound.GetValueOrDefault(legacyRound.Id) ?? [], accountId, now, findings);
+            var details = detailsByRound.GetValueOrDefault(legacyRound.Id) ?? [];
+            var teeId = TeeOfTheHoles(data, legacyRound, details, holesById, tees, findings);
+            var round = MapRound(data, legacyRound, teeId, tees, details, accountId, now, findings);
             if (round is not null)
             {
-                rounds.Add((legacyRound, round));
+                rounds.Add((legacyRound, teeId, round));
             }
         }
 
@@ -234,9 +237,46 @@ public static class GolftrackMapper
         return fallback;
     }
 
+    /// <summary>
+    /// The tee to import a round on: its own, unless every detail points at holes of exactly one other tee of the same
+    /// course (golftrack users versioned a tee by creating a new one, and some rounds kept the new tee but the old
+    /// holes). Then the holes' tee is used and reported.
+    /// </summary>
+    private static int TeeOfTheHoles(
+        LegacyData data,
+        LegacyRound legacy,
+        List<LegacyRoundDetail> details,
+        Dictionary<int, LegacyHole> holesById,
+        Dictionary<int, MappedTee> tees,
+        List<MigrationFinding> findings)
+    {
+        if (details.Count == 0 || !details.All(d => holesById.ContainsKey(d.HoleId)))
+        {
+            return legacy.TeeId;
+        }
+
+        var holeTees = details.Select(d => holesById[d.HoleId].TeeId).Distinct().ToList();
+        if (holeTees is not [var holesTeeId] || holesTeeId == legacy.TeeId || !tees.ContainsKey(holesTeeId))
+        {
+            return legacy.TeeId;
+        }
+
+        var roundTee = data.Tees.FirstOrDefault(t => t.Id == legacy.TeeId);
+        var holesTee = data.Tees.First(t => t.Id == holesTeeId);
+        if (roundTee is null || roundTee.CourseId != holesTee.CourseId)
+        {
+            return legacy.TeeId;
+        }
+
+        findings.Add(new RoundTeeReplaced(
+            legacy.Id, DateOnly.FromDateTime(legacy.PlayedOn), roundTee.Id, roundTee.Name, holesTee.Id, holesTee.Name));
+        return holesTee.Id;
+    }
+
     private static Round? MapRound(
         LegacyData data,
         LegacyRound legacy,
+        int teeId,
         Dictionary<int, MappedTee> tees,
         List<LegacyRoundDetail> details,
         Guid accountId,
@@ -244,9 +284,9 @@ public static class GolftrackMapper
         List<MigrationFinding> findings)
     {
         var playedOn = DateOnly.FromDateTime(legacy.PlayedOn);
-        if (!tees.TryGetValue(legacy.TeeId, out var tee))
+        if (!tees.TryGetValue(teeId, out var tee))
         {
-            findings.Add(new RoundSkipped(legacy.Id, playedOn, $"tee {legacy.TeeId} is missing or has no usable holes"));
+            findings.Add(new RoundSkipped(legacy.Id, playedOn, $"tee {teeId} is missing or has no usable holes"));
             return null;
         }
 
@@ -263,7 +303,7 @@ public static class GolftrackMapper
                 legacy.Id,
                 playedOn,
                 "hole " + string.Join(", ", missing.Select(d => d.HoleId.ToString(CultureInfo.InvariantCulture))) +
-                $" is missing or not on tee {legacy.TeeId}"));
+                $" is missing or not on tee {teeId}"));
             return null;
         }
 
@@ -367,7 +407,7 @@ public static class GolftrackMapper
     }
 
     /// <summary>
-    /// Minutes from <c>h:mm</c>, <c>hh:mm:ss</c> (seconds rounded to the nearest minute) or a plain number of minutes.
+    /// Minutes from <c>h:mm</c> (optionally followed by <c>h</c>, as in <c>2:11h</c>), <c>hh:mm:ss</c> (seconds rounded to the nearest minute) or a plain number of minutes.
     /// Anything else, a duration that isn't positive or one too large for an int, is dropped and reported; a blank
     /// duration is just null.
     /// </summary>
@@ -391,6 +431,12 @@ public static class GolftrackMapper
     private static int? ParseDuration(string text)
     {
         var parts = text.Split(':');
+        if (parts.Length == 2 && parts[1].TrimEnd() is [.. var withoutSuffix, 'h' or 'H'])
+        {
+            parts[0] = parts[0].Trim();
+            parts[1] = withoutSuffix.TrimEnd(); // "2:11h", golftrack's most common format
+        }
+
         if (parts.Length > 3 || !parts.All(p => p.Length > 0 && p.All(char.IsAsciiDigit)))
         {
             return null;
@@ -429,11 +475,11 @@ public static class GolftrackMapper
     }
 
     /// <summary>Rounds on the same date and tee with the same hole-by-hole scores (in playing order).</summary>
-    private static IEnumerable<MigrationFinding> DuplicateRounds(List<(LegacyRound Legacy, Round Round)> rounds) =>
+    private static IEnumerable<MigrationFinding> DuplicateRounds(List<(LegacyRound Legacy, int TeeId, Round Round)> rounds) =>
         rounds
             .GroupBy(r => (
                 r.Round.PlayedOn,
-                r.Legacy.TeeId,
+                r.TeeId,
                 Scores: string.Join(",", r.Round.HoleResults.Select(h => $"{h.HoleNumber}:{h.Score}"))))
             .Where(g => g.Count() > 1)
             .Select(g => new DuplicateRounds(g.Key.PlayedOn, g.Key.TeeId, g.Select(r => r.Legacy.Id).ToList()));

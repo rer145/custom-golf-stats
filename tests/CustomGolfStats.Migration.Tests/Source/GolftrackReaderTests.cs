@@ -154,6 +154,30 @@ public sealed class GolftrackReaderTests(MsSqlFixture sql) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Reads_the_tee_of_the_holes_a_round_played_when_it_is_not_the_rounds_tee()
+    {
+        var golfer = await _seed.GolferAsync();
+        var course = await _seed.CourseAsync("Course #1");
+        var old = await _seed.TeeAsync(course, "Course #1 - 2020", isActive: false);
+        var oldHoles = await _seed.HolesAsync(old);
+        var current = await _seed.TeeAsync(course, "Course #1 - 2022");
+        await _seed.HolesAsync(current);
+        var round = await _seed.RoundAsync(golfer, current, new DateTime(2022, 7, 9));
+        foreach (var hole in oldHoles)
+        {
+            await _seed.RoundDetailAsync(round, hole);
+        }
+
+        var data = await new GolftrackReader(_connectionString).ReadAsync(golfer, TestContext.Current.CancellationToken);
+        var mapped = GolftrackMapper.Map(data, Guid.NewGuid(), DateTimeOffset.UnixEpoch);
+
+        Assert.Equal([old, current], data.Tees.Select(t => t.Id));
+        Assert.Equal(36, data.Holes.Count);
+        Assert.Equal(DeterministicIds.For("TeeVersion", old), Assert.Single(mapped.Rounds).TeeVersionId);
+        Assert.Single(mapped.Findings.OfType<RoundTeeReplaced>());
+    }
+
+    [Fact]
     public async Task Unknown_golfer_reads_empty()
     {
         var data = await new GolftrackReader(_connectionString).ReadAsync(999, TestContext.Current.CancellationToken);

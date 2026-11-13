@@ -6,11 +6,21 @@ namespace CustomGolfStats.Migration.Source;
 /// Reads one golfer's data from golftrack with plain, parameterised <c>SELECT</c> statements (nothing else is ever run).
 /// Rounds and round details are read only when <c>IsActive = 1</c>. Every course, tee and hole those rounds play is read
 /// whatever its own <c>IsActive</c>: golftrack's Stats_* procedures ignore it there, and many played tees were
-/// deactivated later. Tees no active round plays are not read. Lookup tables are read whole (names only).
+/// deactivated later. "Played" means the round's tee or the tee of a hole its details point at. Tees no active round
+/// plays are not read. Lookup tables are read whole (names only).
 /// </summary>
 public sealed class GolftrackReader(string connectionString)
 {
-    private const string RoundTees = "SELECT r.TeeId FROM dbo.Round r WHERE r.GolferId = @golferId AND r.IsActive = 1";
+    // The tees the golfer's active rounds are on, plus the tees of the holes their active details point at (a round can
+    // be on a newer copy of a tee while its details still point at the old copy's holes).
+    private const string RoundTees = """
+        SELECT r.TeeId FROM dbo.Round r WHERE r.GolferId = @golferId AND r.IsActive = 1
+        UNION
+        SELECT h.TeeId FROM dbo.RoundDetail d
+        JOIN dbo.Round r ON r.Id = d.RoundId
+        JOIN dbo.Hole h ON h.Id = d.HoleId
+        WHERE r.GolferId = @golferId AND r.IsActive = 1 AND d.IsActive = 1
+        """;
 
     public async Task<LegacyData> ReadAsync(int golferId, CancellationToken cancellationToken = default)
     {
@@ -127,9 +137,11 @@ public sealed class GolftrackReader(string connectionString)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        var rounds = await QueryAsync(
+            connection, null, "SELECT Id, GolferId FROM dbo.Round", r => (Id: r.GetInt32(0), GolferId: r.GetInt32(1)), cancellationToken);
         return new LegacyIdSet(
             await QueryAsync(connection, null, "SELECT Id FROM dbo.Course", r => r.GetInt32(0), cancellationToken),
-            await QueryAsync(connection, null, "SELECT Id FROM dbo.Round", r => r.GetInt32(0), cancellationToken),
+            rounds.ToDictionary(r => r.Id, r => r.GolferId),
             await QueryAsync(connection, null, "SELECT Id FROM dbo.HandicapHistory", r => r.GetInt32(0), cancellationToken));
     }
 

@@ -30,6 +30,14 @@ public sealed record HoleOutOfRange(
     int LegacyTeeId, string CourseName, string TeeName, int LegacyHoleId, int HoleNumber, string Field, int Value)
     : MigrationFinding;
 
+/// <summary>
+/// A round whose details all point at holes of another tee of the same course than the round's own tee; it was imported
+/// on the holes' tee.
+/// </summary>
+public sealed record RoundTeeReplaced(
+    int LegacyRoundId, DateOnly PlayedOn, int RoundTeeId, string RoundTeeName, int HolesTeeId, string HolesTeeName)
+    : MigrationFinding;
+
 /// <summary>A round that was not imported: its tee or one of its holes is missing, or it has no hole details.</summary>
 public sealed record RoundSkipped(int LegacyRoundId, DateOnly PlayedOn, string Reason) : MigrationFinding;
 

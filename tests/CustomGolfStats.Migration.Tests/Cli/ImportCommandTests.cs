@@ -123,6 +123,47 @@ public sealed class ImportCommandTests(MsSqlFixture sql, PostgresFixture postgre
     }
 
     [Fact]
+    public async Task Report_failure_after_commit_says_the_import_was_committed()
+    {
+        Directory.CreateDirectory(_reportPath); // a directory where the report file should go: writing it fails
+
+        var (exitCode, _, error) = await RunAsync(Environment(), ImportArgs());
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("WAS committed", error, StringComparison.Ordinal);
+        await using var db = _scenario.CreateTargetContext();
+        Assert.Equal(4, await db.Rounds.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Invalid_report_path_exits_2_before_importing()
+    {
+        var (exitCode, _, error) = await RunAsync(
+            Environment(),
+            "import", "--golfer-id", "1", "--account-email", MigrationScenario.AccountEmail, "--report", "bad\0path.md");
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("Can't write the report", error, StringComparison.Ordinal);
+        await using var db = _scenario.CreateTargetContext();
+        Assert.Equal(0, await db.Rounds.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Importing_another_golfer_into_the_account_warns_about_the_rounds_it_clears()
+    {
+        Assert.Equal(0, (await RunAsync(Environment(), ImportArgs())).ExitCode);
+
+        var (exitCode, _, error) = await RunAsync(
+            Environment(),
+            "import", "--golfer-id", _scenario.OtherGolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Warning: cleared 4 previously imported rounds", error, StringComparison.Ordinal);
+        Assert.Contains("... of which from other golftrack golfers | 4 |", await File.ReadAllTextAsync(_reportPath, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Missing_account_exits_2_with_a_clear_message()
     {
         var (exitCode, _, error) = await RunAsync(

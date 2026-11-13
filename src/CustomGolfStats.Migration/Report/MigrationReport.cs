@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using CustomGolfStats.Api.Features.Courses;
 using CustomGolfStats.Migration.Import;
 
 namespace CustomGolfStats.Migration.Report;
@@ -36,6 +37,7 @@ public static class MigrationReport
                 ["Hole results", Num(c.HoleResults)],
                 ["Handicap entries", Num(c.HandicapEntries)],
                 ["Previously imported rounds cleared", Num(c.RoundsRemoved)],
+                ["... of which from other golftrack golfers", Num(c.RoundsRemovedFromOtherGolfers)],
                 ["Previously imported handicap entries cleared", Num(c.HandicapEntriesRemoved)],
                 ["Unused golftrack courses cleared", Num(c.CoursesRemoved)],
                 ["Findings", Num(findings.Count)],
@@ -65,6 +67,13 @@ public static class MigrationReport
         md.Paragraph("Not imported.");
         md.Table(["golftrack round", "Played on", "Reason"],
             findings.OfType<RoundSkipped>().Select(f => new[] { Num(f.LegacyRoundId), Date(f.PlayedOn), f.Reason }).ToList());
+
+        md.Heading("Rounds moved to the tee of their holes");
+        md.Paragraph("Every detail of these rounds points at holes of another tee of the same course; they were imported on that tee.");
+        md.Table(["golftrack round", "Played on", "Round's tee", "Holes' tee (used)"],
+            findings.OfType<RoundTeeReplaced>()
+                .Select(f => new[] { Num(f.LegacyRoundId), Date(f.PlayedOn), $"{f.RoundTeeName} ({Num(f.RoundTeeId)})", $"{f.HolesTeeName} ({Num(f.HolesTeeId)})" })
+                .ToList());
 
         md.Heading("Skipped tees");
         md.Table(["golftrack tee", "Course", "Tee", "Reason"],
@@ -125,7 +134,9 @@ public static class MigrationReport
                 .ToList());
 
         md.Heading("Holes outside the API's ranges");
-        md.Paragraph("Imported as golftrack has them (number 1-18, par 3-6 and yardage 0-1000 are what the API accepts on edit).");
+        md.Paragraph(
+            $"Imported as golftrack has them (number 1-{Num(CourseRules.MaxHoles)}, par {Num(CourseRules.MinPar)}-{Num(CourseRules.MaxPar)} " +
+            $"and yardage 0-{Num(CourseRules.MaxYardage)} are what the API accepts on edit).");
         md.Table(["golftrack tee", "Course", "Tee", "golftrack hole", "Hole", "Field", "Value"],
             findings.OfType<HoleOutOfRange>()
                 .Select(f => new[] { Num(f.LegacyTeeId), f.CourseName, f.TeeName, Num(f.LegacyHoleId), Num(f.HoleNumber), f.Field, Num(f.Value) })

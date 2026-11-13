@@ -34,6 +34,8 @@ public sealed class MigrationScenario
 
     public int GolferId { get; private set; }
 
+    public int OtherGolferId { get; private set; }
+
     public int PineValleyTeeId { get; private set; }
 
     public IReadOnlyList<int> PineValleyHoleIds { get; private set; } = [];
@@ -75,6 +77,7 @@ public sealed class MigrationScenario
         var seed = Seed;
         GolferId = await seed.GolferAsync("Ann");
         var bob = await seed.GolferAsync("Bob");
+        OtherGolferId = bob;
 
         var pineValley = await seed.CourseAsync("Pine Valley", latitude: 40.1m, longitude: -86.2m);
         PineValleyTeeId = await seed.TeeAsync(pineValley);

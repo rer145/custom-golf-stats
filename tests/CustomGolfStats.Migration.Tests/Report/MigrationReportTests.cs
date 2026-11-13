@@ -31,6 +31,7 @@ public sealed class MigrationReportTests
             new TeeSkipped(6, "Bare", "Black", "no holes"),
             new DuplicateTeeHoleNumber(7, 4, 70, [70, 71]),
             new HoleOutOfRange(8, "Wild", "Long", 80, 19, "Number", 19),
+            new RoundTeeReplaced(19, Day, 2192, "Course #1 - 2022", 1171, "Course #1 - 2020"),
             new RoundSkipped(9, Day, "no active hole details"),
             new UnknownRoundType(10, Day, 3, "Scramble"),
             new RoundValueDropped(11, Day, "Duration", "about four hours"),
@@ -53,6 +54,7 @@ public sealed class MigrationReportTests
                      "## Summary", "## Rounds per year", "## Skipped rounds", "## Skipped tees", "## Duplicate rounds",
                      "## Holes with zero putts", "## Defaulted ratings", "## Unknown round types", "## Dropped values",
                      "## Entry sequence fallbacks", "## Duplicate hole rows", "## Holes outside the API's ranges",
+                     "## Rounds moved to the tee of their holes",
                  })
         {
             Assert.Contains(heading, markdown, StringComparison.Ordinal);
@@ -60,6 +62,8 @@ public sealed class MigrationReportTests
 
         Assert.Contains("13, 14, 15", markdown, StringComparison.Ordinal);
         Assert.Contains("about four hours", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Course #1 - 2022 (2192) | Course #1 - 2020 (1171) |", markdown, StringComparison.Ordinal);
+        Assert.Contains("number 1-18, par 3-6 and yardage 0-1000", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("None.", markdown, StringComparison.Ordinal);
     }
 
