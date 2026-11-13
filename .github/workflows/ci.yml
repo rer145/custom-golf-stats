@@ -18,6 +18,10 @@ jobs:
       - run: dotnet test --solution CustomGolfStats.slnx --configuration Release
       # The build regenerates the OpenAPI document; fail if the committed copy is stale.
       - run: git diff --exit-code -- src/CustomGolfStats.Api.Client/openapi
+      # The app's theme resources are generated from the brand tokens; fail if the committed copy is stale.
+      # (On Linux the solution builds only the app's net10.0-desktop head; the iOS and Android heads build on macOS.)
+      - run: dotnet run tools/generate-uno-theme.cs
+      - run: git diff --exit-code -- src/CustomGolfStats.App/Themes/BrandTokens.xaml
 
   web:
     runs-on: ubuntu-latest
