@@ -8,6 +8,7 @@ import SearchBox from '../../components/courses/SearchBox.astro';
 import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { formText, notAForm, readForm } from '../../lib/forms';
+import { fields, formProblem } from '../../components/courses/problems';
 
 let q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 let importProblem: ApiProblem | null = null;
@@ -56,8 +57,8 @@ const place = (c: Schemas['ProviderSearchResultDto']) => [c.city, c.region, c.co
         button="Search"
         errors={fieldErrors(problem, 'query')}
       />
-      <Problem problem={importProblem} heading="The course wasn’t imported" />
-      {problem && Object.keys(problem.fieldErrors).length === 0 && <Problem problem={problem} />}
+      <Problem problem={formProblem(importProblem, () => false)} heading="The course wasn’t imported" />
+      <Problem problem={formProblem(problem, fields('query'))} />
 
       {
         results && (

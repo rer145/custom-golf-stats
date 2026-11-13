@@ -11,6 +11,7 @@ import { formText, notAForm, readForm } from '../../lib/forms';
 import { formatHandicapIndex } from '../../lib/format';
 import { formatDate, todayIso } from '../../components/courses/dates';
 import { parseHandicapIndex } from '../../components/profile/handicap';
+import { fields, formProblem } from '../../components/courses/problems';
 
 const GENDERS = [
   { value: 'Unspecified', label: 'Prefer not to say' },
@@ -115,7 +116,9 @@ if (values?.homeCourseId) {
 }
 
 const entries = handicap.ok ? handicap.data : [];
-const latest = entries[0];
+// The index in effect today: the newest entry dated on or before today (a future-dated entry isn't current yet).
+const today = todayIso();
+const latest = entries.find((e) => e.effectiveOn <= today);
 const email = profile?.email ?? Astro.locals.session?.email ?? '';
 const saved = Astro.url.searchParams.get('saved');
 const profileNotice = saved === 'profile' ? 'Profile saved.' : null;
@@ -137,7 +140,7 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
           values ? (
             <form class="form" method="post" action="/profile" novalidate>
               <input type="hidden" name="intent" value="profile" />
-              <Problem problem={profileProblem} />
+              <Problem problem={formProblem(profileProblem, fields('firstName', 'lastName', 'gender', 'ghinNumber', 'homeCourseId', 'units'))} />
               <div class="two">
                 <Field name="firstName" label="First name" autocomplete="given-name" maxlength={100} value={values.firstName} problem={profileProblem} />
                 <Field name="lastName" label="Last name" autocomplete="family-name" maxlength={100} value={values.lastName} problem={profileProblem} />
@@ -229,9 +232,16 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
 
         <form class="add-form" method="post" action="/profile#handicap" novalidate>
           <input type="hidden" name="intent" value="add-handicap" />
-          <Problem problem={handicapProblem && Object.keys(handicapProblem.fieldErrors).length === 0 ? handicapProblem : null} />
+          <Problem problem={formProblem(handicapProblem, fields('effectiveOn', 'index'))} />
           <div class="add-row">
-            <Field name="effectiveOn" label="Date" type="date" value={handicapValues.effectiveOn} problem={handicapProblem} errorKey="effectiveOn" />
+            <Field
+              name="effectiveOn"
+              label="Date"
+              type="date"
+              value={handicapValues.effectiveOn}
+              problem={handicapProblem}
+              data-default-today={handicapProblem ? undefined : handicapValues.effectiveOn}
+            />
             <Field
               name="index"
               label="Index"
@@ -293,6 +303,17 @@ const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved ==
     </div>
   </div>
 </AppLayout>
+
+<script is:inline>
+  // The server fills the date with its own today; use the golfer's local date instead (no script: the server's date stays).
+  (function () {
+    var input = document.querySelector('input[data-default-today]');
+    if (!input || input.value !== input.getAttribute('data-default-today')) return;
+    var d = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    input.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  })();
+</script>
 
 <style>
   .profile-grid {

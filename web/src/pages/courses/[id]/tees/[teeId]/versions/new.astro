@@ -11,6 +11,7 @@ import { notAForm, readForm } from '../../../../../../lib/forms';
 import { formatInteger, formatTenths } from '../../../../../../lib/format';
 import { formatEffectiveFrom } from '../../../../../../components/courses/dates';
 import { buildTee, localProblem, readTee, remapHoleErrors, teeFromVersion, versionRequest, type TeeValues } from '../../../../../../components/courses/course-form';
+import { formProblem, isTeeField } from '../../../../../../components/courses/problems';
 
 const id = Astro.params.id ?? '';
 const teeId = Astro.params.teeId ?? '';
@@ -54,7 +55,7 @@ const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !==
     {
       tee && values ? (
         <form class="tee-form" method="post" novalidate>
-          <Problem problem={problem} />
+          <Problem problem={formProblem(problem, (key) => isTeeField(key, ''))} />
           {current && (
             <p class="caption">
               In use today: version from {formatEffectiveFrom(current.effectiveFrom)} – par <span class="num">{formatInteger(current.par)}</span>, rating{' '}

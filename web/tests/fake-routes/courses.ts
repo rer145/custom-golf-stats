@@ -226,7 +226,10 @@ export const routes: FakeRoute[] = [
       if (!providerCourseId) return validation({ providerCourseId: ['A provider course id of at most 100 characters is required.'] });
       const existing = findImported(req.state, providerCourseId);
       if (existing) return ok(existing);
-      if (providerCourseId.startsWith('gca-q-unavailable')) return problem(502, 'Course provider unavailable', 'The course provider could not be reached. Try again later.');
+      // A query containing "notees" searches normally but its course has no usable tee (CourseEndpoints: 502, nothing saved).
+      if (providerCourseId.startsWith('gca-q-') && providerCourseId.includes('notees')) {
+        return problem(502, 'Provider course has no usable tees', 'The course provider returned no tee with 1 to 18 holes for this course, so nothing was imported.');
+      }
       if (!providerCourseId.startsWith('gca-q-')) return problem(404, 'Not Found');
       const result = providerResults(req.state, providerCourseId.slice('gca-q-'.length).replace(/-/g, ' ')).find((r) => r.providerCourseId === providerCourseId)!;
       const template = fixtureCourses[0]!;

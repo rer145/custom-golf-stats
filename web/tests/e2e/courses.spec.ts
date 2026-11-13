@@ -99,6 +99,24 @@ test('a course database outage is shown as a message', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('The course provider could not be reached');
 });
 
+test('a course database course with no usable tees is not imported (502)', async ({ page }) => {
+  const email = await newUser(page);
+  const name = `notees ${randomUUID().slice(0, 8)}`;
+  await page.goto(`/courses/provider-search?q=${encodeURIComponent(name)}`);
+  const response = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/courses/provider-search'));
+  await page.getByRole('button', { name: /^Import .*Championship/i }).click();
+  expect((await response).status()).toBe(502);
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('The course wasn’t imported');
+  await expect(alert).toContainText('The course provider returned no tee with 1 to 18 holes for this course, so nothing was imported.');
+  // Nothing was imported: the result still offers Import, and our database has no such course.
+  await expect(page.getByRole('button', { name: /^Import .*Championship/i })).toBeVisible();
+  await expect(page.getByText('Already imported')).toHaveCount(0);
+  await page.goto(`/courses?q=${encodeURIComponent(name)}`);
+  await expect(page.getByRole('heading', { name: /No courses match/ })).toBeVisible();
+  expect((await fakeCalls(email)).filter((c) => c.path === '/courses/import')).toHaveLength(1);
+});
+
 test('manual entry: errors are shown next to their fields, including holes the API rejects', async ({ page }) => {
   const email = await newUser(page);
   await page.goto('/courses/new');
@@ -162,6 +180,40 @@ test('manual entry: posting the same form again returns the course already creat
   const posts = (await fakeCalls(email)).filter((c) => c.path === '/courses' && c.method === 'POST');
   expect(posts).toHaveLength(2);
   expect((posts[0]!.body as { id: string }).id).toBe((posts[1]!.body as { id: string }).id);
+});
+
+test('manual entry: after a 409 (same form, different name) the form gets new ids so saving again works', async ({ page, baseURL }) => {
+  await newUser(page);
+  await page.goto('/courses/new');
+  const name = `Conflict Hills ${randomUUID().slice(0, 8)}`;
+  await page.getByLabel('Course name').fill(name);
+  await page.getByLabel('Tee name').fill('Blue');
+  await page.getByLabel('Course rating').fill('35.0');
+  await page.getByLabel('Slope', { exact: true }).fill('118');
+  await fillHole(page, 1, '4', '360', '1');
+  const form = Object.fromEntries(
+    await page.locator('form.course-form').evaluate((f) => [...new FormData(f as HTMLFormElement).entries()].map(([k, v]) => [k, String(v)])),
+  ) as Record<string, string>;
+  await page.getByRole('button', { name: 'Save course' }).click();
+  await expect(page).toHaveURL(/\?saved=created$/);
+
+  const post = (data: Record<string, string>) =>
+    page.request.post('/courses/new', { form: { ...data, intent: 'save' }, headers: { origin: baseURL! }, maxRedirects: 0 });
+  const conflict = await post({ ...form, name: `${name} II` });
+  expect(conflict.status()).toBe(409);
+  const html = await conflict.text();
+  expect(html).toContain('A course with this id already exists. Save again to add it as a new course.');
+  const hidden = (field: string) => new RegExp(`name="${field.replace(/[[\].]/g, '\\$&')}" value="([^"]+)"`).exec(html)?.[1];
+  const newId = hidden('id');
+  const newTeeId = hidden('tees[0].id');
+  expect(newId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(newId).not.toBe(form.id);
+  expect(newTeeId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(newTeeId).not.toBe(form['tees[0].id']);
+
+  const again = await post({ ...form, name: `${name} II`, id: newId!, 'tees[0].id': newTeeId! });
+  expect(again.status()).toBe(303);
+  expect(again.headers()['location']).toBe(`/courses/${newId}?saved=created`);
 });
 
 test('manual entry: "Add another tee" adds a tee with par and stroke index copied, without a script', async ({ browser }) => {
@@ -261,6 +313,21 @@ test('flag a problem with a course', async ({ page }) => {
   await expect(report.getByRole('status')).toContainText('An admin will check it');
   const flag = (await fakeCalls(email)).filter((c) => c.path === `/courses/${CEDAR}/flags`).at(-1);
   expect(flag?.body).toEqual({ teeId: '22222222-2222-4222-8222-222222222223', holeNumber: 7, note: 'Hole 7 is 140 yards from the red tee now.' });
+});
+
+test('a flag the API rejects for its tee shows the error under the tee select', async ({ page }) => {
+  await newUser(page);
+  await page.goto(`/courses/${CEDAR}`);
+  const report = page.getByRole('region', { name: 'Something wrong?' });
+  // A tee from another course (as if the page were stale): the API answers 400 keyed "teeId".
+  await report.locator('#flag-tee option').nth(1).evaluate((o) => ((o as HTMLOptionElement).value = '55555555-5555-4555-8555-555555555555'));
+  await report.getByLabel('Tee').selectOption({ index: 1 });
+  await report.getByLabel('What’s wrong').fill('Wrong yardage.');
+  await report.getByRole('button', { name: 'Send report' }).click();
+  const select = report.getByLabel('Tee');
+  await expect(select).toHaveAttribute('aria-invalid', 'true');
+  await expect(select).toHaveAttribute('aria-describedby', 'flag-tee-error');
+  await expect(report.locator('#flag-tee-error')).toHaveText("The tee doesn't belong to this course.");
 });
 
 test('make a course my home course sends the whole profile', async ({ page }) => {

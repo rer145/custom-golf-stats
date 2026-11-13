@@ -10,6 +10,7 @@ import { call, type ApiProblem } from '../../../../api/client';
 import { endSession, isSessionEnded } from '../../../../lib/guard';
 import { notAForm, readForm } from '../../../../lib/forms';
 import { buildTee, emptyTee, localProblem, readTee, remapHoleErrors, teeFromVersion, type TeeValues } from '../../../../components/courses/course-form';
+import { formProblem, isTeeField } from '../../../../components/courses/problems';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const id = Astro.params.id ?? '';
@@ -36,6 +37,11 @@ if (course && Astro.request.method === 'POST') {
     if (isSessionEnded(saved)) return endSession(Astro);
     if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=tee'}`, 303);
     problem = { ...saved.problem, fieldErrors: remapHoleErrors(saved.problem.fieldErrors, '', built.holeRows) };
+    if (saved.problem.status === 409) {
+      // The tee id is taken: a new one lets the next save add the tee instead of hitting the same conflict.
+      values = { ...values, id: randomUUID() };
+      problem = { ...problem, message: `${saved.problem.message} Save again to add it as a new tee.` };
+    }
   }
   Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : problem.status === 404 ? 404 : 400;
 }
@@ -59,7 +65,7 @@ const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !==
     {
       course ? (
         <form class="tee-form" method="post" novalidate>
-          <Problem problem={problem} />
+          <Problem problem={formProblem(problem, (key) => isTeeField(key, ''))} />
           <div class="card">
             <TeeFields values={values} prefix="" problem={problem} />
           </div>

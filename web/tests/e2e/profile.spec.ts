@@ -84,6 +84,12 @@ test('add and delete handicap index entries', async ({ page }) => {
     { effectiveOn: '2026-10-01', index: -1.2 },
   ]);
 
+  // A plus handicap beyond +10.0 is caught before calling the API.
+  await section.getByLabel('Index').fill('+12');
+  await section.getByRole('button', { name: '+ Add index' }).click();
+  await expect(section.locator('#field-index-error')).toHaveText('A plus handicap can be at most +10.0.');
+  expect((await fakeCalls(email)).filter((c) => c.method === 'POST' && c.path === '/me/handicap')).toHaveLength(2);
+
   // The API's range check lands next to the field.
   await section.getByLabel('Index').fill('60');
   await section.getByRole('button', { name: '+ Add index' }).click();
@@ -93,6 +99,35 @@ test('add and delete handicap index entries', async ({ page }) => {
   await expect(section.getByRole('status')).toContainText('Entry deleted.');
   await expect(section.getByRole('table').getByRole('row')).toHaveCount(2);
   expect((await fakeCalls(email)).some((c) => c.method === 'DELETE' && c.path.startsWith('/me/handicap/'))).toBe(true);
+});
+
+test('the current index is the latest entry on or before today, not a future-dated one', async ({ page }) => {
+  await newUser(page);
+  await page.goto('/profile');
+  const section = page.getByRole('region', { name: 'Handicap index' });
+  await section.getByLabel('Date').fill('2026-01-15');
+  await section.getByLabel('Index').fill('14.2');
+  await section.getByRole('button', { name: '+ Add index' }).click();
+  await expect(section.locator('.stat-xl')).toHaveText('14.2');
+  await section.getByLabel('Date').fill('2099-01-01');
+  await section.getByLabel('Index').fill('5.0');
+  await section.getByRole('button', { name: '+ Add index' }).click();
+  await expect(section.getByRole('table').getByRole('row')).toHaveCount(3);
+  await expect(section.locator('.stat-xl')).toHaveText('14.2');
+});
+
+test('the date defaults to the browser’s local today', async ({ browser }) => {
+  // Late evening in Honolulu is already tomorrow in UTC: the default must follow the golfer's clock.
+  const context = await browser.newContext({ timezoneId: 'Pacific/Honolulu' });
+  const page = await context.newPage();
+  await newUser(page);
+  await page.goto('/profile');
+  const expected = await page.evaluate(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  await expect(page.getByRole('region', { name: 'Handicap index' }).getByLabel('Date')).toHaveValue(expected);
+  await context.close();
 });
 
 test('the profile page shows the existing handicap history', async ({ page }) => {

@@ -13,6 +13,7 @@ import { call, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { formText, notAForm, readForm } from '../../lib/forms';
 import {
+  DETAIL_FIELDS,
   MAX_TEES,
   buildDetails,
   buildTee,
@@ -27,6 +28,7 @@ import {
   type Errors,
   type TeeValues,
 } from '../../components/courses/course-form';
+import { fields, formProblem, isTeeField } from '../../components/courses/problems';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const idOr = (value: string): string => (UUID.test(value) ? value : randomUUID());
@@ -67,12 +69,21 @@ if (Astro.request.method === 'POST') {
       let fieldErrors = r.problem.fieldErrors;
       builtTees.forEach((b, i) => (fieldErrors = remapHoleErrors(fieldErrors, `tees[${i}].`, b.holeRows)));
       problem = { ...r.problem, fieldErrors };
+      if (r.problem.status === 409) {
+        // The ids are taken (this form already saved a course under another name, or a clash): new ids let the
+        // next save create the course instead of hitting the same conflict again.
+        courseId = randomUUID();
+        tees = tees.map((t) => ({ ...t, id: randomUUID() }));
+        problem = { ...problem, message: `${r.problem.message} Save again to add it as a new course.` };
+      }
     }
     if (problem) Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : 400;
   }
 }
 
 const teesError = problem?.fieldErrors.tees ?? [];
+const isDetail = fields(...DETAIL_FIELDS, 'tees');
+const shownProblem = formProblem(problem, (key) => isDetail(key) || tees.some((_, i) => isTeeField(key, `tees[${i}].`)));
 ---
 
 <AppLayout title="Enter a course">
@@ -88,7 +99,7 @@ const teesError = problem?.fieldErrors.tees ?? [];
       <input type="hidden" name="teeCount" value={tees.length} />
       {/* Enter in a field saves (the first submit button is the form's default), never "Remove". */}
       <button class="visually-hidden" type="submit" name="intent" value="save" tabindex="-1" aria-hidden="true">Save course</button>
-      <Problem problem={problem} />
+      <Problem problem={shownProblem} />
 
       <section class="card form-section" aria-labelledby="details-heading">
         <h2 id="details-heading" class="title">Course</h2>

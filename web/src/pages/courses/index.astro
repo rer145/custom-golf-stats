@@ -7,6 +7,7 @@ import SearchBox from '../../components/courses/SearchBox.astro';
 import StatusBadge from '../../components/courses/StatusBadge.astro';
 import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { fields, formProblem } from '../../components/courses/problems';
 
 const q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
 let results: Schemas['CourseSummaryDto'][] | null = null;
@@ -35,7 +36,7 @@ const providerHref = `/courses/provider-search${q ? `?q=${encodeURIComponent(q)}
 
     <div class="stack-lg">
       <SearchBox action="/courses" label="Course, club or town" value={q} button="Search" errors={fieldErrors(problem, 'query')} />
-      {problem && Object.keys(problem.fieldErrors).length === 0 && <Problem problem={problem} />}
+      <Problem problem={formProblem(problem, fields('query'))} />
 
       {
         results && (

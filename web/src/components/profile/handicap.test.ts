@@ -18,5 +18,8 @@ describe('parseHandicapIndex', () => {
     expect(parseHandicapIndex('').error).toBe('A handicap index is required.');
     expect(parseHandicapIndex('scratch').error).toMatch(/Enter a number/);
     expect(parseHandicapIndex('1.2.3').value).toBeNull();
+    expect(parseHandicapIndex('+10.0')).toEqual({ value: -10 });
+    expect(parseHandicapIndex('+10.1')).toEqual({ value: null, error: 'A plus handicap can be at most +10.0.' });
+    expect(parseHandicapIndex('-12').error).toBe('A plus handicap can be at most +10.0.');
   });
 });

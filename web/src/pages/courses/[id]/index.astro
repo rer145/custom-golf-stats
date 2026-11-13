@@ -13,6 +13,7 @@ import { endSession, isSessionEnded } from '../../../lib/guard';
 import { formText, notAForm, readForm } from '../../../lib/forms';
 import { formatInteger, formatTenths } from '../../../lib/format';
 import { formatDate, formatEffectiveFrom } from '../../../components/courses/dates';
+import { fields, formProblem } from '../../../components/courses/problems';
 
 const id = Astro.params.id ?? '';
 let flagProblem: ApiProblem | null = null;
@@ -120,7 +121,7 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
           <div class="stack-lg">
             <Notice message={notice} heading="Saved" />
             <Notice message={review} heading="Sent for review" />
-            <Problem problem={homeProblem} heading="Home course not changed" />
+            <Problem problem={formProblem(homeProblem, () => false)} heading="Home course not changed" />
             {course.mergedIntoCourseId && (
               <p class="problem">
                 This course was merged into another. <a href={`/courses/${course.mergedIntoCourseId}`}>Open the current course</a>
@@ -279,11 +280,16 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
               <Notice message={flagged} heading="Reported" />
               <form class="form" method="post" action={`/courses/${course.id}#report`} novalidate>
                 <input type="hidden" name="intent" value="flag" />
-                <Problem problem={flagProblem && Object.keys(flagProblem.fieldErrors).length === 0 ? flagProblem : null} />
+                <Problem problem={formProblem(flagProblem, fields('teeId', 'holeNumber', 'note'))} />
                 <div class="report-where">
                   <div class="field">
                     <label for="flag-tee">Tee</label>
-                    <select id="flag-tee" name="teeId" aria-invalid={fieldErrors(flagProblem, 'teeId').length > 0 ? 'true' : undefined}>
+                    <select
+                      id="flag-tee"
+                      name="teeId"
+                      aria-invalid={fieldErrors(flagProblem, 'teeId').length > 0 ? 'true' : undefined}
+                      aria-describedby={fieldErrors(flagProblem, 'teeId').length > 0 ? 'flag-tee-error' : undefined}
+                    >
                       <option value="">The whole course</option>
                       {course.tees.map((t) => (
                         <option value={t.id} selected={flagValues.teeId === t.id}>
@@ -291,6 +297,11 @@ const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => 
                         </option>
                       ))}
                     </select>
+                    {fieldErrors(flagProblem, 'teeId').length > 0 && (
+                      <div class="field-error" id="flag-tee-error">
+                        <p>{fieldErrors(flagProblem, 'teeId').join(' ')}</p>
+                      </div>
+                    )}
                   </div>
                   <Field name="holeNumber" label="Hole (optional)" inputmode="numeric" class="num" value={flagValues.holeNumber} problem={flagProblem} />
                 </div>

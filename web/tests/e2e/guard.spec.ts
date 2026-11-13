@@ -14,9 +14,9 @@ test('the page list is not empty', () => {
 });
 
 for (const { file, path } of guarded) {
-  test(`signed out: ${file} (${path}) redirects to sign-in`, async ({ request }) => {
+  test(`signed out: ${file} (${path}) redirects to sign-in`, async ({ request, baseURL }) => {
     for (const method of ['GET', 'POST'] as const) {
-      const res = await request.fetch(path, { method, maxRedirects: 0, headers: { origin: 'http://127.0.0.1:4321' } });
+      const res = await request.fetch(path, { method, maxRedirects: 0, headers: { origin: baseURL! } });
       expect(res.status(), `${method} ${path}`).toBe(303);
       expect(res.headers()['location'], `${method} ${path}`).toBe(`/sign-in?next=${encodeURIComponent(path)}`);
     }

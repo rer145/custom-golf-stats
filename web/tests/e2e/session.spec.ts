@@ -1,7 +1,7 @@
 import { expect, test, type Response } from '@playwright/test';
 import { sealSession } from '../../src/lib/session';
 import { listPagePaths } from '../support/pages';
-import { ADMIN, SESSION_COOKIE, SHORT, SHORT_REVOKED, TOKEN_PATTERN, USER, expireAccessTokens, fakeCalls, revokeRefreshTokens, signIn } from './support';
+import { ADMIN, FAKE_API_URL, SESSION_COOKIE, SHORT, SHORT_REVOKED, TOKEN_PATTERN, USER, expireAccessTokens, fakeCalls, revokeRefreshTokens, signIn } from './support';
 
 // Same test-only value as playwright.config.ts, so tests can forge cookies the way an attacker can't.
 const E2E_SECRET = 'e2e-only-session-secret-not-for-production-0123456789';
@@ -55,7 +55,7 @@ test('no token reaches the browser: HTML, scripts, styles, URLs, headers, storag
   const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }) + document.cookie);
   expect(storage).not.toMatch(TOKEN_PATTERN);
   // The browser never talks to the API directly.
-  expect(bodies.some((b) => b.url.startsWith('http://127.0.0.1:4010'))).toBe(false);
+  expect(bodies.some((b) => b.url.startsWith(FAKE_API_URL))).toBe(false);
 });
 
 test('an access token near expiry is refreshed and the cookie re-sealed', async ({ page, context }) => {
@@ -144,18 +144,18 @@ test('a 401 from a page-level API call ends the session and returns to sign-in',
 });
 
 for (const path of ['/sign-in', '/sign-up']) {
-  test(`${path} refuses a non-form POST with 415, not a 500`, async ({ request }) => {
-    const json = await request.post(path, { data: { email: USER, password: 'x' }, headers: { origin: 'http://127.0.0.1:4321' }, maxRedirects: 0 });
+  test(`${path} refuses a non-form POST with 415, not a 500`, async ({ request, baseURL }) => {
+    const json = await request.post(path, { data: { email: USER, password: 'x' }, headers: { origin: baseURL! }, maxRedirects: 0 });
     expect(json.status()).toBe(415);
-    const text = await request.post(path, { data: 'email=a', headers: { 'content-type': 'text/plain', origin: 'http://127.0.0.1:4321' }, maxRedirects: 0 });
+    const text = await request.post(path, { data: 'email=a', headers: { 'content-type': 'text/plain', origin: baseURL! }, maxRedirects: 0 });
     expect(text.status()).toBe(415);
   });
 }
 
-test('oversized request bodies are refused with 413', async ({ request }) => {
+test('oversized request bodies are refused with 413', async ({ request, baseURL }) => {
   const res = await request.post('/sign-in', {
     data: `email=a%40b.test&password=${'x'.repeat(1024 * 1024)}`,
-    headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'http://127.0.0.1:4321' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin: baseURL! },
     maxRedirects: 0,
   });
   expect(res.status()).toBe(413);
