@@ -1,3 +1,4 @@
+using CustomGolfStats.App.Core.Sync;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -15,7 +16,7 @@ namespace CustomGolfStats.App.Core.ViewModels;
 /// <summary>The golfer's profile and handicap history. The handicap history is read from this device (it arrives with sync); the
 /// profile and adding a handicap entry need a connection. <c>PUT /me</c> replaces the whole profile, so every field is sent.</summary>
 public sealed partial class ProfileViewModel(
-    LocalDb db, ICustomGolfStatsApiClient api, TokenService tokens, IConnectivity connectivity, IClock clock, INavigator navigator) : ViewModelBase
+    LocalDb db, ICustomGolfStatsApiClient api, TokenService tokens, SyncEngine sync, IConnectivity connectivity, IClock clock, INavigator navigator) : ViewModelBase
 {
     private string _gender = "";
     private Guid? _homeCourseId;
@@ -145,11 +146,17 @@ public sealed partial class ProfileViewModel(
         }
     }
 
-    /// <summary>Signs out: the tokens are removed from secure storage. Rounds on this device are kept.</summary>
+    /// <summary>Signs out: a running sync is stopped first (so no request in flight outlives the session), then the tokens are
+    /// removed from secure storage. Rounds on this device are kept.</summary>
     [RelayCommand]
     private async Task SignOutAsync()
     {
-        await tokens.SignOutAsync();
+        if (!await TryAsync(async () =>
+            {
+                await sync.StopAsync();
+                await tokens.SignOutAsync();
+            }))
+            return;
         await navigator.NavigateAsync(Route.SignIn);
     }
 }

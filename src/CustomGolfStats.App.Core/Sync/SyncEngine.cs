@@ -19,6 +19,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     private readonly object _gate = new();
     private readonly CancellationTokenSource _lifetime = new();
     private Task<SyncResult>? _running;
+    private CancellationTokenSource? _runCancellation;
 
     /// <param name="ct">Stops only this caller's wait; the run itself carries on for any other caller.</param>
     public Task<SyncResult> SyncAsync(CancellationToken ct = default)
@@ -27,10 +28,38 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         lock (_gate)
         {
             if (_running is not { IsCompleted: false })
-                _running = RunAsync(_lifetime.Token);
+            {
+                _runCancellation?.Dispose();
+                _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                _running = RunAsync(_runCancellation.Token);
+            }
             run = _running;
         }
         return run.WaitAsync(ct);
+    }
+
+    /// <summary>Stops a run in progress and waits until it has ended (its result says SignedOut). Call before the stored session
+    /// changes (signing out, or a new sign-in saving tokens) so a request in flight cannot carry one account's data to another.
+    /// Unsent work stays dirty; a later <see cref="SyncAsync"/> starts a fresh run.</summary>
+    public async Task StopAsync()
+    {
+        Task<SyncResult>? run;
+        lock (_gate)
+        {
+            run = _running;
+            if (run is { IsCompleted: false })
+                _runCancellation?.Cancel();
+        }
+        if (run is null)
+            return;
+        try
+        {
+            await run.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // stopped
+        }
     }
 
     /// <summary>Cancels a run in progress (app shutdown). Unsent work stays dirty.</summary>
@@ -49,6 +78,9 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
                 run.SignedOut = true;
                 return run.ToResult();
             }
+            // The account this run works for. Before every request (and before storing what a pull returned) the session is checked
+            // again: if a sign-in or sign-out started meanwhile, the run stops as SignedOut and nothing more is sent or stored.
+            run.Account = await db.SyncState.GetAsync(AccountSwitchService.AccountKey).ConfigureAwait(false);
 
             var pendingCourses = await PushCoursesAsync(run, ct).ConfigureAwait(false);
             if (run.Stop)
@@ -66,7 +98,23 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         {
             run.Offline = true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            run.SignedOut = true; // stopped because the session is changing (or the app is closing)
+        }
         return run.ToResult();
+    }
+
+    /// <summary>False (and the run marked SignedOut) when the run was stopped or the session it started with is no longer the
+    /// verified one: a sign-in has begun, a switch question is open, or the account changed.</summary>
+    private async Task<bool> SameSessionAsync(Run run, CancellationToken ct)
+    {
+        if (!ct.IsCancellationRequested
+            && await AccountSwitchService.IsSyncAllowedAsync(db).ConfigureAwait(false)
+            && await db.SyncState.GetAsync(AccountSwitchService.AccountKey).ConfigureAwait(false) == run.Account)
+            return true;
+        run.SignedOut = true;
+        return false;
     }
 
     // ---- push ----
@@ -78,7 +126,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         var stillPending = new HashSet<Guid>();
         foreach (var course in await db.Courses.GetPendingAsync())
         {
-            if (run.Stop)
+            if (run.Stop || !await SameSessionAsync(run, ct).ConfigureAwait(false))
             {
                 stillPending.Add(course.Course.Id);
                 continue;
@@ -123,7 +171,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     {
         foreach (var round in await db.Rounds.GetDirtyAsync())
         {
-            if (run.Stop)
+            if (run.Stop || !await SameSessionAsync(run, ct).ConfigureAwait(false))
                 return;
             var id = round.Round.Id;
             try
@@ -204,8 +252,12 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     {
         try
         {
+            if (!await SameSessionAsync(run, ct).ConfigureAwait(false))
+                return;
             var since = await db.SyncState.GetNextSinceAsync().ConfigureAwait(false);
             var changes = await api.SyncChangesAsync(since?.ToString("O", CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
+            if (!await SameSessionAsync(run, ct).ConfigureAwait(false))
+                return; // the answer may belong to another account's session: store none of it
 
             // A record that cannot be mapped or stored is skipped and reported; one bad record must not block sync forever.
             // Courses first so rounds always find their course.
@@ -306,6 +358,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     {
         public int PushedRounds, PushedDeletes, PushedCourses, Conflicts, PulledRounds, SkippedPulled, PulledCourses, PulledHandicap, DeferredRounds;
         public bool PullCompleted, Offline, SignedOut;
+        public string? Account;
         public List<SyncNotice> Notices { get; } = [];
         public List<string> Failures { get; } = [];
 

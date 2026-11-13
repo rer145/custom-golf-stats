@@ -12,30 +12,39 @@ public sealed record AccountSwitchPrompt(int UnsyncedRounds, int PendingCourses,
 /// signs in: with nothing unsynced the old data is cleared at once; with unsynced rounds, courses or hole drafts a prompt is returned
 /// and syncing is blocked until the golfer confirms (everything local is cleared) or cancels (the new sign-in is undone by the
 /// caller). The pending state is stored, so it survives the app being closed with the question unanswered.
-/// <para>A sign-in is bracketed: <see cref="BeginSignInAsync"/> stores a blocking marker BEFORE any token is saved, and only
+/// <para>Constructed with the <see cref="Sync.SyncEngine"/> (the app always does) a sign-in also stops a running sync.
+/// A sign-in is bracketed: <see cref="BeginSignInAsync"/> stores a blocking marker BEFORE any token is saved, and only
 /// <see cref="CheckAsync"/> (or a confirmed switch) removes it. Sync refuses to run while any marker is present or before an account
 /// was ever verified (<see cref="IsSyncAllowedAsync"/>), so a crash or exception between saving the tokens and checking the account
 /// can never send one account's unsynced rounds to another.</para>
 /// </summary>
-public sealed class AccountSwitchService(LocalDb db)
+public sealed class AccountSwitchService(LocalDb db, Sync.SyncEngine? sync = null)
 {
-    internal const string AccountKey = "account";
-    internal const string PendingKey = "pendingAccount";
+    public const string AccountKey = "account";
+    public const string PendingKey = "pendingAccount";
 
     /// <summary>The pending value while a sign-in has saved (or may have saved) tokens whose account was not checked yet. Not an
     /// email, so it can never equal an account key.</summary>
-    internal const string UnverifiedMarker = "<unverified sign-in>";
+    public const string UnverifiedMarker = "<unverified sign-in>";
 
     /// <summary>Normalised form of an email, used as the account key.</summary>
     public static string KeyFor(string email) => email.Trim().ToLowerInvariant();
 
-    /// <summary>Call before a sign-in can store tokens. Blocks sync until <see cref="CheckAsync"/> verifies the account. If an
-    /// account-switch question is already open, it stays (it blocks sync too).</summary>
+    /// <summary>Call before a sign-in can store tokens. Blocks sync until <see cref="CheckAsync"/> verifies the account, and stops a
+    /// sync that is already running (waiting until it has ended), so no request made with the new tokens can carry this device's
+    /// data. If an account-switch question is already open, it stays (it blocks sync too).</summary>
     public async Task BeginSignInAsync()
     {
         if (await db.SyncState.GetAsync(PendingKey).ConfigureAwait(false) is null)
             await db.SyncState.SetAsync(PendingKey, UnverifiedMarker).ConfigureAwait(false);
+        if (sync is not null)
+            await sync.StopAsync().ConfigureAwait(false);
     }
+
+    /// <summary>True when an account was verified for the stored session on this device (the database may be newer than the stored
+    /// tokens, for example after an iOS reinstall keeps the Keychain but not the app's files).</summary>
+    public async Task<bool> HasVerifiedAccountAsync() =>
+        await db.SyncState.GetAsync(AccountKey).ConfigureAwait(false) is not null;
 
     /// <summary>The sign-in did not complete and its tokens were removed: lift the marker <see cref="BeginSignInAsync"/> set.</summary>
     public async Task AbandonSignInAsync()

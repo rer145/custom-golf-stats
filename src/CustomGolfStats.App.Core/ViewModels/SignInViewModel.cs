@@ -44,8 +44,16 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
             PendingSwitch = pending.Prompt;
             return;
         }
-        if (await tokens.IsSignedInAsync())
+        if (!await tokens.IsSignedInAsync())
+            return;
+        if (await accounts.HasVerifiedAccountAsync())
+        {
             await navigator.NavigateAsync(Route.Home);
+            return;
+        }
+        // Tokens without a verified account on this device (an iOS reinstall keeps the Keychain but not the database): confirm
+        // whose session it is through /me, exactly like a fresh sign-in, or sign out.
+        await RunAsync(() => Task.CompletedTask, typedEmail: null);
     }
 
     [RelayCommand]

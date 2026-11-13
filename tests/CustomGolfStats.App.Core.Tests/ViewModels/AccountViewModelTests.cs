@@ -699,7 +699,7 @@ public class ProfileViewModelTests
         var store = new FakeSecureStore();
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var net = new FakeConnectivity();
-        return (rig, new ProfileViewModel(rig.Db, session.Client, session.Tokens, net, rig.Temp.Clock, rig.Nav), stub, net, store);
+        return (rig, new ProfileViewModel(rig.Db, session.Client, session.Tokens, new CustomGolfStats.App.Core.Sync.SyncEngine(rig.Db, session.Client), net, rig.Temp.Clock, rig.Nav), stub, net, store);
     }
 
     private static readonly Guid Home = Guid.Parse("66666666-6666-6666-6666-666666666666");
