@@ -96,7 +96,9 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
         }
         catch (Exception)
         {
-            // Never let a sync problem take the home screen down; what is pending stays pending.
+            // Never let a sync problem take the home screen down; what is pending stays pending. The previous run's result no longer
+            // describes the state, so the status line falls back to what is pending now.
+            _lastResult = null;
             ErrorMessage = UiText.SyncFailedUnexpectedly;
         }
         finally

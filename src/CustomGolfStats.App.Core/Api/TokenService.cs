@@ -15,6 +15,10 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
 
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
+    /// <summary>Bumped by every sign-in and sign-out. A refresh only stores its tokens if the session it started in is still current,
+    /// so a slow refresh for an old session can never overwrite a newer session's tokens.</summary>
+    private long _session;
+
     /// <summary>Raised when the refresh token was rejected and the stored tokens were cleared: the golfer must sign in again.</summary>
     public event Action? SessionExpired;
 
@@ -25,6 +29,7 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
     public async Task SignInAsync(string email, string password, CancellationToken ct = default)
     {
         var tokens = await authApi.AuthLoginAsync(false, false, new LoginRequest { Email = email, Password = password }, ct).ConfigureAwait(false);
+        NewSession();
         await SaveAsync(tokens).ConfigureAwait(false);
     }
 
@@ -48,6 +53,7 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
     {
         var tokens = await authApi.AuthExternalSignInAsync(
             new ExternalSignInRequest { Provider = provider, IdToken = idToken, FirstName = firstName, LastName = lastName }, ct);
+        NewSession();
         await SaveAsync(tokens).ConfigureAwait(false);
     }
 
@@ -66,6 +72,7 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
             if (current is not null && staleAccessToken is not null && current != staleAccessToken)
                 return true;
 
+            var session = Interlocked.Read(ref _session);
             var refresh = await store.GetAsync(RefreshTokenKey).ConfigureAwait(false);
             if (refresh is null)
                 return false;
@@ -73,11 +80,15 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
             try
             {
                 var tokens = await authApi.AuthRefreshAsync(new RefreshRequest { RefreshToken = refresh }, ct).ConfigureAwait(false);
+                if (Interlocked.Read(ref _session) != session)
+                    return true; // signed out or in again meanwhile: the new session's tokens stand; the caller retries with them
                 await SaveAsync(tokens).ConfigureAwait(false);
                 return true;
             }
             catch (ApiException ex) when (ex.StatusCode is 400 or 401 or 403)
             {
+                if (Interlocked.Read(ref _session) != session)
+                    return true; // the rejected token belonged to an old session: leave the new one alone
                 await ClearAsync().ConfigureAwait(false);
                 SessionExpired?.Invoke();
                 return false;
@@ -89,7 +100,13 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
         }
     }
 
-    public Task SignOutAsync() => ClearAsync();
+    public Task SignOutAsync()
+    {
+        NewSession();
+        return ClearAsync();
+    }
+
+    private void NewSession() => Interlocked.Increment(ref _session);
 
     private async Task SaveAsync(AccessTokenResponse tokens)
     {

@@ -35,6 +35,13 @@ public sealed partial class ProfileViewModel(
     [ObservableProperty] private double? _newHandicapIndex;
     [ObservableProperty] private DateTime _newHandicapDate = DateTime.Today;
 
+    /// <summary>The index as typed: "+2.1" is a plus handicap (stored as -2.1), "12.4" a normal one (see <see cref="HandicapText"/>).
+    /// Sets <see cref="NewHandicapIndex"/>; text that cannot be read leaves it empty and adding reports it.</summary>
+    [ObservableProperty] private string _newHandicapText = "";
+
+    partial void OnNewHandicapTextChanged(string value) =>
+        NewHandicapIndex = HandicapText.TryParse(value, out var index) ? index : null;
+
     [ObservableProperty] private bool _isSaved;
 
     /// <summary>The profile was read from the server. Saving is only possible then, because <c>PUT /me</c> replaces everything and
@@ -134,6 +141,7 @@ public sealed partial class ProfileViewModel(
             });
             await db.Handicap.UpsertAsync([new HandicapRow { Id = created.Id, EffectiveOn = created.EffectiveOn.DateTime.Date, Index = created.Index }]);
             NewHandicapIndex = null;
+            NewHandicapText = "";
             await ReloadHandicapAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

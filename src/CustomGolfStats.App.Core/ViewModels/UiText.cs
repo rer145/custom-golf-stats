@@ -123,7 +123,7 @@ public static class UiText
     public const string NotANumber = "Enter a number.";
     public const string NegativeNumber = "Enter zero or more.";
     public const string WindDirectionInvalid = "Wind direction is between 0 and 359 degrees.";
-    public const string HandicapInvalid = "A handicap index is between -10.0 and 54.0.";
+    public const string HandicapInvalid = "Enter a handicap index from +10.0 to 54.0. Type a plus handicap with a leading +, like +2.1.";
     public const string NeedConnection = "This needs a connection.";
     public const string ProfileSaveFailed = "Your profile could not be saved. Please try again.";
     public const string ProfileLoadFailed = "Your profile could not be loaded. Your handicap history below is saved on this device.";
