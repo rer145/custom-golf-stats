@@ -51,9 +51,75 @@ public sealed partial class SignInViewModel(TokenService tokens, AccountSwitchSe
             await navigator.NavigateAsync(Route.Home);
             return;
         }
-        // Tokens without a verified account on this device (an iOS reinstall keeps the Keychain but not the database): confirm
-        // whose session it is through /me, exactly like a fresh sign-in, or sign out.
-        await RunAsync(() => Task.CompletedTask, typedEmail: null);
+        // Tokens without a verified account on this device (an iOS reinstall keeps the Keychain but not the database).
+        await VerifyStoredSessionAsync();
+    }
+
+    /// <summary>Confirms whose stored session this is through /me, then applies the usual account check. Offline, the session is
+    /// kept but stays unable to sync (no verified account) and the next launch tries again; any other failure signs out.</summary>
+    private async Task VerifyStoredSessionAsync()
+    {
+        IsBusy = true;
+        var verified = false;
+        var offline = false;
+        try
+        {
+            await accounts.BeginSignInAsync();
+            CustomGolfStats.Api.Client.ProfileResponse profile;
+            try
+            {
+                profile = await api.MeGetProfileAsync();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                offline = true;
+                ErrorMessage = UiText.VerifySessionOffline;
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(profile.Email))
+            {
+                ErrorMessage = UiText.AccountUnknown;
+                return;
+            }
+
+            var key = AccountSwitchService.KeyFor(profile.Email);
+            var prompt = await accounts.CheckAsync(key);
+            verified = true;
+            if (prompt is not null)
+            {
+                _pendingAccountKey = key;
+                PendingSwitch = prompt;
+                return;
+            }
+            await navigator.NavigateAsync(Route.Home);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorMessage = UiText.AccountUnknown;
+        }
+        finally
+        {
+            if (!verified)
+            {
+                if (offline)
+                    await AbandonMarkerQuietlyAsync(); // tokens kept; no verified account, so sync stays blocked
+                else
+                    await UndoSignInQuietlyAsync();
+            }
+            IsBusy = false;
+        }
+    }
+
+    private async Task AbandonMarkerQuietlyAsync()
+    {
+        try
+        {
+            await accounts.AbandonSignInAsync();
+        }
+        catch (Exception)
+        {
+            // The marker stays and keeps sync blocked; the next launch tries again.
+        }
     }
 
     [RelayCommand]

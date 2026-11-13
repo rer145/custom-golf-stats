@@ -124,7 +124,7 @@ public class SessionChangeTests
         store.Values[TokenService.RefreshTokenKey] = "r";
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
-        var vm = new SignInViewModel(session.Tokens, new AccountSwitchService(t.Db), session.Client, nav);
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
 
         await vm.InitializeAsync();
 
@@ -142,12 +142,55 @@ public class SessionChangeTests
         store.Values[TokenService.RefreshTokenKey] = "r";
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
-        var vm = new SignInViewModel(session.Tokens, new AccountSwitchService(t.Db), session.Client, nav);
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
 
         await vm.InitializeAsync();
 
         Assert.Empty(nav.Visits);
         Assert.Empty(store.Values);
         Assert.False(await AccountSwitchService.IsSyncAllowedAsync(t.Db));
+    }
+
+    [Fact]
+    public async Task Stopping_after_a_run_that_failed_does_not_rethrow_its_fault()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var engine = new SyncEngine(t.Db, new StubHandler(_ => StubHandler.Status(HttpStatusCode.OK)).Client());
+        await t.Db.Connection.ExecuteAsync("ALTER TABLE SyncStateRow RENAME TO SyncStateRowAway"); // the run cannot read its state
+        await Assert.ThrowsAnyAsync<Exception>(() => engine.SyncAsync(TestContext.Current.CancellationToken));
+
+        await engine.StopAsync(); // a finished run is not this caller's business: no stale fault
+
+        await t.Db.Connection.ExecuteAsync("ALTER TABLE SyncStateRowAway RENAME TO SyncStateRow");
+    }
+
+    [Fact]
+    public async Task Stored_tokens_that_cannot_be_verified_offline_stay_signed_in_but_blocked_and_are_verified_later()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var online = false;
+        var stub = new StubHandler(r => online
+            ? StubHandler.Json(HttpStatusCode.OK, new Client.ProfileResponse { Id = Guid.NewGuid(), Email = "ada@example.com", FirstName = "A", LastName = "B", Gender = "Male", Units = "Imperial" })
+            : throw new HttpRequestException("no route to host"));
+        var store = new FakeSecureStore();
+        store.Values[TokenService.AccessTokenKey] = "a";
+        store.Values[TokenService.RefreshTokenKey] = "r";
+        var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
+        var nav = new FakeNavigator();
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(UiText.VerifySessionOffline, vm.ErrorMessage);
+        Assert.Empty(nav.Visits);
+        Assert.Equal(2, store.Values.Count);                                   // the session is kept ...
+        Assert.False(await AccountSwitchService.IsSyncAllowedAsync(t.Db));      // ... but cannot sync
+
+        online = true;
+        var next = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
+        await next.InitializeAsync();                                          // the next launch, now online
+
+        Assert.Equal(Route.Home, nav.Last.Route);
+        Assert.True(await AccountSwitchService.IsSyncAllowedAsync(t.Db));
     }
 }

@@ -23,7 +23,7 @@ public class AccountSwitchTests
         var store = new FakeSecureStore();
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
-        return new Device(new SignInViewModel(session.Tokens, new AccountSwitchService(temp.Db), session.Client, nav), nav, store, stub, temp);
+        return new Device(new SignInViewModel(session.Tokens, TestAccounts.For(temp.Db), session.Client, nav), nav, store, stub, temp);
     }
 
     private static async Task SignInAsync(Device d, string email)
@@ -157,7 +157,7 @@ public class AccountSwitchTests
         Assert.Null(other.Vm.PendingSwitch);
         Assert.Empty(other.Store.Values);                    // the new tokens are gone
         Assert.Single(await t.Db.Rounds.ListAsync());
-        Assert.Null((await new AccountSwitchService(t.Db).GetPendingAsync()));
+        Assert.Null((await TestAccounts.For(t.Db).GetPendingAsync()));
         // And the original account can sign back in and carry on.
         var back = SignInScreen(t, "ada@example.com");
         await SignInAsync(back, "ada@example.com");
@@ -192,7 +192,7 @@ public class AccountSwitchTests
         var store = new FakeSecureStore();
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
-        var vm = new SignInViewModel(session.Tokens, new AccountSwitchService(t.Db), session.Client, nav);
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
 
         await vm.ExternalSignInAsync("Google", "id-token");
 
@@ -208,7 +208,7 @@ public class AccountSwitchTests
         var stub = new StubHandler(r => r.Path == "/auth/register" ? StubHandler.Status(HttpStatusCode.OK) : StubHandler.Status(HttpStatusCode.InternalServerError));
         var store = new FakeSecureStore();
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
-        var vm = new SignInViewModel(session.Tokens, new AccountSwitchService(t.Db), session.Client, new FakeNavigator());
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, new FakeNavigator());
         vm.ToggleModeCommand.Execute(null);
         vm.Email = "new@example.com";
         vm.Password = "pw";

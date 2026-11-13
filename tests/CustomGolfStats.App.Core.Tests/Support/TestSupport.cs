@@ -43,3 +43,10 @@ public sealed class TempDb : IAsyncDisposable
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { /* best effort */ }
     }
 }
+
+/// <summary>An AccountSwitchService wired to a SyncEngine on the same database, as the app composes it.</summary>
+public static class TestAccounts
+{
+    public static AccountSwitchService For(LocalDb db) =>
+        new(db, new CustomGolfStats.App.Core.Sync.SyncEngine(db, new StubHandler(_ => StubHandler.Status(System.Net.HttpStatusCode.OK)).Client()));
+}

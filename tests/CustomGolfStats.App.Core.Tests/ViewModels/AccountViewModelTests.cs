@@ -22,7 +22,7 @@ public class SignInViewModelTests
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
         var temp = TempDb.CreateAsync().GetAwaiter().GetResult();
-        var vm = new SignInViewModel(session.Tokens, new Storage.AccountSwitchService(temp.Db), session.Client, nav);
+        var vm = new SignInViewModel(session.Tokens, TestAccounts.For(temp.Db), session.Client, nav);
         return new Built(vm, nav, store, stub, temp, session);
     }
 
@@ -171,7 +171,7 @@ public class HomeViewModelTests
     private static async Task<Rig> CreateAsync()
     {
         var vm = await VmRig.CreateAsync();
-        await new Storage.AccountSwitchService(vm.Db).CheckAsync("home@example.com"); // a verified account: sync may run
+        await TestAccounts.For(vm.Db).CheckAsync("home@example.com"); // a verified account: sync may run
         Rig? rig = null;
         var stub = new StubHandler(r => r.Method.Method == "PUT" ? rig!.PutRound(r) : r.Path == "/sync/changes" ? rig!.Changes(r) : StubHandler.Status(HttpStatusCode.NotFound));
         var home = new HomeViewModel(vm.Db, new SyncEngine(vm.Db, stub.Client()), vm.Nav);

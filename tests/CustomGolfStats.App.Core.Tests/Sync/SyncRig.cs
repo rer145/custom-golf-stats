@@ -36,7 +36,7 @@ public sealed class SyncRig : IAsyncDisposable
     private async Task SeedCourseAsync()
     {
         await Temp.Db.Courses.SaveFromServerAsync(Samples.Course());
-        await new Storage.AccountSwitchService(Temp.Db).CheckAsync("rig@example.com"); // a verified account: sync may run
+        await TestAccounts.For(Temp.Db).CheckAsync("rig@example.com"); // a verified account: sync may run
     }
 
     private HttpResponseMessage Dispatch(Recorded r) => (r.Method.Method, r.Path) switch

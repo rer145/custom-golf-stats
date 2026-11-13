@@ -47,18 +47,17 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         lock (_gate)
         {
             run = _running;
-            if (run is { IsCompleted: false })
-                _runCancellation?.Cancel();
+            if (run is not { IsCompleted: false })
+                return; // nothing running; a finished run's outcome (even a fault) belongs to its own callers
+            _runCancellation?.Cancel();
         }
-        if (run is null)
-            return;
         try
         {
             await run.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            // stopped
+            // The run's callers see its outcome; stopping only needs it to have ended.
         }
     }
 

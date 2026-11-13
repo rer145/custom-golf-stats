@@ -53,6 +53,7 @@ public static class UiText
     public const string RegisterFailed = "We could not create that account. Check the details or try signing in.";
     public const string SignInOffline = "You need a connection to sign in.";
     public const string AccountCreatedSignInFailed = "Your account was created, but signing in did not work. Try signing in.";
+    public const string VerifySessionOffline = "You're offline, so we can't confirm your account yet. Your rounds are safe on this device; syncing starts once you're back online.";
     public const string AccountUnknown = "We could not confirm which account this is. Please try again.";
     public static string UnsyncedFromAnotherAccount(int rounds, int courses, int unsavedHoles = 0)
     {

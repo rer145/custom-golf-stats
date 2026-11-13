@@ -12,13 +12,12 @@ public sealed record AccountSwitchPrompt(int UnsyncedRounds, int PendingCourses,
 /// signs in: with nothing unsynced the old data is cleared at once; with unsynced rounds, courses or hole drafts a prompt is returned
 /// and syncing is blocked until the golfer confirms (everything local is cleared) or cancels (the new sign-in is undone by the
 /// caller). The pending state is stored, so it survives the app being closed with the question unanswered.
-/// <para>Constructed with the <see cref="Sync.SyncEngine"/> (the app always does) a sign-in also stops a running sync.
-/// A sign-in is bracketed: <see cref="BeginSignInAsync"/> stores a blocking marker BEFORE any token is saved, and only
+/// <para>A sign-in also stops a running sync (<see cref="Sync.SyncEngine.StopAsync"/>). A sign-in is bracketed: <see cref="BeginSignInAsync"/> stores a blocking marker BEFORE any token is saved, and only
 /// <see cref="CheckAsync"/> (or a confirmed switch) removes it. Sync refuses to run while any marker is present or before an account
 /// was ever verified (<see cref="IsSyncAllowedAsync"/>), so a crash or exception between saving the tokens and checking the account
 /// can never send one account's unsynced rounds to another.</para>
 /// </summary>
-public sealed class AccountSwitchService(LocalDb db, Sync.SyncEngine? sync = null)
+public sealed class AccountSwitchService(LocalDb db, Sync.SyncEngine sync)
 {
     public const string AccountKey = "account";
     public const string PendingKey = "pendingAccount";
@@ -37,8 +36,7 @@ public sealed class AccountSwitchService(LocalDb db, Sync.SyncEngine? sync = nul
     {
         if (await db.SyncState.GetAsync(PendingKey).ConfigureAwait(false) is null)
             await db.SyncState.SetAsync(PendingKey, UnverifiedMarker).ConfigureAwait(false);
-        if (sync is not null)
-            await sync.StopAsync().ConfigureAwait(false);
+        await sync.StopAsync().ConfigureAwait(false);
     }
 
     /// <summary>True when an account was verified for the stored session on this device (the database may be newer than the stored

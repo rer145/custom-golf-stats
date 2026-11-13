@@ -76,10 +76,11 @@ public sealed class KeystoreSecureStore(Context context) : ISecureStore
     }
 
     /// <summary>The stored value can never be read again: the GCM tag does not match (the key changed), the key was invalidated or
-    /// cannot be recovered, or the stored text is not what this class writes. Anything else (a transient Keystore failure, for
+    /// cannot be recovered, the cipher rejects the stored IV/ciphertext (IllegalArgumentException), or the stored text is not what
+    /// this class writes. Anything else (a transient Keystore failure, for
     /// example) is rethrown and the value is kept.</summary>
     private static bool IsUnrecoverable(Exception ex) =>
-        ex is AEADBadTagException or KeyPermanentlyInvalidatedException or UnrecoverableKeyException
+        ex is AEADBadTagException or KeyPermanentlyInvalidatedException or UnrecoverableKeyException or Java.Lang.IllegalArgumentException
             or FormatException or IndexOutOfRangeException or ArgumentOutOfRangeException;
 
     private static IKey GetOrCreateKey()

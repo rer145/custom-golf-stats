@@ -21,7 +21,7 @@ public class CarryInTests
     private static SignInViewModel SignInVm(TempDb t, ISecureStore store, StubHandler stub, FakeNavigator nav)
     {
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
-        return new SignInViewModel(session.Tokens, new AccountSwitchService(t.Db), session.Client, nav);
+        return new SignInViewModel(session.Tokens, TestAccounts.For(t.Db), session.Client, nav);
     }
 
     private static async Task SignInAsAsync(TempDb t, string email)
@@ -345,7 +345,7 @@ public class CarryInTests
 
         Assert.NotNull(vm.PendingSwitch);
         Assert.Equal(UiText.SomethingWentWrong, vm.ErrorMessage);
-        Assert.NotNull(await new AccountSwitchService(t.Db).GetPendingAsync());
+        Assert.NotNull(await TestAccounts.For(t.Db).GetPendingAsync());
     }
 
     private sealed class FailingNavigator : INavigator
