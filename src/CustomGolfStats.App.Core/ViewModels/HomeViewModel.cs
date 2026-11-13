@@ -31,19 +31,39 @@ public sealed partial class HomeViewModel(LocalDb db, SyncEngine sync, INavigato
     /// <summary>The session ended; show a way back to the sign-in screen.</summary>
     [ObservableProperty] private bool _needsSignIn;
 
+    /// <summary>How many recent rounds the list shows before "see all".</summary>
+    public int RecentLimit { get; set; } = 50;
+
+    /// <summary>There are older rounds than the list shows.</summary>
+    [ObservableProperty] private bool _hasMoreRounds;
+
+    private bool _showAll;
+    private int _loadGeneration;
+
     public async Task LoadAsync()
     {
+        // Overlapping loads (a sync finishing while the screen reloads) must not interleave: only the newest one applies its result.
+        var generation = ++_loadGeneration;
+        var totals = await db.Rounds.ListTotalsAsync(_showAll ? null : RecentLimit + 1).ConfigureAwait(true);
+        var pending = await db.Rounds.CountDirtyAsync().ConfigureAwait(true);
+        if (generation != _loadGeneration)
+            return;
+
+        var shown = _showAll ? totals : totals.Take(RecentLimit).ToList();
+        HasMoreRounds = !_showAll && totals.Count > RecentLimit;
         Rounds.Clear();
-        foreach (var row in await db.Rounds.ListAsync())
-        {
-            var record = await db.Rounds.GetAsync(row.Id);
-            if (record is null)
-                continue;
-            var data = record.ToRoundData();
-            Rounds.Add(new RoundListItem(row.Id, row.CourseName, row.PlayedOn, data.Holes.Count, data.Score, data.ToPar, row.FinishedAt is not null, row.Dirty));
-        }
-        PendingCount = await db.Rounds.CountDirtyAsync();
+        foreach (var t in shown)
+            Rounds.Add(new RoundListItem(t.Id, t.CourseName, t.PlayedOn, t.Holes, t.Score, t.Score - t.Par, t.FinishedAt is not null, t.Dirty));
+        PendingCount = pending;
         RefreshStatus();
+    }
+
+    /// <summary>Shows every round, not just the recent ones.</summary>
+    [RelayCommand]
+    private async Task SeeAllAsync()
+    {
+        _showAll = true;
+        await LoadAsync();
     }
 
     /// <summary>The status line from what is known now: the last sync result and how many changes are still waiting.</summary>

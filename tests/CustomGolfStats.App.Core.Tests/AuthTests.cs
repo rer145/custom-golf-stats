@@ -164,18 +164,32 @@ public class AuthTests
     [Fact]
     public async Task Concurrent_401s_share_a_single_refresh()
     {
-        var (session, stub, store) = Build(r => (r.Path, r.Bearer) switch
+        // All five requests are held at the server until every one has arrived, so the 401s genuinely overlap.
+        var allArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrived = 0;
+        var stub = new StubHandler(async r =>
         {
-            ("/auth/refresh", _) => StubHandler.Json(HttpStatusCode.OK, Payloads.Tokens(Access2, Refresh2)),
-            (_, Access1) => StubHandler.Status(HttpStatusCode.Unauthorized),
-            _ => Profile(),
+            if (r.Path == "/auth/refresh")
+                return StubHandler.Json(HttpStatusCode.OK, Payloads.Tokens(Access2, Refresh2));
+            if (r.Bearer == Access1)
+            {
+                if (Interlocked.Increment(ref arrived) == 5)
+                    allArrived.SetResult();
+                await allArrived.Task;
+                return StubHandler.Status(HttpStatusCode.Unauthorized);
+            }
+            return Profile();
         });
+        var store = new FakeSecureStore();
         store.Values[TokenService.AccessTokenKey] = Access1;
         store.Values[TokenService.RefreshTokenKey] = Refresh1;
+        var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
 
         await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => session.Client.MeGetProfileAsync(TestContext.Current.CancellationToken)));
 
+        Assert.Equal(5, arrived);
         Assert.Single(stub.To("POST", "/auth/refresh"));
+        Assert.Equal(5, stub.Requests.Count(r => r.Bearer == Access2)); // every request was retried with the new token
     }
 
     [Fact]

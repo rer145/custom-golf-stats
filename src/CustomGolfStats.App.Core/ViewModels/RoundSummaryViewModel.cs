@@ -83,6 +83,8 @@ public sealed partial class RoundSummaryViewModel(LocalDb db, INavigator navigat
     private async Task SaveExtrasAsync()
     {
         ExtrasErrors.Clear();
+        if (!IsFinite(TemperatureF) || !IsFinite(WindSpeedMph) || !IsFinite(DistanceMiles))
+            ExtrasErrors.Add(UiText.NotANumber); // a cleared number box reports NaN
         if (WindSpeedMph is < 0 || DurationMinutes is < 0 || StepCount is < 0 || DistanceMiles is < 0)
             ExtrasErrors.Add(UiText.NegativeNumber);
         if (WindDirectionDegrees is < 0 or > 359)
@@ -101,6 +103,8 @@ public sealed partial class RoundSummaryViewModel(LocalDb db, INavigator navigat
         if (!saved)
             ErrorMessage = UiText.RoundNotFound;
     }
+
+    private static bool IsFinite(double? value) => value is null || double.IsFinite(value.Value);
 
     /// <summary>Deletes the round (a tombstone that syncs) and returns home. The view should confirm first.</summary>
     [RelayCommand]

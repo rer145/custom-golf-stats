@@ -92,3 +92,16 @@ public class CourseValidatorTests
         Assert.Contains(CourseError.HoleNumberRepeated, errors);
     }
 }
+
+public class CourseTextLimitTests
+{
+    [Fact]
+    public void Text_length_limits_match_the_API_columns()
+    {
+        Assert.Equal((200, 200, 300, 100, 100, 100, 50, 300, 100),
+            (CourseLimits.MaxNameLength, CourseLimits.MaxClubNameLength, CourseLimits.MaxAddressLength, CourseLimits.MaxCityLength,
+             CourseLimits.MaxRegionLength, CourseLimits.MaxCountryLength, CourseLimits.MaxPhoneLength, CourseLimits.MaxWebsiteLength,
+             CourseLimits.MaxTeeNameLength));
+        Assert.Equal(new DateOnly(1900, 1, 1), CourseLimits.DefaultEffectiveFrom);
+    }
+}

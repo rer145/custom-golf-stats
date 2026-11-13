@@ -11,13 +11,25 @@ namespace CustomGolfStats.App.Core.Tests.ViewModels;
 
 public class SignInViewModelTests
 {
-    private static (SignInViewModel Vm, FakeNavigator Nav, FakeSecureStore Store, StubHandler Stub) Build(Func<Recorded, HttpResponseMessage> respond)
+    internal sealed record Built(SignInViewModel Vm, FakeNavigator Nav, FakeSecureStore Store, StubHandler Stub, TempDb Temp, ApiAccess.ApiSession Session);
+
+    internal static Built BuildFull(Func<Recorded, HttpResponseMessage> respond, string profileEmail = "a@b.c")
     {
-        var stub = new StubHandler(respond);
+        var stub = new StubHandler(r => r.Path == "/me"
+            ? StubHandler.Json(HttpStatusCode.OK, new Client.ProfileResponse { Id = Guid.NewGuid(), Email = profileEmail, FirstName = "A", LastName = "B", Gender = "Male", Units = "Imperial" })
+            : respond(r));
         var store = new FakeSecureStore();
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, store, stub);
         var nav = new FakeNavigator();
-        return (new SignInViewModel(session.Tokens, nav), nav, store, stub);
+        var temp = TempDb.CreateAsync().GetAwaiter().GetResult();
+        var vm = new SignInViewModel(session.Tokens, new Storage.AccountSwitchService(temp.Db), session.Client, nav);
+        return new Built(vm, nav, store, stub, temp, session);
+    }
+
+    private static (SignInViewModel Vm, FakeNavigator Nav, FakeSecureStore Store, StubHandler Stub) Build(Func<Recorded, HttpResponseMessage> respond)
+    {
+        var b = BuildFull(respond);
+        return (b.Vm, b.Nav, b.Store, b.Stub);
     }
 
     private static HttpResponseMessage Ok(Recorded _) => StubHandler.Json(HttpStatusCode.OK, Payloads.Tokens("acc", "ref"));
@@ -106,7 +118,7 @@ public class SignInViewModelTests
 
         await vm.SubmitCommand.ExecuteAsync(null);
 
-        Assert.Equal(["/auth/register", "/auth/login"], stub.Requests.Select(r => r.Path));
+        Assert.Equal(["/auth/register", "/auth/login", "/me"], stub.Requests.Select(r => r.Path)); // then the profile, to learn which account this is
         Assert.Equal(Route.Home, nav.Last.Route);
 
         var (rejected, _, _, _) = Build(_ => StubHandler.Status(HttpStatusCode.BadRequest));
@@ -263,7 +275,8 @@ public class HomeViewModelTests
         await using var rig = await CreateAsync();
         await rig.Vm.Db.Courses.SaveFromServerAsync(Samples.Course());
         await rig.Vm.Db.Rounds.SaveAsync(Samples.FullShotRound());
-        rig.PutRound = _ => throw new InvalidOperationException("boom");
+        rig.PutRound = _ => StubHandler.Status(HttpStatusCode.InternalServerError);
+        rig.Changes = _ => throw new InvalidOperationException("boom"); // outside the per-item handlers
 
         await rig.Home.SyncCommand.ExecuteAsync(null);
 

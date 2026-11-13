@@ -24,15 +24,23 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
 
     public async Task SignInAsync(string email, string password, CancellationToken ct = default)
     {
-        var tokens = await authApi.AuthLoginAsync(false, false, new LoginRequest { Email = email, Password = password }, ct);
-        await SaveAsync(tokens);
+        var tokens = await authApi.AuthLoginAsync(false, false, new LoginRequest { Email = email, Password = password }, ct).ConfigureAwait(false);
+        await SaveAsync(tokens).ConfigureAwait(false);
     }
 
-    /// <summary>Creates the account, then signs in with it.</summary>
+    /// <summary>Creates the account, then signs in with it. If the account was created but the sign-in then failed, throws
+    /// <see cref="AccountCreatedSignInFailedException"/> so the caller can tell the golfer the account exists.</summary>
     public async Task RegisterAsync(string email, string password, CancellationToken ct = default)
     {
-        await authApi.AuthRegisterAsync(new RegisterRequest { Email = email, Password = password }, ct);
-        await SignInAsync(email, password, ct);
+        await authApi.AuthRegisterAsync(new RegisterRequest { Email = email, Password = password }, ct).ConfigureAwait(false);
+        try
+        {
+            await SignInAsync(email, password, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new AccountCreatedSignInFailedException(ex);
+        }
     }
 
     /// <summary>Apple / Google sign-in with an ID token supplied by the platform.</summary>
@@ -40,7 +48,7 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
     {
         var tokens = await authApi.AuthExternalSignInAsync(
             new ExternalSignInRequest { Provider = provider, IdToken = idToken, FirstName = firstName, LastName = lastName }, ct);
-        await SaveAsync(tokens);
+        await SaveAsync(tokens).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -51,26 +59,26 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
     /// </summary>
     public async Task<bool> RefreshAsync(string? staleAccessToken, CancellationToken ct = default)
     {
-        await _refreshLock.WaitAsync(ct);
+        await _refreshLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var current = await store.GetAsync(AccessTokenKey);
+            var current = await store.GetAsync(AccessTokenKey).ConfigureAwait(false);
             if (current is not null && staleAccessToken is not null && current != staleAccessToken)
                 return true;
 
-            var refresh = await store.GetAsync(RefreshTokenKey);
+            var refresh = await store.GetAsync(RefreshTokenKey).ConfigureAwait(false);
             if (refresh is null)
                 return false;
 
             try
             {
-                var tokens = await authApi.AuthRefreshAsync(new RefreshRequest { RefreshToken = refresh }, ct);
-                await SaveAsync(tokens);
+                var tokens = await authApi.AuthRefreshAsync(new RefreshRequest { RefreshToken = refresh }, ct).ConfigureAwait(false);
+                await SaveAsync(tokens).ConfigureAwait(false);
                 return true;
             }
             catch (ApiException ex) when (ex.StatusCode is 400 or 401 or 403)
             {
-                await ClearAsync();
+                await ClearAsync().ConfigureAwait(false);
                 SessionExpired?.Invoke();
                 return false;
             }
@@ -85,13 +93,16 @@ public sealed class TokenService(ISecureStore store, ICustomGolfStatsApiClient a
 
     private async Task SaveAsync(AccessTokenResponse tokens)
     {
-        await store.SetAsync(AccessTokenKey, tokens.AccessToken);
-        await store.SetAsync(RefreshTokenKey, tokens.RefreshToken);
+        await store.SetAsync(AccessTokenKey, tokens.AccessToken).ConfigureAwait(false);
+        await store.SetAsync(RefreshTokenKey, tokens.RefreshToken).ConfigureAwait(false);
     }
 
     private async Task ClearAsync()
     {
-        await store.RemoveAsync(AccessTokenKey);
-        await store.RemoveAsync(RefreshTokenKey);
+        await store.RemoveAsync(AccessTokenKey).ConfigureAwait(false);
+        await store.RemoveAsync(RefreshTokenKey).ConfigureAwait(false);
     }
 }
+
+/// <summary>Registration succeeded but the automatic sign-in after it did not.</summary>
+public sealed class AccountCreatedSignInFailedException(Exception inner) : Exception("The account was created but signing in failed.", inner);

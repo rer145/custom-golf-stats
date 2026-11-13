@@ -36,7 +36,10 @@ public class StartRoundViewModelTests
         var loc = new FakeLocation();
         Setup? setup = null;
         var server = new StubHandler(r => r.Path == "/weather" ? setup!.Weather(r) : StubHandler.Status(HttpStatusCode.NotFound));
-        var vm = new StartRoundViewModel(rig.Db, rig.Temp.Clock, rig.Nav, net, loc, server.Client());
+        var vm = new StartRoundViewModel(rig.Db, rig.Temp.Clock, rig.Nav, net, loc, server.Client())
+        {
+            WeatherTimeout = TimeSpan.FromSeconds(30), // generous: only a test about timing may use a short one
+        };
         setup = new Setup { Rig = rig, Server = server, Vm = vm };
         await vm.LoadAsync(new CourseArgs(Samples.CourseId));
         return (setup, net, loc);
@@ -45,6 +48,7 @@ public class StartRoundViewModelTests
     private static async Task<Guid> StartedRoundIdAsync(Setup s)
     {
         await s.Vm.StartCommand.ExecuteAsync(null);
+        await s.Vm.WeatherTask; // never leave a background write running when the test ends
         return ((RoundArgs)s.Rig.Nav.Last.Parameter!).RoundId;
     }
 
@@ -290,7 +294,8 @@ public class StartRoundViewModelTests
             return StubHandler.Json(HttpStatusCode.OK, new WeatherDto { Conditions = "Rain", TemperatureF = 50, WindSpeedMph = 1, WindDirectionDegrees = 10 });
         };
 
-        var id = await StartedRoundIdAsync(s);          // returns while the weather call is still waiting
+        await s.Vm.StartCommand.ExecuteAsync(null);     // returns while the weather call is still waiting
+        var id = ((RoundArgs)s.Rig.Nav.Last.Parameter!).RoundId;
         Assert.Equal(Route.Round, s.Rig.Nav.Last.Route);
         Assert.False(s.Vm.WeatherTask.IsCompleted);
         release.Release();
@@ -323,8 +328,10 @@ public class StartRoundViewModelTests
         s.Vm.Mode = Dom.EntryMode.ShotByShot;
         await s.Rig.Db.Connection.ExecuteAsync("DROP TABLE RoundRow"); // make the save fail
 
-        await Assert.ThrowsAnyAsync<Exception>(() => s.Vm.StartCommand.ExecuteAsync(null));
+        await s.Vm.StartCommand.ExecuteAsync(null); // shows an error instead of throwing at the UI
 
+        Assert.Equal(UiText.CouldNotStartRound, s.Vm.ErrorMessage);
+        Assert.Empty(s.Rig.Nav.Visits);
         var e = (await s.Rig.Db.Entitlements.GetAsync())!;
         Assert.Equal(2, e.TrialShotRoundsRemaining);
         Assert.True(e.ShotByShotEntry);
@@ -339,8 +346,9 @@ public class StartRoundViewModelTests
         s.Vm.Mode = Dom.EntryMode.ShotByShot;
         await s.Rig.Db.Connection.ExecuteAsync("DROP TABLE RoundRow");
 
-        await Assert.ThrowsAnyAsync<Exception>(() => s.Vm.StartCommand.ExecuteAsync(null));
+        await s.Vm.StartCommand.ExecuteAsync(null);
 
+        Assert.Equal(UiText.CouldNotStartRound, s.Vm.ErrorMessage);
         Assert.Null((await s.Rig.Db.Entitlements.GetAsync())!.TrialShotRoundsRemaining); // not "refunded" into a count
     }
 

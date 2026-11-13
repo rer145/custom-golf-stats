@@ -40,9 +40,8 @@ public sealed partial class ScorecardViewModel(LocalDb db) : ViewModelBase
         CourseName = round.CourseName;
         TeeName = round.TeeName;
         PlayedOn = round.PlayedOn;
-        var version = (await db.Connection.FindAsync<Storage.Rows.TeeVersionRow>(round.TeeVersionId));
-        Rating = version?.Rating;
-        Slope = version?.Slope;
+        Rating = ctx.Version?.Rating;
+        Slope = ctx.Version?.Slope;
 
         Rows.Clear();
         foreach (var hole in ctx.Record.Holes.OrderBy(h => h.Hole.EntrySequence))

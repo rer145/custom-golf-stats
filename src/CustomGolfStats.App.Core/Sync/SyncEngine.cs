@@ -41,13 +41,20 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         var run = new Run();
         try
         {
-            var pendingCourses = await PushCoursesAsync(run, ct);
+            // A different account signed in while this device still holds unsynced data: nothing may be sent until the golfer decides.
+            if (await db.SyncState.GetAsync("pendingAccount") is not null)
+            {
+                run.SignedOut = true;
+                return run.ToResult();
+            }
+
+            var pendingCourses = await PushCoursesAsync(run, ct).ConfigureAwait(false);
             if (run.Stop)
                 return run.ToResult();
-            await PushRoundsAsync(run, pendingCourses, ct);
+            await PushRoundsAsync(run, pendingCourses, ct).ConfigureAwait(false);
             if (run.Stop)
                 return run.ToResult();
-            await PullAsync(run, ct);
+            await PullAsync(run, ct).ConfigureAwait(false);
         }
         catch (ApiException ex) when (ex.StatusCode == 401)
         {
@@ -76,8 +83,8 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             }
             try
             {
-                await api.CoursesCreateAsync(ApiMapper.ToCreateRequest(course), ct);
-                await db.Courses.MarkSyncedAsync(course.Course.Id);
+                await api.CoursesCreateAsync(ApiMapper.ToCreateRequest(course), ct).ConfigureAwait(false);
+                await db.Courses.MarkSyncedAsync(course.Course.Id).ConfigureAwait(false);
                 run.PushedCourses++;
             }
             catch (ApiException ex) when (ex.StatusCode == 401)
@@ -98,6 +105,14 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
                 run.Offline = true;
                 stillPending.Add(course.Course.Id);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One bad item must not stop the rest from syncing: report it and carry on.
+                run.Failures.Add($"POST /courses {course.Course.Id}: unexpected error");
+                run.Notices.Add(new SyncNotice(SyncNoticeKind.CouldNotSync, null,
+                    $"The course \"{course.Course.Name}\" could not be saved to your account because of an unexpected error. It is still saved on this device.") { CourseId = course.Course.Id });
+                stillPending.Add(course.Course.Id);
+            }
         }
         return stillPending;
     }
@@ -112,11 +127,11 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             try
             {
                 if (round.Round.DeletedAt is not null)
-                    await PushDeleteAsync(run, id, ct);
+                    await PushDeleteAsync(run, id, ct).ConfigureAwait(false);
                 else if (pendingCourses.Contains(round.Round.CourseId))
                     run.DeferredRounds++; // the server does not know the course yet
                 else
-                    await PushUpsertAsync(run, round, ct);
+                    await PushUpsertAsync(run, round, ct).ConfigureAwait(false);
             }
             catch (ApiException ex) when (ex.StatusCode == 401)
             {
@@ -133,6 +148,13 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             {
                 run.Offline = true;
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Includes a server copy that cannot be mapped or stored. The round stays dirty; the others still sync.
+                run.Failures.Add($"round {id}: unexpected error");
+                run.Notices.Add(new SyncNotice(SyncNoticeKind.CouldNotSync, id,
+                    $"The round at {round.Round.CourseName} on {round.Round.PlayedOn:yyyy-MM-dd} could not be synced because of an unexpected error. It is still saved on this device."));
+            }
         }
     }
 
@@ -140,13 +162,13 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     {
         try
         {
-            await api.RoundsDeleteAsync(id, ct);
+            await api.RoundsDeleteAsync(id, ct).ConfigureAwait(false);
         }
         catch (ApiException ex) when (ex.StatusCode == 404)
         {
             // already gone on the server: the goal is met
         }
-        await db.Rounds.PurgeTombstoneAsync(id);
+        await db.Rounds.PurgeTombstoneAsync(id).ConfigureAwait(false);
         run.PushedDeletes++;
     }
 
@@ -155,8 +177,8 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
         var pushed = round.Round.ClientUpdatedAt;
         try
         {
-            var saved = await api.RoundsUpsertAsync(round.Round.Id, ApiMapper.ToUpsertRequest(round), ct);
-            await db.Rounds.SaveFromServerAsync(ApiMapper.ToRecord(saved), ServerWriteMode.PushAccepted(pushed));
+            var saved = await api.RoundsUpsertAsync(round.Round.Id, ApiMapper.ToUpsertRequest(round), ct).ConfigureAwait(false);
+            await db.Rounds.SaveFromServerAsync(ApiMapper.ToRecord(saved), ServerWriteMode.PushAccepted(pushed)).ConfigureAwait(false);
             run.PushedRounds++;
         }
         catch (ApiException<RoundDto> conflict) when (conflict.StatusCode == 409)
@@ -180,8 +202,8 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
     {
         try
         {
-            var since = await db.SyncState.GetNextSinceAsync();
-            var changes = await api.SyncChangesAsync(since?.ToString("O", CultureInfo.InvariantCulture), ct);
+            var since = await db.SyncState.GetNextSinceAsync().ConfigureAwait(false);
+            var changes = await api.SyncChangesAsync(since?.ToString("O", CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
 
             // A record that cannot be mapped is skipped and reported; one bad record must not block sync forever.
             // Courses first so rounds always find their course.
@@ -189,7 +211,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             {
                 if (!TryMap(run, $"course {dto.Id}", () => ApiMapper.ToRecord(dto), out var course))
                     continue;
-                await db.Courses.SaveFromServerAsync(course);
+                await db.Courses.SaveFromServerAsync(course).ConfigureAwait(false);
                 run.PulledCourses++;
             }
 
@@ -197,20 +219,20 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             foreach (var dto in changes.HandicapEntries ?? [])
                 if (TryMap(run, $"handicap entry {dto.Id}", () => ApiMapper.ToRow(dto), out var row))
                     handicap.Add(row);
-            await db.Handicap.UpsertAsync(handicap);
+            await db.Handicap.UpsertAsync(handicap).ConfigureAwait(false);
             run.PulledHandicap += handicap.Count;
 
             // The server is the source of truth for entitlements. After an offline trial round that has not been pushed yet, this
             // can restore a higher trial count than the local decrement left; spec section 2 tolerates that.
             if (changes.Entitlements is { Tier: not null, Role: not null } entitlements
                 && TryMap(run, "entitlements", () => ApiMapper.ToRow(entitlements), out var entitlementsRow))
-                await db.Entitlements.SaveAsync(entitlementsRow);
+                await db.Entitlements.SaveAsync(entitlementsRow).ConfigureAwait(false);
 
             foreach (var dto in changes.Rounds ?? [])
             {
                 if (!TryMap(run, $"round {dto.Id}", () => ApiMapper.ToRecord(dto), out var record))
                     continue;
-                var local = await db.Connection.FindAsync<RoundRow>(dto.Id);
+                var local = await db.Connection.FindAsync<RoundRow>(dto.Id).ConfigureAwait(false);
                 if (local is not null && local.Version > dto.Version)
                 {
                     run.SkippedPulled++; // an older copy of what we already hold
@@ -223,7 +245,7 @@ public sealed class SyncEngine(LocalDb db, ICustomGolfStatsApiClient api) : IDis
             }
 
             // Only now, with everything applied (or reported), move the cursor.
-            await db.SyncState.SetNextSinceAsync(changes.NextSince);
+            await db.SyncState.SetNextSinceAsync(changes.NextSince).ConfigureAwait(false);
             run.PullCompleted = true;
         }
         catch (ApiException ex) when (ex.StatusCode == 401)

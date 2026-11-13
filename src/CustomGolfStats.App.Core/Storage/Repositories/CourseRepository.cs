@@ -26,8 +26,8 @@ public sealed class CourseRepository(SQLiteAsyncConnection db)
 
     public async Task<CourseRecord?> GetAsync(Guid courseId)
     {
-        var course = await db.FindAsync<CourseRow>(courseId);
-        return course is null ? null : await LoadAsync(course);
+        var course = await db.FindAsync<CourseRow>(courseId).ConfigureAwait(false);
+        return course is null ? null : await LoadAsync(course).ConfigureAwait(false);
     }
 
     /// <summary>Courses matching the text in name, club, city or region (empty text matches all), favorites first then by name.
@@ -56,20 +56,20 @@ public sealed class CourseRepository(SQLiteAsyncConnection db)
     /// <summary>Clears PendingSync after the course was created on the server.</summary>
     public async Task MarkSyncedAsync(Guid courseId)
     {
-        var row = await db.FindAsync<CourseRow>(courseId);
+        var row = await db.FindAsync<CourseRow>(courseId).ConfigureAwait(false);
         if (row is null)
             return;
         row.PendingSync = false;
-        await db.UpdateAsync(row);
+        await db.UpdateAsync(row).ConfigureAwait(false);
     }
 
     public async Task SetFavoriteAsync(Guid courseId, bool favorite)
     {
-        var row = await db.FindAsync<CourseRow>(courseId);
+        var row = await db.FindAsync<CourseRow>(courseId).ConfigureAwait(false);
         if (row is null)
             return;
         row.IsFavorite = favorite;
-        await db.UpdateAsync(row);
+        await db.UpdateAsync(row).ConfigureAwait(false);
     }
 
     /// <summary>The tee version in effect on <paramref name="asOf"/>: the latest one effective on or before it, or, for a date before
@@ -83,6 +83,11 @@ public sealed class CourseRepository(SQLiteAsyncConnection db)
         var earliest = await db.Table<TeeVersionRow>().Where(v => v.TeeId == teeId).OrderBy(v => v.EffectiveFrom).Take(1).ToListAsync();
         return earliest.FirstOrDefault();
     }
+
+    /// <summary>The version a round was played on: by id, or, when the id is not on this device (a manual course the server re-created with
+    /// its own version ids), the version in effect on the date played.</summary>
+    public async Task<TeeVersionRow?> ResolveVersionAsync(Guid teeVersionId, Guid teeId, DateTime playedOn) =>
+        await db.FindAsync<TeeVersionRow>(teeVersionId) ?? await GetVersionInEffectAsync(teeId, playedOn).ConfigureAwait(false);
 
     /// <summary>The hole layout of a tee version as domain <see cref="HoleInfo"/>, by hole number.</summary>
     public async Task<IReadOnlyList<HoleInfo>> GetHoleInfosAsync(Guid teeVersionId)

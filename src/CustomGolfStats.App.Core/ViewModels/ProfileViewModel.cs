@@ -98,7 +98,7 @@ public sealed partial class ProfileViewModel(
             });
             IsSaved = true;
         }
-        catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ErrorMessage = UiText.ProfileSaveFailed;
         }
@@ -135,7 +135,7 @@ public sealed partial class ProfileViewModel(
             NewHandicapIndex = null;
             await ReloadHandicapAsync();
         }
-        catch (Exception ex) when (ex is ApiException or HttpRequestException or IOException or TaskCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             HandicapErrors.Add(UiText.ProfileSaveFailed);
         }

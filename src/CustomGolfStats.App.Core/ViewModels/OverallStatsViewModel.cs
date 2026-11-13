@@ -28,11 +28,7 @@ public sealed partial class OverallStatsViewModel(LocalDb db, IClock clock) : Vi
 
     public async Task LoadAsync()
     {
-        var rows = await db.Rounds.ListAsync();
-        var data = new List<RoundData>();
-        foreach (var row in rows)
-            if (await db.Rounds.GetAsync(row.Id) is { } record)
-                data.Add(record.ToRoundData());
+        var data = await db.Rounds.ListRoundDataAsync(); // two queries, however many rounds
         _all = data;
 
         var handicap = await db.Handicap.LatestAsync();

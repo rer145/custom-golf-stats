@@ -56,6 +56,9 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
     public int EntrySequence { get; private set; }
     public bool IsNewPlaying { get; private set; }
 
+    /// <summary>The shots shown were restored from an unsaved draft (the app was closed mid-hole).</summary>
+    public bool IsRestoredDraft { get; private set; }
+
     public IReadOnlyList<Lie> StartLies => StartLieChoices;
     public IReadOnlyList<Lie> EndLies { get; } = Enum.GetValues<Lie>().Where(l => l != Lie.Tee).ToList();
     public IReadOnlyList<Club> Clubs { get; } = Enum.GetValues<Club>();
@@ -143,12 +146,24 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
                 IsNewPlaying = true;
             }
             EditingIndex = null;
+
+            // Shots entered but not saved when the app last closed come back, as long as they are for this hole.
+            IsRestoredDraft = false;
+            var draft = await db.Drafts.GetAsync(_roundId, EntrySequence);
+            if (draft is not null && draft.HoleNumber == _info.Number)
+            {
+                Shots.Clear();
+                foreach (var shot in draft.Shots)
+                    Shots.Add(new ShotItem(shot));
+                IsRestoredDraft = true;
+            }
             PrefillNext();
         }
         finally
         {
             _loading = false;
         }
+        OnPropertyChanged(nameof(IsRestoredDraft));
         OnPropertyChanged(nameof(HoleNumber));
         OnPropertyChanged(nameof(Par));
         OnPropertyChanged(nameof(Yardage));
@@ -313,9 +328,10 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
 
     // ---- commands ----
 
-    /// <summary>Adds the shot being entered (or replaces the one being edited), then prefills the next.</summary>
+    /// <summary>Adds the shot being entered (or replaces the one being edited), then prefills the next. The hole so far is saved as a
+    /// draft before the command completes.</summary>
     [RelayCommand]
-    private void AddShot()
+    private async Task AddShotAsync()
     {
         DraftErrors.Clear();
         var index = EditingIndex ?? Shots.Count;
@@ -343,6 +359,7 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
         EditingIndex = null;
         PrefillNext();
         Recompute();
+        await SaveDraftAsync();
     }
 
     [RelayCommand]
@@ -382,7 +399,7 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
     }
 
     [RelayCommand]
-    private void DeleteShot(ShotItem item)
+    private async Task DeleteShotAsync(ShotItem item)
     {
         var index = Shots.IndexOf(item);
         if (index < 0)
@@ -394,13 +411,14 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
         DraftErrors.Clear();
         PrefillNext();
         Recompute();
+        await SaveDraftAsync();
     }
 
     [RelayCommand]
-    private void UndoLastShot()
+    private async Task UndoLastShotAsync()
     {
         if (Shots.Count > 0)
-            DeleteShot(Shots[^1]);
+            await DeleteShotAsync(Shots[^1]);
     }
 
     private void Recompute()
@@ -418,7 +436,32 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
         SaveCommand.NotifyCanExecuteChanged();
     }
 
-    /// <summary>Stores the hole (summary derived from the shots) and returns to the round.</summary>
+    /// <summary>Writes the shots entered so far so the hole survives the app closing. A failure to write a draft never interrupts entry.</summary>
+    private async Task SaveDraftAsync()
+    {
+        try
+        {
+            await db.Drafts.SaveAsync(_roundId, EntrySequence, _info.Number, Shots.Select(s => s.Shot).ToList());
+        }
+        catch (Exception)
+        {
+            // Best effort.
+        }
+    }
+
+    private async Task ClearDraftAsync()
+    {
+        try
+        {
+            await db.Drafts.ClearAsync(_roundId, EntrySequence);
+        }
+        catch (Exception)
+        {
+            // A leftover draft for a saved hole is harmless: it holds the same shots.
+        }
+    }
+
+    /// <summary>Stores the hole (summary derived from the shots), clears its draft and returns to the round.</summary>
     [RelayCommand(CanExecute = nameof(IsComplete))]
     private async Task SaveAsync()
     {
@@ -426,15 +469,18 @@ public sealed partial class ShotEntryViewModel(LocalDb db, INavigator navigator)
         if (!IsComplete)
             return;
         var record = HoleRecord.FromShots(_roundId, _info, EntrySequence, Shots.Select(s => s.Shot).ToList());
-        await db.Rounds.SaveHoleAsync(_roundId, record);
+        if (!await TryAsync(() => db.Rounds.SaveHoleAsync(_roundId, record), UiText.RoundNotFound))
+            return;
+        await ClearDraftAsync();
         await navigator.GoBackAsync();
     }
 
     [RelayCommand]
     private async Task DeleteHoleAsync()
     {
-        if (!IsNewPlaying)
-            await db.Rounds.DeleteHoleAsync(_roundId, EntrySequence);
+        if (!IsNewPlaying && !await TryAsync(() => db.Rounds.DeleteHoleAsync(_roundId, EntrySequence), UiText.RoundNotFound))
+            return;
+        await ClearDraftAsync();
         await navigator.GoBackAsync();
     }
 

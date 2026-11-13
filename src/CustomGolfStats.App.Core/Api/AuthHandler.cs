@@ -15,13 +15,13 @@ public sealed class AuthHandler(TokenService tokens) : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (request.RequestUri is { AbsolutePath: var path } && AnonymousPaths.Contains(path.TrimEnd('/')))
-            return await base.SendAsync(request, cancellationToken);
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         // Buffer the body so the request can be replayed after a refresh (a request message can only be sent once).
-        var body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
-        var token = await tokens.GetAccessTokenAsync();
+        var body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var token = await tokens.GetAccessTokenAsync().ConfigureAwait(false);
 
-        var response = await base.SendAsync(Clone(request, body, token), cancellationToken);
+        var response = await base.SendAsync(Clone(request, body, token), cancellationToken).ConfigureAwait(false);
         if (response.StatusCode != HttpStatusCode.Unauthorized)
             return response;
 
@@ -29,7 +29,7 @@ public sealed class AuthHandler(TokenService tokens) : DelegatingHandler
             return response; // session over: let the caller see the 401
 
         response.Dispose();
-        return await base.SendAsync(Clone(request, body, await tokens.GetAccessTokenAsync()), cancellationToken);
+        return await base.SendAsync(Clone(request, body, await tokens.GetAccessTokenAsync()), cancellationToken).ConfigureAwait(false);
     }
 
     private static HttpRequestMessage Clone(HttpRequestMessage original, byte[]? body, string? token)

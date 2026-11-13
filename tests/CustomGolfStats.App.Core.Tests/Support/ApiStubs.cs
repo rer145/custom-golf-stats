@@ -14,10 +14,26 @@ public sealed record Recorded(HttpMethod Method, string PathAndQuery, string? Be
 }
 
 /// <summary>A stub server: the responder sees each recorded request and returns an OpenAPI-shaped response (or throws).</summary>
-public sealed class StubHandler(Func<Recorded, HttpResponseMessage> respond) : HttpMessageHandler
+public sealed class StubHandler : HttpMessageHandler
 {
     private readonly object _lock = new();
-    public List<Recorded> Requests { get; } = [];
+    private readonly List<Recorded> _requests = [];
+    private readonly Func<Recorded, Task<HttpResponseMessage>> _respond;
+
+    public StubHandler(Func<Recorded, HttpResponseMessage> respond) => _respond = r => Task.FromResult(respond(r));
+
+    /// <summary>For tests that need requests to overlap: the responder can await a gate.</summary>
+    public StubHandler(Func<Recorded, Task<HttpResponseMessage>> respond) => _respond = respond;
+
+    /// <summary>A snapshot of the requests seen so far (safe to read while requests are still arriving).</summary>
+    public List<Recorded> Requests
+    {
+        get
+        {
+            lock (_lock)
+                return [.. _requests];
+        }
+    }
 
     public static readonly Uri BaseAddress = new("https://api.test/");
 
@@ -31,8 +47,8 @@ public sealed class StubHandler(Func<Recorded, HttpResponseMessage> respond) : H
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         var recorded = new Recorded(request.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.Parameter, body);
         lock (_lock)
-            Requests.Add(recorded);
-        return respond(recorded);
+            _requests.Add(recorded);
+        return await _respond(recorded);
     }
 
     public static HttpResponseMessage Json(HttpStatusCode status, object? body = null) => new(status)
@@ -45,10 +61,30 @@ public sealed class StubHandler(Func<Recorded, HttpResponseMessage> respond) : H
 
 public sealed class FakeSecureStore : ISecureStore
 {
+    private readonly object _lock = new();
+
+    /// <summary>Direct access is for single-threaded test setup and assertions; the ISecureStore methods lock.</summary>
     public Dictionary<string, string> Values { get; } = [];
-    public Task<string?> GetAsync(string key) => Task.FromResult(Values.TryGetValue(key, out var v) ? v : null);
-    public Task SetAsync(string key, string value) { Values[key] = value; return Task.CompletedTask; }
-    public Task RemoveAsync(string key) { Values.Remove(key); return Task.CompletedTask; }
+
+    public Task<string?> GetAsync(string key)
+    {
+        lock (_lock)
+            return Task.FromResult(Values.TryGetValue(key, out var v) ? v : null);
+    }
+
+    public Task SetAsync(string key, string value)
+    {
+        lock (_lock)
+            Values[key] = value;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(string key)
+    {
+        lock (_lock)
+            Values.Remove(key);
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>Builders for server payloads.</summary>

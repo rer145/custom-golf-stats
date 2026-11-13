@@ -18,7 +18,7 @@ public class LocalDbTests
             await using var db = await LocalDb.OpenAsync(path, new FakeClock(DateTimeOffset.UnixEpoch));
 
             Assert.Equal(LocalDb.LatestSchemaVersion, await db.GetSchemaVersionAsync());
-            foreach (var table in new[] { "RoundRow", "HoleRow", "ShotRow", "CourseRow", "TeeRow", "TeeVersionRow", "TeeHoleRow", "HandicapRow", "EntitlementsRow", "SyncStateRow" })
+            foreach (var table in new[] { "RoundRow", "HoleRow", "ShotRow", "CourseRow", "TeeRow", "TeeVersionRow", "TeeHoleRow", "HandicapRow", "EntitlementsRow", "SyncStateRow", "ShotDraftRow" })
             {
                 var found = await db.Connection.ExecuteScalarAsync<int>("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table);
                 Assert.Equal(1, found);
