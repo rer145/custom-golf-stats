@@ -53,6 +53,16 @@ public sealed class CourseRepository(SQLiteAsyncConnection db)
         return result;
     }
 
+    /// <summary>Clears PendingSync after the course was created on the server.</summary>
+    public async Task MarkSyncedAsync(Guid courseId)
+    {
+        var row = await db.FindAsync<CourseRow>(courseId);
+        if (row is null)
+            return;
+        row.PendingSync = false;
+        await db.UpdateAsync(row);
+    }
+
     public async Task SetFavoriteAsync(Guid courseId, bool favorite)
     {
         var row = await db.FindAsync<CourseRow>(courseId);

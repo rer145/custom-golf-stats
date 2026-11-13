@@ -48,6 +48,8 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             {
                 case ServerWriteMode.PullMode when local is { Dirty: true }:
                     return; // unsent local edit (or pending delete) wins until it is pushed
+                case ServerWriteMode.PushAcceptedMode when local is { DeletedAt: not null }:
+                    return; // deleted locally: the DELETE is still to be sent, whatever the pushed clock value
                 case ServerWriteMode.PushAcceptedMode when local is null:
                     return; // the round was purged while its push was in flight: never bring it back
                 case ServerWriteMode.PushAcceptedMode accepted when local.ClientUpdatedAt != accepted.PushedClientUpdatedAt:
