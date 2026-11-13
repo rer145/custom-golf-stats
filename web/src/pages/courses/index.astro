@@ -1,13 +1,149 @@
 ---
-// Placeholder until Task 3 (courses) replaces it.
+// Course search in our database (GET /courses?query=), with the next steps when a course isn't there yet:
+// search the course database (provider) or enter it by hand.
 import AppLayout from '../../layouts/AppLayout.astro';
+import Problem from '../../components/Problem.astro';
+import SearchBox from '../../components/courses/SearchBox.astro';
+import StatusBadge from '../../components/courses/StatusBadge.astro';
+import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { fields, formProblem } from '../../components/courses/problems';
+
+const q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
+let results: Schemas['CourseSummaryDto'][] | null = null;
+let problem: ApiProblem | null = null;
+
+if (q) {
+  const r = await call(Astro.locals.api.GET('/courses', { params: { query: { query: q } } }));
+  if (isSessionEnded(r)) return endSession(Astro);
+  if (r.ok) results = r.data;
+  else {
+    problem = r.problem;
+    Astro.response.status = r.problem.status === 400 ? 400 : 502;
+  }
+}
+
+const place = (c: Schemas['CourseSummaryDto']) => [c.city, c.region, c.country].filter(Boolean).join(', ');
+const providerHref = `/courses/provider-search${q ? `?q=${encodeURIComponent(q)}` : ''}`;
 ---
 
 <AppLayout title="Courses">
   <div class="container page">
     <div class="page-header">
       <h1 class="display">Courses</h1>
-      <p class="lede">Search for a course, import one from the course database, or enter one yourself.</p>
+      <p class="lede">Find the course you played. Courses are shared, so most are already here.</p>
+    </div>
+
+    <div class="stack-lg">
+      <SearchBox action="/courses" label="Course, club or town" value={q} button="Search" errors={fieldErrors(problem, 'query')} />
+      <Problem problem={formProblem(problem, fields('query'))} />
+
+      {
+        results && (
+          <section aria-labelledby="results-heading" class="results">
+            <h2 id="results-heading" class="heading">
+              {results.length === 0 ? `No courses match “${q}”` : `${results.length} ${results.length === 1 ? 'course' : 'courses'} match “${q}”`}
+            </h2>
+            {results.length > 0 && (
+              <ul class="course-list">
+                {results.map((c) => (
+                  <li>
+                    <a href={`/courses/${c.id}`} class="course-row">
+                      <span class="course-name">{c.name}</span>
+                      <span class="course-meta muted">{[c.clubName && c.clubName !== c.name ? c.clubName : null, place(c)].filter(Boolean).join(' – ')}</span>
+                      <StatusBadge status={c.status} />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )
+      }
+
+      <section class="card not-here" aria-labelledby="not-here-heading">
+        <h2 id="not-here-heading" class="heading">{results && results.length === 0 ? 'Not here yet?' : 'Can’t find your course?'}</h2>
+        <div class="paths">
+          <div class="path">
+            <p>Search the course database for its scorecard: tees, ratings, slopes and holes. Import it in one step.</p>
+            <a class="btn btn-primary" href={providerHref}>Search the course database</a>
+          </div>
+          <div class="path">
+            <p>Not in the database either? Enter it from the scorecard.</p>
+            <a class="btn btn-secondary" href="/courses/new">Enter a course</a>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </AppLayout>
+
+<style>
+  .stack-lg {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+  }
+  .results {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .course-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--color-border);
+  }
+  .course-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'name badge' 'meta badge';
+    gap: var(--space-1) var(--space-4);
+    align-items: center;
+    min-height: 64px;
+    padding: var(--space-3) var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .course-row:hover .course-name {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+  .course-name {
+    grid-area: name;
+    font: 700 18px/1.25 var(--font-display);
+  }
+  .course-meta {
+    grid-area: meta;
+    font-size: 15px;
+  }
+  .course-row :global(.badge) {
+    grid-area: badge;
+  }
+  .not-here {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .paths {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-6);
+  }
+  .path {
+    display: grid;
+    gap: var(--space-3);
+    align-content: start;
+    justify-items: start;
+  }
+  @media (max-width: 640px) {
+    .paths {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .course-row {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: 'name' 'meta' 'badge';
+      justify-items: start;
+    }
+  }
+</style>

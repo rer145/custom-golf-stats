@@ -1,0 +1,39 @@
+---
+import type { Schemas } from '../../api/client';
+
+/** A course's data status: Verified (checked by an admin), edited by golfers, or as imported. */
+interface Props {
+  status: Schemas['CourseStatus'];
+}
+
+const { status } = Astro.props;
+const label = status === 'Verified' ? 'Verified' : status === 'UserEdited' ? 'Edited by golfers' : 'Imported';
+---
+
+<span class:list={['badge', { verified: status === 'Verified' }]} data-status={status}>
+  {
+    status === 'Verified' && (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    )
+  }
+  {label}
+</span>
+
+<style>
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px var(--space-3);
+    border-radius: var(--radius-pill);
+    background: var(--color-chip-bg);
+    color: var(--color-text-secondary);
+    font: 500 13px/1.6 var(--font-body);
+    white-space: nowrap;
+  }
+  .verified {
+    color: var(--color-positive);
+  }
+</style>

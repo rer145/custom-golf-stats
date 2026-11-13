@@ -1,0 +1,96 @@
+---
+// A new version of a tee (POST /courses/{id}/tees/{teeId}/versions): new numbers from a date on. Rounds before that
+// date keep the version they were played on. Starts from the version in use today.
+import AppLayout from '../../../../../../layouts/AppLayout.astro';
+import Problem from '../../../../../../components/Problem.astro';
+import BackLink from '../../../../../../components/courses/BackLink.astro';
+import TeeFields from '../../../../../../components/courses/TeeFields.astro';
+import { call, type ApiProblem } from '../../../../../../api/client';
+import { endSession, isSessionEnded } from '../../../../../../lib/guard';
+import { notAForm, readForm } from '../../../../../../lib/forms';
+import { formatInteger, formatTenths } from '../../../../../../lib/format';
+import { formatEffectiveFrom } from '../../../../../../components/courses/dates';
+import { buildTee, localProblem, readTee, remapHoleErrors, teeFromVersion, versionRequest, type TeeValues } from '../../../../../../components/courses/course-form';
+import { formProblem, isTeeField } from '../../../../../../components/courses/problems';
+
+const id = Astro.params.id ?? '';
+const teeId = Astro.params.teeId ?? '';
+const r = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(r)) return endSession(Astro);
+const course = r.ok ? r.data : null;
+const tee = course?.tees.find((t) => t.id === teeId) ?? null;
+const current = tee ? (tee.versions.find((v) => v.isCurrent) ?? tee.versions[tee.versions.length - 1]) : undefined;
+let problem: ApiProblem | null = r.ok ? (tee ? null : { status: 404, message: 'That tee isn’t on this course.', fieldErrors: {} }) : r.problem;
+if (problem) Astro.response.status = problem.status === 404 ? 404 : 502;
+let values: TeeValues | null = tee ? teeFromVersion(tee, current) : null;
+
+if (tee && Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  values = { ...readTee(form, ''), id: tee.id, name: tee.name, gender: tee.gender };
+  const built = buildTee(values, '', { requireEffectiveFrom: true });
+  problem = localProblem(built.errors);
+  if (!problem) {
+    const saved = await call(
+      Astro.locals.api.POST('/courses/{id}/tees/{teeId}/versions', { params: { path: { id, teeId } }, body: versionRequest(built.request) }),
+    );
+    if (isSessionEnded(saved)) return endSession(Astro);
+    if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=version'}`, 303);
+    problem = { ...saved.problem, fieldErrors: remapHoleErrors(saved.problem.fieldErrors, '', built.holeRows) };
+  }
+  Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : problem.status === 404 ? 404 : 400;
+}
+
+const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !== 'Admin';
+---
+
+<AppLayout title={tee ? `New version of the ${tee.name} tee` : 'New tee version'}>
+  <div class="container page">
+    <div class="page-header">
+      <BackLink href={course ? `/courses/${id}` : '/courses'} label={course?.name ?? 'Courses'} />
+      <h1 class="display">{tee ? `New version: ${tee.name} tee` : 'New tee version'}</h1>
+      <p class="lede">For a re-rating or a changed scorecard. Rounds played before the date keep the old numbers.</p>
+      {reviewed && <p class="muted">This course is verified, so the new version goes to an admin for review first.</p>}
+    </div>
+    {
+      tee && values ? (
+        <form class="tee-form" method="post" novalidate>
+          <Problem problem={formProblem(problem, (key) => isTeeField(key, ''))} />
+          {current && (
+            <p class="caption">
+              In use today: version from {formatEffectiveFrom(current.effectiveFrom)} – par <span class="num">{formatInteger(current.par)}</span>, rating{' '}
+              <span class="num">{formatTenths(current.rating)}</span>, slope <span class="num">{formatInteger(current.slope)}</span>. The form starts from its numbers.
+            </p>
+          )}
+          <div class="card">
+            <TeeFields values={values} prefix="" problem={problem} identity={false} effectiveFrom />
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">
+              {reviewed ? 'Send for review' : 'Save new version'}
+            </button>
+            <a class="btn btn-secondary" href={`/courses/${id}`}>
+              Cancel
+            </a>
+          </div>
+        </form>
+      ) : (
+        <Problem problem={problem} />
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .tee-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    max-width: 960px;
+  }
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+</style>

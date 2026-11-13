@@ -1,0 +1,513 @@
+[
+  {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "name": "Cedar Ridge",
+    "clubName": "Cedar Ridge Golf Club",
+    "address": "1200 Ridge Road",
+    "city": "Lakeview",
+    "region": "OH",
+    "country": "United States",
+    "phone": "+1 555 0100",
+    "website": "https://example.test/cedar-ridge",
+    "latitude": 40.4865,
+    "longitude": -83.8877,
+    "status": "UserEdited",
+    "source": "GolfCourseApi",
+    "providerCourseId": "gca-1001",
+    "lastVerifiedAt": null,
+    "mergedIntoCourseId": null,
+    "tees": [
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "name": "Blue",
+        "gender": "Male",
+        "versions": [
+          {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "effectiveFrom": "1900-01-01",
+            "isCurrent": false,
+            "par": 72,
+            "rating": 71.8,
+            "slope": 129,
+            "frontPar": 36,
+            "frontRating": 36,
+            "frontSlope": 127,
+            "backPar": 36,
+            "backRating": 35.8,
+            "backSlope": 131,
+            "source": "GolfCourseApi",
+            "changedAt": "2025-03-02T14:00:00Z",
+            "holes": [
+              {
+                "number": 1,
+                "par": 4,
+                "yardage": 270,
+                "strokeIndex": 7
+              },
+              {
+                "number": 2,
+                "par": 4,
+                "yardage": 307,
+                "strokeIndex": 11
+              },
+              {
+                "number": 3,
+                "par": 3,
+                "yardage": 154,
+                "strokeIndex": 15
+              },
+              {
+                "number": 4,
+                "par": 5,
+                "yardage": 451,
+                "strokeIndex": 1
+              },
+              {
+                "number": 5,
+                "par": 4,
+                "yardage": 298,
+                "strokeIndex": 9
+              },
+              {
+                "number": 6,
+                "par": 4,
+                "yardage": 275,
+                "strokeIndex": 3
+              },
+              {
+                "number": 7,
+                "par": 3,
+                "yardage": 182,
+                "strokeIndex": 17
+              },
+              {
+                "number": 8,
+                "par": 4,
+                "yardage": 289,
+                "strokeIndex": 13
+              },
+              {
+                "number": 9,
+                "par": 5,
+                "yardage": 456,
+                "strokeIndex": 5
+              },
+              {
+                "number": 10,
+                "par": 4,
+                "yardage": 303,
+                "strokeIndex": 8
+              },
+              {
+                "number": 11,
+                "par": 3,
+                "yardage": 150,
+                "strokeIndex": 16
+              },
+              {
+                "number": 12,
+                "par": 5,
+                "yardage": 447,
+                "strokeIndex": 2
+              },
+              {
+                "number": 13,
+                "par": 4,
+                "yardage": 294,
+                "strokeIndex": 10
+              },
+              {
+                "number": 14,
+                "par": 4,
+                "yardage": 271,
+                "strokeIndex": 6
+              },
+              {
+                "number": 15,
+                "par": 4,
+                "yardage": 308,
+                "strokeIndex": 12
+              },
+              {
+                "number": 16,
+                "par": 3,
+                "yardage": 155,
+                "strokeIndex": 18
+              },
+              {
+                "number": 17,
+                "par": 5,
+                "yardage": 452,
+                "strokeIndex": 4
+              },
+              {
+                "number": 18,
+                "par": 4,
+                "yardage": 299,
+                "strokeIndex": 14
+              }
+            ]
+          },
+          {
+            "id": "33333333-3333-4333-8333-333333333334",
+            "effectiveFrom": "2026-04-01",
+            "isCurrent": true,
+            "par": 72,
+            "rating": 72.1,
+            "slope": 131,
+            "frontPar": 36,
+            "frontRating": 36.2,
+            "frontSlope": 130,
+            "backPar": 36,
+            "backRating": 35.9,
+            "backSlope": 132,
+            "source": "GolfCourseApi",
+            "changedAt": "2026-04-03T09:30:00Z",
+            "holes": [
+              {
+                "number": 1,
+                "par": 4,
+                "yardage": 275,
+                "strokeIndex": 7
+              },
+              {
+                "number": 2,
+                "par": 4,
+                "yardage": 312,
+                "strokeIndex": 11
+              },
+              {
+                "number": 3,
+                "par": 3,
+                "yardage": 159,
+                "strokeIndex": 15
+              },
+              {
+                "number": 4,
+                "par": 5,
+                "yardage": 456,
+                "strokeIndex": 1
+              },
+              {
+                "number": 5,
+                "par": 4,
+                "yardage": 303,
+                "strokeIndex": 9
+              },
+              {
+                "number": 6,
+                "par": 4,
+                "yardage": 280,
+                "strokeIndex": 3
+              },
+              {
+                "number": 7,
+                "par": 3,
+                "yardage": 187,
+                "strokeIndex": 17
+              },
+              {
+                "number": 8,
+                "par": 4,
+                "yardage": 294,
+                "strokeIndex": 13
+              },
+              {
+                "number": 9,
+                "par": 5,
+                "yardage": 461,
+                "strokeIndex": 5
+              },
+              {
+                "number": 10,
+                "par": 4,
+                "yardage": 308,
+                "strokeIndex": 8
+              },
+              {
+                "number": 11,
+                "par": 3,
+                "yardage": 155,
+                "strokeIndex": 16
+              },
+              {
+                "number": 12,
+                "par": 5,
+                "yardage": 452,
+                "strokeIndex": 2
+              },
+              {
+                "number": 13,
+                "par": 4,
+                "yardage": 299,
+                "strokeIndex": 10
+              },
+              {
+                "number": 14,
+                "par": 4,
+                "yardage": 276,
+                "strokeIndex": 6
+              },
+              {
+                "number": 15,
+                "par": 4,
+                "yardage": 313,
+                "strokeIndex": 12
+              },
+              {
+                "number": 16,
+                "par": 3,
+                "yardage": 160,
+                "strokeIndex": 18
+              },
+              {
+                "number": 17,
+                "par": 5,
+                "yardage": 457,
+                "strokeIndex": 4
+              },
+              {
+                "number": 18,
+                "par": 4,
+                "yardage": 304,
+                "strokeIndex": 14
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "22222222-2222-4222-8222-222222222223",
+        "name": "Red",
+        "gender": "Female",
+        "versions": [
+          {
+            "id": "33333333-3333-4333-8333-333333333335",
+            "effectiveFrom": "1900-01-01",
+            "isCurrent": true,
+            "par": 72,
+            "rating": 70.4,
+            "slope": 121,
+            "frontPar": 36,
+            "frontRating": null,
+            "frontSlope": null,
+            "backPar": 36,
+            "backRating": null,
+            "backSlope": null,
+            "source": "GolfCourseApi",
+            "changedAt": "2025-03-02T14:00:00Z",
+            "holes": [
+              {
+                "number": 1,
+                "par": 4,
+                "yardage": 225,
+                "strokeIndex": 7
+              },
+              {
+                "number": 2,
+                "par": 4,
+                "yardage": 262,
+                "strokeIndex": 11
+              },
+              {
+                "number": 3,
+                "par": 3,
+                "yardage": 109,
+                "strokeIndex": 15
+              },
+              {
+                "number": 4,
+                "par": 5,
+                "yardage": 406,
+                "strokeIndex": 1
+              },
+              {
+                "number": 5,
+                "par": 4,
+                "yardage": 253,
+                "strokeIndex": 9
+              },
+              {
+                "number": 6,
+                "par": 4,
+                "yardage": 230,
+                "strokeIndex": 3
+              },
+              {
+                "number": 7,
+                "par": 3,
+                "yardage": 137,
+                "strokeIndex": 17
+              },
+              {
+                "number": 8,
+                "par": 4,
+                "yardage": 244,
+                "strokeIndex": 13
+              },
+              {
+                "number": 9,
+                "par": 5,
+                "yardage": 411,
+                "strokeIndex": 5
+              },
+              {
+                "number": 10,
+                "par": 4,
+                "yardage": 258,
+                "strokeIndex": 8
+              },
+              {
+                "number": 11,
+                "par": 3,
+                "yardage": 105,
+                "strokeIndex": 16
+              },
+              {
+                "number": 12,
+                "par": 5,
+                "yardage": 402,
+                "strokeIndex": 2
+              },
+              {
+                "number": 13,
+                "par": 4,
+                "yardage": 249,
+                "strokeIndex": 10
+              },
+              {
+                "number": 14,
+                "par": 4,
+                "yardage": 226,
+                "strokeIndex": 6
+              },
+              {
+                "number": 15,
+                "par": 4,
+                "yardage": 263,
+                "strokeIndex": 12
+              },
+              {
+                "number": 16,
+                "par": 3,
+                "yardage": 110,
+                "strokeIndex": 18
+              },
+              {
+                "number": 17,
+                "par": 5,
+                "yardage": 407,
+                "strokeIndex": 4
+              },
+              {
+                "number": 18,
+                "par": 4,
+                "yardage": 254,
+                "strokeIndex": 14
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "name": "Heron Bay Links",
+    "clubName": null,
+    "address": null,
+    "city": "Port Clement",
+    "region": "ME",
+    "country": "United States",
+    "phone": null,
+    "website": null,
+    "latitude": null,
+    "longitude": null,
+    "status": "Verified",
+    "source": "GolfCourseApi",
+    "providerCourseId": "gca-1002",
+    "lastVerifiedAt": "2026-06-10T12:00:00Z",
+    "mergedIntoCourseId": null,
+    "tees": [
+      {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "name": "White",
+        "gender": "Unspecified",
+        "versions": [
+          {
+            "id": "66666666-6666-4666-8666-666666666666",
+            "effectiveFrom": "1900-01-01",
+            "isCurrent": true,
+            "par": 36,
+            "rating": 34.6,
+            "slope": 118,
+            "frontPar": null,
+            "frontRating": null,
+            "frontSlope": null,
+            "backPar": null,
+            "backRating": null,
+            "backSlope": null,
+            "source": "GolfCourseApi",
+            "changedAt": "2025-05-01T10:00:00Z",
+            "holes": [
+              {
+                "number": 1,
+                "par": 4,
+                "yardage": 250,
+                "strokeIndex": 4
+              },
+              {
+                "number": 2,
+                "par": 4,
+                "yardage": 287,
+                "strokeIndex": 6
+              },
+              {
+                "number": 3,
+                "par": 3,
+                "yardage": 134,
+                "strokeIndex": 8
+              },
+              {
+                "number": 4,
+                "par": 5,
+                "yardage": 431,
+                "strokeIndex": 1
+              },
+              {
+                "number": 5,
+                "par": 4,
+                "yardage": 278,
+                "strokeIndex": 5
+              },
+              {
+                "number": 6,
+                "par": 4,
+                "yardage": 255,
+                "strokeIndex": 2
+              },
+              {
+                "number": 7,
+                "par": 3,
+                "yardage": 162,
+                "strokeIndex": 9
+              },
+              {
+                "number": 8,
+                "par": 4,
+                "yardage": 269,
+                "strokeIndex": 7
+              },
+              {
+                "number": 9,
+                "par": 5,
+                "yardage": 436,
+                "strokeIndex": 3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

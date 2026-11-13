@@ -1,16 +1,128 @@
 ---
-// Placeholder until Task 3 (profile and handicap) replaces it. It shows the page-level API pattern:
-// call through Astro.locals.api, and on a 401 end the session (cookie cleared, back to sign-in with ?next).
+// Profile (PUT /me is a full replace: the form always sends every field, so nothing is reset by omission) and
+// handicap history (GET/POST /me/handicap, DELETE /me/handicap/{id}). Three forms post here, told apart by `intent`.
 import AppLayout from '../../layouts/AppLayout.astro';
+import Field from '../../components/Field.astro';
 import Problem from '../../components/Problem.astro';
-import { call } from '../../api/client';
+import Notice from '../../components/courses/Notice.astro';
+import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
 import { endSession, isSessionEnded } from '../../lib/guard';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { formatHandicapIndex } from '../../lib/format';
+import { formatDate, todayIso } from '../../components/courses/dates';
+import { parseHandicapIndex } from '../../components/profile/handicap';
+import { fields, formProblem } from '../../components/courses/problems';
 
-const result = await call(Astro.locals.api.GET('/me'));
-if (isSessionEnded(result)) return endSession(Astro);
+const GENDERS = [
+  { value: 'Unspecified', label: 'Prefer not to say' },
+  { value: 'Male', label: 'Male' },
+  { value: 'Female', label: 'Female' },
+];
+const UNITS = [
+  { value: 'Yards', label: 'Yards' },
+  { value: 'Meters', label: 'Meters' },
+];
 
-const email = Astro.locals.session?.email ?? '';
-const name = result.ok ? `${result.data.firstName} ${result.data.lastName}`.trim() : '';
+interface ProfileValues {
+  firstName: string;
+  lastName: string;
+  gender: string;
+  ghinNumber: string;
+  homeCourseId: string;
+  units: string;
+}
+
+let profileValues: ProfileValues | null = null;
+let profileProblem: ApiProblem | null = null;
+let handicapProblem: ApiProblem | null = null;
+let deleteProblem: ApiProblem | null = null;
+const handicapValues = { effectiveOn: todayIso(), index: '' };
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const intent = formText(form, 'intent');
+
+  if (intent === 'profile') {
+    profileValues = {
+      firstName: formText(form, 'firstName'),
+      lastName: formText(form, 'lastName'),
+      gender: formText(form, 'gender') || 'Unspecified',
+      ghinNumber: formText(form, 'ghinNumber'),
+      homeCourseId: formText(form, 'clearHomeCourse') ? '' : formText(form, 'homeCourseId'),
+      units: formText(form, 'units') || 'Yards',
+    };
+    const body: Schemas['UpdateProfileRequest'] = {
+      firstName: profileValues.firstName.trim(),
+      lastName: profileValues.lastName.trim(),
+      gender: profileValues.gender,
+      ghinNumber: profileValues.ghinNumber.trim() || null,
+      homeCourseId: profileValues.homeCourseId || null,
+      units: profileValues.units,
+    };
+    const r = await call(Astro.locals.api.PUT('/me', { body }));
+    if (isSessionEnded(r)) return endSession(Astro);
+    if (r.ok) return Astro.redirect('/profile?saved=profile', 303);
+    profileProblem = r.problem;
+    Astro.response.status = r.problem.status >= 500 ? 502 : 400;
+  } else if (intent === 'add-handicap') {
+    handicapValues.effectiveOn = formText(form, 'effectiveOn').trim();
+    handicapValues.index = formText(form, 'index').trim();
+    const parsed = parseHandicapIndex(handicapValues.index);
+    const local: Record<string, string[]> = {};
+    if (!handicapValues.effectiveOn) local.effectiveOn = ['A date is required.'];
+    if (parsed.error) local.index = [parsed.error];
+    if (Object.keys(local).length > 0) {
+      handicapProblem = { status: 400, message: 'Check the highlighted fields.', fieldErrors: local };
+    } else {
+      const r = await call(Astro.locals.api.POST('/me/handicap', { body: { effectiveOn: handicapValues.effectiveOn, index: parsed.value } }));
+      if (isSessionEnded(r)) return endSession(Astro);
+      if (r.ok) return Astro.redirect('/profile?saved=handicap#handicap', 303);
+      handicapProblem = r.problem;
+    }
+    Astro.response.status = handicapProblem.status >= 500 ? 502 : 400;
+  } else if (intent === 'delete-handicap') {
+    const entryId = formText(form, 'id');
+    const r = await call(Astro.locals.api.DELETE('/me/handicap/{id}', { params: { path: { id: entryId } } }));
+    if (isSessionEnded(r)) return endSession(Astro);
+    // Already gone (404) is what the golfer wanted too.
+    if (r.ok || r.problem.status === 404) return Astro.redirect('/profile?saved=deleted#handicap', 303);
+    deleteProblem = r.problem;
+    Astro.response.status = 502;
+  }
+}
+
+const [me, handicap] = await Promise.all([call(Astro.locals.api.GET('/me')), call(Astro.locals.api.GET('/me/handicap'))]);
+if (isSessionEnded(me) || isSessionEnded(handicap)) return endSession(Astro);
+const profile = me.ok ? me.data : null;
+const values: ProfileValues | null =
+  profileValues ??
+  (profile
+    ? {
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        gender: profile.gender,
+        ghinNumber: profile.ghinNumber ?? '',
+        homeCourseId: profile.homeCourseId ?? '',
+        units: profile.units,
+      }
+    : null);
+
+let homeCourse: { id: string; name: string } | null = null;
+if (values?.homeCourseId) {
+  const c = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id: values.homeCourseId } } }));
+  if (isSessionEnded(c)) return endSession(Astro);
+  homeCourse = { id: values.homeCourseId, name: c.ok ? c.data.name : 'Your home course' };
+}
+
+const entries = handicap.ok ? handicap.data : [];
+// The index in effect today: the newest entry dated on or before today (a future-dated entry isn't current yet).
+const today = todayIso();
+const latest = entries.find((e) => e.effectiveOn <= today);
+const email = profile?.email ?? Astro.locals.session?.email ?? '';
+const saved = Astro.url.searchParams.get('saved');
+const profileNotice = saved === 'profile' ? 'Profile saved.' : null;
+const handicapNotice = saved === 'handicap' ? 'Handicap index added.' : saved === 'deleted' ? 'Entry deleted.' : null;
 ---
 
 <AppLayout title="Profile">
@@ -18,8 +130,345 @@ const name = result.ok ? `${result.data.firstName} ${result.data.lastName}`.trim
     <div class="page-header">
       <h1 class="display">Profile</h1>
       <p class="lede">Signed in as {email}.</p>
-      {name && <p class="muted">{name}</p>}
     </div>
-    <Problem problem={result.ok ? null : result.problem} />
+
+    <div class="profile-grid">
+      <section class="card profile" aria-labelledby="profile-heading">
+        <h2 id="profile-heading" class="title">About you</h2>
+        <Notice message={profileNotice} heading="Saved" />
+        {
+          values ? (
+            <form class="form" method="post" action="/profile" novalidate>
+              <input type="hidden" name="intent" value="profile" />
+              <Problem problem={formProblem(profileProblem, fields('firstName', 'lastName', 'gender', 'ghinNumber', 'homeCourseId', 'units'))} />
+              <div class="two">
+                <Field name="firstName" label="First name" autocomplete="given-name" maxlength={100} value={values.firstName} problem={profileProblem} />
+                <Field name="lastName" label="Last name" autocomplete="family-name" maxlength={100} value={values.lastName} problem={profileProblem} />
+              </div>
+              <div class="field">
+                <label for="field-gender">Gender</label>
+                <p class="hint" id="field-gender-hint">
+                  Picks your default tees.
+                </p>
+                <select id="field-gender" name="gender" aria-describedby="field-gender-hint">
+                  {GENDERS.map((g) => (
+                    <option value={g.value} selected={values.gender.toLowerCase() === g.value.toLowerCase()}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
+                {fieldErrors(profileProblem, 'gender').length > 0 && <p class="field-error">{fieldErrors(profileProblem, 'gender').join(' ')}</p>}
+              </div>
+              <Field
+                name="ghinNumber"
+                label="GHIN number"
+                hint="Optional. Kept for syncing your handicap later."
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength={20}
+                class="num"
+                value={values.ghinNumber}
+                problem={profileProblem}
+              />
+              <fieldset class="field units">
+                <legend>Distances in</legend>
+                <div class="segmented">
+                  {UNITS.map((u) => (
+                    <label>
+                      <input type="radio" name="units" value={u.value} checked={values.units.toLowerCase() === u.value.toLowerCase()} />
+                      <span>{u.label}</span>
+                    </label>
+                  ))}
+                </div>
+                {fieldErrors(profileProblem, 'units').length > 0 && <p class="field-error">{fieldErrors(profileProblem, 'units').join(' ')}</p>}
+              </fieldset>
+              <div class="field">
+                <span class="label-like">Home course</span>
+                <input type="hidden" name="homeCourseId" value={values.homeCourseId} />
+                {homeCourse ? (
+                  <div class="home">
+                    <a href={`/courses/${homeCourse.id}`}>{homeCourse.name}</a>
+                    <label class="check">
+                      <input type="checkbox" name="clearHomeCourse" value="1" />
+                      Remove
+                    </label>
+                  </div>
+                ) : (
+                  <p class="muted">
+                    None yet. <a href="/courses">Find your course</a> and choose “Make this my home course”.
+                  </p>
+                )}
+                {fieldErrors(profileProblem, 'homeCourseId').length > 0 && (
+                  <p class="field-error">{fieldErrors(profileProblem, 'homeCourseId').join(' ')}</p>
+                )}
+              </div>
+              <div>
+                <button class="btn btn-primary" type="submit">
+                  Save profile
+                </button>
+              </div>
+            </form>
+          ) : (
+            <Problem problem={me.ok ? null : me.problem} />
+          )
+        }
+      </section>
+
+      <section class="card handicap" id="handicap" aria-labelledby="handicap-heading">
+        <div class="handicap-head">
+          <h2 id="handicap-heading" class="title">Handicap index</h2>
+          {
+            latest && (
+              <div class="current">
+                <span class="stat stat-xl">{formatHandicapIndex(latest.index)}</span>
+                <span class="caption">Since {formatDate(latest.effectiveOn)}</span>
+              </div>
+            )
+          }
+        </div>
+        <Notice message={handicapNotice} heading="Saved" />
+        <Problem problem={deleteProblem} heading="Not deleted" />
+        {!handicap.ok && <Problem problem={handicap.problem} />}
+
+        <form class="add-form" method="post" action="/profile#handicap" novalidate>
+          <input type="hidden" name="intent" value="add-handicap" />
+          <Problem problem={formProblem(handicapProblem, fields('effectiveOn', 'index'))} />
+          <div class="add-row">
+            <Field
+              name="effectiveOn"
+              label="Date"
+              type="date"
+              value={handicapValues.effectiveOn}
+              problem={handicapProblem}
+              data-default-today={handicapProblem ? undefined : handicapValues.effectiveOn}
+            />
+            <Field
+              name="index"
+              label="Index"
+              inputmode="decimal"
+              autocomplete="off"
+              class="num"
+              hint="Plus handicap? Enter it with a +, like +1.2."
+              value={handicapValues.index}
+              problem={handicapProblem}
+            />
+          </div>
+          <div>
+            <button class="btn btn-accent" type="submit">
+              + Add index
+            </button>
+          </div>
+        </form>
+
+        {
+          entries.length === 0 ? (
+            handicap.ok && <p class="muted">No handicap history yet. Add your current index above.</p>
+          ) : (
+            <div class="table-wrap">
+              <table class="table">
+                <caption class="visually-hidden">Handicap history, newest first</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col" class="num">
+                      Index
+                    </th>
+                    <th scope="col">
+                      <span class="visually-hidden">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((e) => (
+                    <tr>
+                      <th scope="row">{formatDate(e.effectiveOn)}</th>
+                      <td class="num">{formatHandicapIndex(e.index)}</td>
+                      <td class="row-action">
+                        <form method="post" action="/profile#handicap">
+                          <input type="hidden" name="intent" value="delete-handicap" />
+                          <input type="hidden" name="id" value={e.id} />
+                          <button class="btn btn-secondary btn-small" type="submit">
+                            Delete<span class="visually-hidden"> index {formatHandicapIndex(e.index)} from {formatDate(e.effectiveOn)}</span>
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </section>
+    </div>
   </div>
 </AppLayout>
+
+<script is:inline>
+  // The server fills the date with its own today; use the golfer's local date instead (no script: the server's date stays).
+  (function () {
+    var input = document.querySelector('input[data-default-today]');
+    if (!input || input.value !== input.getAttribute('data-default-today')) return;
+    var d = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    input.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  })();
+</script>
+
+<style>
+  .profile-grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .profile,
+  .handicap {
+    display: grid;
+    gap: var(--space-5);
+  }
+  .two {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+  .profile select {
+    width: 100%;
+    min-height: var(--touch-target);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 16px/1.4 var(--font-body);
+  }
+  .units {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .units legend,
+  .label-like {
+    padding: 0;
+    margin-bottom: var(--space-2);
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .segmented {
+    display: inline-flex;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    justify-self: start;
+  }
+  .segmented label {
+    position: relative;
+    display: inline-flex;
+  }
+  .segmented input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .segmented span {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0 var(--space-5);
+    font-weight: 500;
+  }
+  .segmented label + label span {
+    border-left: 1px solid var(--color-border);
+  }
+  .segmented input:checked + span {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+  .segmented input:focus-visible + span {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -4px;
+    box-shadow: inset 0 0 0 4px var(--color-surface);
+  }
+  .home {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-6);
+    min-height: var(--touch-target);
+  }
+  .home a {
+    font-weight: 600;
+  }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--touch-target);
+    color: var(--color-text-secondary);
+  }
+  .check input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--color-primary);
+  }
+  .handicap-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: var(--space-4);
+  }
+  .current {
+    display: grid;
+    justify-items: end;
+    gap: var(--space-1);
+  }
+  .add-form {
+    display: grid;
+    gap: var(--space-4);
+    padding-bottom: var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .add-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .row-action {
+    text-align: right;
+    width: 1%;
+  }
+  .row-action form {
+    margin: 0;
+  }
+  .table th[scope='row'] {
+    font-weight: 500;
+  }
+  .table td.num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 16px;
+  }
+  .btn-small {
+    padding: 0 var(--space-4);
+    font-size: 14px;
+  }
+  @media (max-width: 900px) {
+    .profile-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 480px) {
+    .two,
+    .add-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .current {
+      justify-items: start;
+    }
+  }
+</style>

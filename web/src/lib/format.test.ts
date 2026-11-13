@@ -49,3 +49,22 @@ describe('format', () => {
     expect(formatSigned(2, 0)).toBe('+2');
   });
 });
+
+describe('formatTenths and formatHandicapIndex', () => {
+  it('ratings to 1 dp', async () => {
+    const { formatTenths } = await import('./format');
+    expect(formatTenths(null)).toBe(DASH);
+    expect(formatTenths(72.1)).toBe('72.1');
+    expect(formatTenths('69')).toBe('69.0');
+    expect(formatTenths(-1.25)).toBe('−1.3');
+  });
+
+  it('handicap indexes: below zero is a plus handicap', async () => {
+    const { formatHandicapIndex } = await import('./format');
+    expect(formatHandicapIndex(null)).toBe(DASH);
+    expect(formatHandicapIndex(12.4)).toBe('12.4');
+    expect(formatHandicapIndex('0')).toBe('0.0');
+    expect(formatHandicapIndex(-2.1)).toBe('+2.1');
+    expect(formatHandicapIndex(-0.01)).toBe('0.0');
+  });
+});
