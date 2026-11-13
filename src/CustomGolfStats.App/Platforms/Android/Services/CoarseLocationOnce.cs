@@ -11,7 +11,21 @@ public sealed class CoarseLocationOnce(Context context) : ILocationOnce
 {
     private static readonly TimeSpan RecentEnough = TimeSpan.FromMinutes(30);
 
+    /// <remarks>Never throws: callers may stop waiting (the weather lookup has a timeout), so a late failure here must not surface
+    /// as an unobserved task exception.</remarks>
     public async Task<GeoPoint?> GetCoarseLocationAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await ReadAsync(ct);
+        }
+        catch (Exception)
+        {
+            return null; // includes Android.OS.OperationCanceledException from a cancelled request
+        }
+    }
+
+    private async Task<GeoPoint?> ReadAsync(CancellationToken ct)
     {
         if (!await AndroidPermissions.RequestAsync(Manifest.Permission.AccessCoarseLocation))
             return null;
@@ -31,11 +45,18 @@ public sealed class CoarseLocationOnce(Context context) : ILocationOnce
             return manager.GetLastKnownLocation(provider) is { } older ? new GeoPoint(older.Latitude, older.Longitude) : null;
 
         var tcs = new TaskCompletionSource<GeoPoint?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var cancel = new CancellationSignal();
+        var cancel = new CancellationSignal();
         using var registration = ct.Register(() =>
         {
-            cancel.Cancel();
             tcs.TrySetResult(null);
+            try
+            {
+                cancel.Cancel();
+            }
+            catch (Exception)
+            {
+                // the platform may report the cancellation itself as an exception
+            }
         });
         manager.GetCurrentLocation(provider, cancel, context.MainExecutor!, new Consumer(tcs));
         return await tcs.Task;

@@ -32,9 +32,18 @@ public static class CrashReporter
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
             e.SetObserved();
+            // A cancelled background task that nobody waited for is not a failure the golfer needs to hear about.
+            if (e.Exception.Flatten().InnerExceptions.All(IsCancellation))
+            {
+                SafeLog.Info("unobserved cancellation ignored");
+                return;
+            }
             Report("unobserved task", e.Exception);
         };
     }
+
+    private static bool IsCancellation(Exception ex) =>
+        ex is OperationCanceledException || ex.GetType().Name == "OperationCanceledException"; // also Android.OS.OperationCanceledException
 
     /// <summary>Logs the failure and shows the banner (on the UI thread).</summary>
     public static void Report(string context, Exception ex)
