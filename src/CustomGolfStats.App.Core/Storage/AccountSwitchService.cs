@@ -98,6 +98,22 @@ public sealed class AccountSwitchService(LocalDb db, Sync.SyncEngine sync)
     /// <summary>The golfer declined: forget the question (the caller signs the new session out first). The old data stays.</summary>
     public Task CancelSwitchAsync() => db.SyncState.SetAsync(PendingKey, null);
 
+    // ---- account deletion ----
+
+    /// <summary>What deleting the account would lose that only this device holds (unsynced rounds, unsaved courses and holes).</summary>
+    public Task<AccountSwitchPrompt> DescribeUnsyncedAsync() => DescribeAsync();
+
+    /// <summary>Call before asking the server to delete the account. Blocks sync with the same marker as a sign-in and stops a running
+    /// sync (waiting until it has ended), so no request can carry this device's data while, or after, the account is deleted.</summary>
+    public Task BeginAccountDeletionAsync() => BeginSignInAsync();
+
+    /// <summary>The deletion did not happen (wrong password, offline, refused): lift the marker so syncing resumes.</summary>
+    public Task AbandonAccountDeletionAsync() => AbandonSignInAsync();
+
+    /// <summary>The account was deleted: clear everything it left on this device, including the verified account, so nothing can sync
+    /// until someone signs in again.</summary>
+    public Task ForgetDeletedAccountAsync() => db.ClearAccountDataAsync();
+
     private async Task ReplaceAsync(string accountKey)
     {
         await db.ClearAccountDataAsync().ConfigureAwait(false); // the sync state goes too, including any pending marker

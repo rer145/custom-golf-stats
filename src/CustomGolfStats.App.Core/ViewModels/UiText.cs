@@ -127,7 +127,37 @@ public static class UiText
     public const string NeedConnection = "This needs a connection.";
     public const string ProfileSaveFailed = "Your profile could not be saved. Please try again.";
     public const string ProfileLoadFailed = "Your profile could not be loaded. Your handicap history below is saved on this device.";
-    public const string SyncFailedUnexpectedly = "Syncing stopped unexpectedly. Your changes are safe on this device; try again in a moment.";
+    // ---- account deletion ----
+    public const string DeleteAccountButton = "Delete account";
+    public const string DeleteAccountHint = "Permanently deletes your account, rounds and handicap history.";
+    public const string DeleteAccountTitle = "Delete your account?";
+    public const string DeleteAccountConfirm = "Delete account";
+    public const string DeleteAccountPasswordLabel = "Enter your password to confirm";
+    public const string DeleteAccountPasswordMissing = "Enter your password to delete your account.";
+    public const string DeleteAccountWrongPassword = "That password is not right. Your account was not deleted.";
+    public const string DeleteAccountLockedOut = "Too many wrong passwords. Wait a few minutes, then try again.";
+    public const string DeleteAccountLastAdmin = "You are the only admin. Make another account an admin before deleting yours.";
+    public const string DeleteAccountFailed = "Your account could not be deleted. Please try again.";
+    public const string DeleteAccountCleanupFailed = "Your account was deleted, but this device could not clear everything. Reinstall the app to remove what is left.";
+
+    /// <summary>The confirm dialog: what is deleted, that it cannot be undone, and what only this device holds and will be lost.</summary>
+    public static string DeleteAccountWarning(int unsyncedRounds, int pendingCourses, int unsavedHoles)
+    {
+        const string permanent = "This permanently deletes your account, your rounds, shots and handicap history from our servers and from this device. It cannot be undone. Courses you added stay available to other golfers.";
+        var parts = new List<string>();
+        if (unsyncedRounds > 0)
+            parts.Add(Count(unsyncedRounds, "round"));
+        if (pendingCourses > 0)
+            parts.Add(Count(pendingCourses, "course"));
+        if (unsavedHoles > 0)
+            parts.Add(Count(unsavedHoles, "hole") + " being entered");
+        if (parts.Count == 0)
+            return permanent;
+        var what = parts.Count == 1 ? parts[0] : string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1];
+        return $"{permanent}\n\nThis device also has {what} that never synced. They will be lost too.";
+    }
+
+    public const string SyncFailedUnexpectedly ="Syncing stopped unexpectedly. Your changes are safe on this device; try again in a moment.";
     public const string NoValue = "-";
     public const string UnitFeet = "ft";
     public const string UnitYards = "yd";

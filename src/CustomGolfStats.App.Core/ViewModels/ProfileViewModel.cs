@@ -8,6 +8,7 @@ using CustomGolfStats.App.Core.Storage;
 using CustomGolfStats.App.Core.Storage.Rows;
 using ApiException = CustomGolfStats.Api.Client.ApiException;
 using CreateHandicapEntryRequest = CustomGolfStats.Api.Client.CreateHandicapEntryRequest;
+using DeleteAccountRequest = CustomGolfStats.Api.Client.DeleteAccountRequest;
 using ICustomGolfStatsApiClient = CustomGolfStats.Api.Client.ICustomGolfStatsApiClient;
 using UpdateProfileRequest = CustomGolfStats.Api.Client.UpdateProfileRequest;
 
@@ -16,8 +17,15 @@ namespace CustomGolfStats.App.Core.ViewModels;
 /// <summary>The golfer's profile and handicap history. The handicap history is read from this device (it arrives with sync); the
 /// profile and adding a handicap entry need a connection. <c>PUT /me</c> replaces the whole profile, so every field is sent.</summary>
 public sealed partial class ProfileViewModel(
-    LocalDb db, ICustomGolfStatsApiClient api, TokenService tokens, SyncEngine sync, IConnectivity connectivity, IClock clock, INavigator navigator) : ViewModelBase
+    LocalDb db, ICustomGolfStatsApiClient api, TokenService tokens, SyncEngine sync, AccountSwitchService accounts, IConnectivity connectivity, IClock clock,
+    INavigator navigator) : ViewModelBase
 {
+    /// <summary>The password typed into the delete-account dialog. Cleared once the attempt is over, whatever its outcome.</summary>
+    [ObservableProperty] private string _deletePassword = "";
+
+    /// <summary>Why the account was not deleted (or that the device could not be fully cleared), or null.</summary>
+    [ObservableProperty] private string? _deleteError;
+
     private string _gender = "";
     private Guid? _homeCourseId;
 
@@ -151,6 +159,113 @@ public sealed partial class ProfileViewModel(
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>The confirm dialog's text: deletion is permanent, and anything only this device holds (unsynced rounds, courses not yet
+    /// saved, holes being entered) is lost with it.</summary>
+    public async Task<string> DescribeAccountDeletionAsync()
+    {
+        var unsynced = await accounts.DescribeUnsyncedAsync();
+        return UiText.DeleteAccountWarning(unsynced.UnsyncedRounds, unsynced.PendingCourses, unsynced.UnsavedHoles);
+    }
+
+    /// <summary>
+    /// Deletes the account on the server (<c>DELETE /me</c>, confirmed with <see cref="DeletePassword"/>), then clears this device and
+    /// returns to sign-in. Sync is blocked and any running sync stopped BEFORE the request, so nothing is pushed for an account that
+    /// is being deleted; if the server does not delete it, sync is unblocked again and nothing local is touched. Once the server has
+    /// deleted it (or says it is already gone), every local table and the stored tokens are removed.
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteAccountAsync()
+    {
+        DeleteError = null;
+        if (IsBusy)
+            return;
+        var password = DeletePassword;
+        DeletePassword = "";
+        if (string.IsNullOrEmpty(password))
+        {
+            DeleteError = UiText.DeleteAccountPasswordMissing;
+            return;
+        }
+        if (!connectivity.IsOnline)
+        {
+            DeleteError = UiText.NeedConnection;
+            return;
+        }
+
+        IsBusy = true;
+        var deleted = false;
+        try
+        {
+            try
+            {
+                await accounts.BeginAccountDeletionAsync();
+                await api.MeDeleteAccountAsync(new DeleteAccountRequest { Password = password });
+                deleted = true;
+            }
+            catch (ApiException ex) when (ex.StatusCode == 404)
+            {
+                deleted = true; // already gone (deleted from another device): finish the job here
+            }
+            catch (ApiException ex) when (ex.StatusCode == 400)
+            {
+                DeleteError = UiText.DeleteAccountWrongPassword;
+            }
+            catch (ApiException ex) when (ex.StatusCode == 429)
+            {
+                DeleteError = UiText.DeleteAccountLockedOut;
+            }
+            catch (ApiException ex) when (ex.StatusCode == 409)
+            {
+                DeleteError = UiText.DeleteAccountLastAdmin;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                DeleteError = UiText.DeleteAccountFailed;
+            }
+        }
+        finally
+        {
+            if (deleted)
+                await FinishDeletionAsync();
+            else
+                await AbandonDeletionQuietlyAsync();
+            IsBusy = false;
+        }
+
+        if (deleted)
+            await navigator.NavigateAsync(Route.SignIn);
+    }
+
+    /// <summary>The server deleted the account: clear the device, then the tokens. The tokens go even if clearing failed (they can't
+    /// be used any more anyway); a marker left by a failed clear keeps sync blocked.</summary>
+    private async Task FinishDeletionAsync()
+    {
+        try
+        {
+            await accounts.ForgetDeletedAccountAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteError = UiText.DeleteAccountCleanupFailed;
+        }
+        finally
+        {
+            await tokens.SignOutAsync();
+        }
+    }
+
+    private async Task AbandonDeletionQuietlyAsync()
+    {
+        try
+        {
+            await accounts.AbandonAccountDeletionAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The marker stays and keeps sync blocked, and the next launch treats it as an interrupted sign-in (it signs out).
         }
     }
 
