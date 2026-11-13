@@ -2,7 +2,6 @@ using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Migration.Mapping;
 using CustomGolfStats.Migration.Source;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace CustomGolfStats.Migration.Import;
@@ -46,13 +45,7 @@ public sealed class Importer(GolftrackReader source, AppDbContext target, TimePr
 {
     public async Task<ImportResult> RunAsync(int golferId, string accountEmail, bool dryRun, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = new UpperInvariantLookupNormalizer().NormalizeEmail(accountEmail.Trim());
-        var accountId = await target.Users
-            .Where(a => a.NormalizedEmail == normalizedEmail)
-            .Select(a => (Guid?)a.Id)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new MigrationUserException(
-                $"No account has the email {accountEmail.Trim()}. Create the account through the app or API first.");
+        var accountId = await AccountLookup.FindAsync(target, accountEmail, cancellationToken);
 
         var legacy = await source.ReadAsync(golferId, cancellationToken);
         var allIds = await source.ReadAllIdsAsync(cancellationToken);

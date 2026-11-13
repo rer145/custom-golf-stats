@@ -164,6 +164,57 @@ public sealed class ImportCommandTests(MsSqlFixture sql, PostgresFixture postgre
     }
 
     [Fact]
+    public async Task Parity_after_import_writes_its_report_without_leaking_connection_strings()
+    {
+        Assert.Equal(0, (await RunAsync(Environment(), ImportArgs())).ExitCode);
+        var parityReport = Path.Combine(Path.GetDirectoryName(_reportPath)!, "parity.md");
+
+        // The scenario's database has no golftrack procedures: each one fails and is reported, not hidden.
+        var (exitCode, output, error) = await RunAsync(
+            Environment(),
+            "parity", "--golfer-id", _scenario.GolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--account-email", MigrationScenario.AccountEmail, "--report", parityReport);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("", error);
+        Assert.Contains("not compared", output, StringComparison.Ordinal);
+        var report = await File.ReadAllTextAsync(parityReport, TestContext.Current.CancellationToken);
+        Assert.Contains("golftrack procedure failed", report, StringComparison.Ordinal);
+        Assert.Contains("## 2024", report, StringComparison.Ordinal);
+        var sourcePassword = new SqlConnectionStringBuilder(_scenario.SourceConnectionString).Password;
+        foreach (var secret in new[] { sourcePassword, _scenario.SourceConnectionString, _scenario.TargetConnectionString })
+        {
+            Assert.DoesNotContain(secret, output, StringComparison.Ordinal);
+            Assert.DoesNotContain(secret, report, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Parity_before_import_exits_2()
+    {
+        var (exitCode, _, error) = await RunAsync(
+            Environment(),
+            "parity", "--golfer-id", _scenario.GolferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--account-email", MigrationScenario.AccountEmail, "--report", _reportPath);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("Run import first", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Connection_string_passed_as_an_option_is_masked_in_errors()
+    {
+        var source = new SqlConnectionStringBuilder(_scenario.SourceConnectionString) { Password = FakePassword }.ConnectionString;
+
+        var (exitCode, output, error) = await RunAsync(
+            new Dictionary<string, string?> { ["CGS_TARGET"] = _scenario.TargetConnectionString },
+            ImportArgs("--source", source));
+
+        Assert.Equal(1, exitCode);
+        Assert.DoesNotContain(FakePassword, output + error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Missing_account_exits_2_with_a_clear_message()
     {
         var (exitCode, _, error) = await RunAsync(

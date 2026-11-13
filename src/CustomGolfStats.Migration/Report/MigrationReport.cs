@@ -14,13 +14,13 @@ public static class MigrationReport
     public static string ToMarkdown(ImportResult result, string accountEmail, DateTimeOffset generatedAt)
     {
         var findings = result.Mapped.Findings;
-        var md = new Markdown();
+        var md = new MarkdownWriter();
 
         md.Line("# golftrack import report");
         md.Line();
         md.Line($"- Generated: {generatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC");
         md.Line($"- Source: golfer {result.GolferId}");
-        md.Line($"- Target account: {Markdown.Escape(accountEmail.Trim())}");
+        md.Line($"- Target account: {MarkdownWriter.Escape(accountEmail.Trim())}");
         md.Line(result.Committed ? "- Mode: import (committed)" : "- Mode: **Dry run**: nothing was committed");
         md.Line();
 
@@ -150,50 +150,4 @@ public static class MigrationReport
     private static string Date(DateOnly value) => value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string YesNo(bool value) => value ? "yes" : "no";
-
-    private sealed class Markdown
-    {
-        private readonly StringBuilder _text = new();
-
-        public static string Escape(string value) =>
-            value.Replace("\\", "\\\\", StringComparison.Ordinal)
-                .Replace("|", "\\|", StringComparison.Ordinal)
-                .Replace("\r", " ", StringComparison.Ordinal)
-                .Replace("\n", " ", StringComparison.Ordinal);
-
-        public void Line(string text = "") => _text.Append(text).Append('\n');
-
-        public void Paragraph(string text)
-        {
-            Line(text);
-            Line();
-        }
-
-        public void Heading(string title)
-        {
-            Line($"## {title}");
-            Line();
-        }
-
-        public void Table(IReadOnlyList<string> headers, IReadOnlyList<string[]> rows)
-        {
-            if (rows.Count == 0)
-            {
-                Line("None.");
-                Line();
-                return;
-            }
-
-            Line("| " + string.Join(" | ", headers.Select(Escape)) + " |");
-            Line("|" + string.Concat(headers.Select(_ => "---|")));
-            foreach (var row in rows)
-            {
-                Line("| " + string.Join(" | ", row.Select(Escape)) + " |");
-            }
-
-            Line();
-        }
-
-        public override string ToString() => _text.ToString();
-    }
 }

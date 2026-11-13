@@ -36,8 +36,11 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
         await _container.StartAsync(timeout.Token);
     }
 
-    /// <summary>Creates a new golftrack database with the full schema and returns its connection string.</summary>
-    public async Task<string> CreateDatabaseAsync()
+    /// <summary>
+    /// Creates a new golftrack database with the full schema (and, when asked, golftrack's stored procedures from
+    /// <c>03-sprocs.sql</c>) and returns its connection string.
+    /// </summary>
+    public async Task<string> CreateDatabaseAsync(bool withProcedures = false)
     {
         var name = $"golftrack_{Guid.NewGuid():N}";
         await using (var master = new SqlConnection(ConnectionStringFor("master")))
@@ -50,8 +53,13 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
         var connectionString = ConnectionStringFor(name);
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        var script = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "golftrack", "01-tables.sql"));
-        foreach (var batch in SplitBatches(script).Append(ProductionColumns))
+        var batches = SplitBatches(await ReadScriptAsync("01-tables.sql")).Append(ProductionColumns);
+        if (withProcedures)
+        {
+            batches = batches.Concat(SplitBatches(await ReadScriptAsync("03-sprocs.sql")));
+        }
+
+        foreach (var batch in batches)
         {
             await using var command = new SqlCommand(batch, connection);
             await command.ExecuteNonQueryAsync();
@@ -61,6 +69,9 @@ public sealed partial class MsSqlFixture : IAsyncLifetime
     }
 
     public ValueTask DisposeAsync() => _container.DisposeAsync();
+
+    private static Task<string> ReadScriptAsync(string name) =>
+        File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "golftrack", name));
 
     /// <summary>Splits a script on lines that hold only <c>GO</c>, as sqlcmd does; empty batches are dropped.</summary>
     public static IEnumerable<string> SplitBatches(string script) =>

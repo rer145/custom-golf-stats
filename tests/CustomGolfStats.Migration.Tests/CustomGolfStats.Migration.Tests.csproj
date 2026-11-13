@@ -10,8 +10,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- golftrack's schema script, run against the SQL Server test container. -->
+    <!-- golftrack's schema and stored procedure scripts, run against the SQL Server test container. -->
     <Content Include="..\..\docs\reference\golftrack\01-tables.sql" Link="golftrack\01-tables.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\reference\golftrack\03-sprocs.sql" Link="golftrack\03-sprocs.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
