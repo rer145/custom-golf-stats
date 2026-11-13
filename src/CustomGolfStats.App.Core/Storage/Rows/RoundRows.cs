@@ -7,7 +7,9 @@ using RoundType = CustomGolfStats.Api.Client.RoundType;
 namespace CustomGolfStats.App.Core.Storage.Rows;
 
 // Enums are stored as integers (sqlite-net's text storage needs an attribute on the enum type itself, and the
-// Domain enums are not ours to annotate). Never reorder or renumber a Domain enum without a migration.
+// Domain enums are not ours to annotate). The persisted values are the Domain enums (Lie, Club, ShotType, Direction, Shape,
+// EntryMode, Role, Tier) and the generated Api.Client enums (RoundType, Gender, CourseStatus, CourseSource). Never reorder or
+// renumber any of them (or regenerate the client with a different order) without a migration; EnumPinningTests pins the values.
 
 /// <summary>A round header. <see cref="Dirty"/> means a local change is waiting to be pushed; a row with
 /// <see cref="DeletedAt"/> set is a tombstone (kept so a pending DELETE survives restarts and a pull cannot resurrect it).</summary>
@@ -44,6 +46,8 @@ public sealed class RoundRow
     public int Version { get; set; }
     public bool TrialCounted { get; set; }
     [Indexed] public bool Dirty { get; set; }
+
+    public RoundRow Clone() => (RoundRow)MemberwiseClone();
 }
 
 /// <summary>One hole's result. For shot-entered holes <see cref="IsDerived"/> is true and the numbers equal the domain derivation.</summary>
@@ -67,6 +71,8 @@ public sealed class HoleRow
     public int GreensideSandShots { get; set; }
     public int FairwaySandShots { get; set; }
     public bool IsDerived { get; set; }
+
+    public HoleRow Clone() => (HoleRow)MemberwiseClone();
 
     public HoleSummary ToSummary() => new(HoleNumber, EntrySequence, Par, Score, Putts, FairwayHit, TeeShotLeft, TeeShotRight,
         TeeShotLong, TeeShotShort, Gir, PenaltyStrokes, GreensideSandShots, FairwaySandShots);
@@ -97,6 +103,8 @@ public sealed class ShotRow
     public Direction Direction { get; set; }
     public Shape? Shape { get; set; }
     public int PenaltyStrokes { get; set; }
+
+    public ShotRow Clone() => (ShotRow)MemberwiseClone();
 
     public Shot ToShot() => new(Sequence, StartLie, StartDistance, Club, ShotType, EndLie, EndDistance, Direction, Shape, PenaltyStrokes);
 

@@ -66,6 +66,14 @@ public static class Samples
         return new RoundRecord(round, [hole1, hole2]);
     }
 
+    /// <summary>Marks the round as already known to the server (Version 1, ModifiedAt set).</summary>
+    public static RoundRecord Synced(RoundRecord r)
+    {
+        r.Round.Version = 1;
+        r.Round.ModifiedAt = new DateTimeOffset(2026, 6, 1, 13, 0, 0, TimeSpan.Zero);
+        return r;
+    }
+
     public static HoleRecord QuickHole(Guid roundId, int number, int par, int score, int putts) =>
         new(new HoleRow
         {

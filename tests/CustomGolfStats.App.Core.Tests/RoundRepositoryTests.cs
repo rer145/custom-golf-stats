@@ -1,4 +1,5 @@
 using CustomGolfStats.App.Core.Storage;
+using CustomGolfStats.App.Core.Storage.Repositories;
 using CustomGolfStats.App.Core.Storage.Rows;
 using CustomGolfStats.App.Core.Tests.Support;
 using CustomGolfStats.Domain;
@@ -158,7 +159,7 @@ public class RoundRepositoryTests
         server.Round.ModifiedAt = new DateTimeOffset(2026, 6, 2, 0, 0, 0, TimeSpan.Zero);
         server.Round.ClientUpdatedAt = new DateTimeOffset(2026, 6, 1, 18, 0, 0, TimeSpan.Zero);
 
-        await t.Db.Rounds.SaveFromServerAsync(server);
+        await t.Db.Rounds.SaveFromServerAsync(server, ServerWriteMode.Pull);
 
         var row = (await t.Db.Rounds.GetAsync(server.Round.Id))!.Round;
         Assert.False(row.Dirty);
@@ -175,7 +176,7 @@ public class RoundRepositoryTests
         await t.Db.Rounds.SaveAsync(local);
 
         var server = new RoundRecord(Samples.Round(local.Round.Id, EntryMode.Quick), [Samples.QuickHole(local.Round.Id, 1, 4, 5, 2)]);
-        await t.Db.Rounds.SaveFromServerAsync(server);
+        await t.Db.Rounds.SaveFromServerAsync(server, ServerWriteMode.ServerWins);
 
         var loaded = (await t.Db.Rounds.GetAsync(local.Round.Id))!;
         Assert.Single(loaded.Holes);
@@ -188,8 +189,7 @@ public class RoundRepositoryTests
     {
         await using var t = await TempDb.CreateAsync();
         var round = Samples.FullShotRound();
-        await t.Db.Rounds.SaveAsync(round);
-        await t.Db.Rounds.MarkCleanAsync(round.Round.Id);
+        await t.Db.Rounds.SaveFromServerAsync(Samples.Synced(round), ServerWriteMode.Pull);
         t.Clock.Advance(TimeSpan.FromHours(1));
 
         await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
@@ -217,7 +217,7 @@ public class RoundRepositoryTests
     {
         await using var t = await TempDb.CreateAsync();
         var round = Samples.FullShotRound();
-        await t.Db.Rounds.SaveAsync(round);
+        await t.Db.Rounds.SaveFromServerAsync(Samples.Synced(round), ServerWriteMode.Pull);
         await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
 
         await t.Db.Rounds.MarkCleanAsync(round.Round.Id);
@@ -232,15 +232,189 @@ public class RoundRepositoryTests
     {
         await using var t = await TempDb.CreateAsync();
         var round = Samples.FullShotRound();
-        await t.Db.Rounds.SaveFromServerAsync(round);
+        await t.Db.Rounds.SaveFromServerAsync(round, ServerWriteMode.Pull);
         var tomb = new RoundRecord(Samples.Round(round.Round.Id), []);
         tomb.Round.DeletedAt = new DateTimeOffset(2026, 6, 3, 0, 0, 0, TimeSpan.Zero);
 
-        await t.Db.Rounds.SaveFromServerAsync(tomb);
+        await t.Db.Rounds.SaveFromServerAsync(tomb, ServerWriteMode.Pull);
 
         Assert.Empty(await t.Db.Rounds.ListAsync());
         Assert.Equal(0, await t.Db.Rounds.CountDirtyAsync());
         Assert.Equal(0, await t.Db.Connection.Table<HoleRow>().CountAsync());
+    }
+
+    private static RoundRecord ServerCopy(RoundRecord of, int version, DateTimeOffset clientUpdatedAt)
+    {
+        var copy = new RoundRecord(of.Round.Clone(), of.Holes);
+        copy.Round.Version = version;
+        copy.Round.ModifiedAt = new DateTimeOffset(2026, 6, 5, 0, 0, 0, TimeSpan.Zero);
+        copy.Round.ClientUpdatedAt = clientUpdatedAt;
+        copy.Round.Notes = "from server";
+        return copy;
+    }
+
+    [Fact]
+    public async Task Pull_does_not_overwrite_a_dirty_round()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 4, t.Clock.UtcNow.AddDays(1)), ServerWriteMode.Pull);
+
+        Assert.False(stored);
+        var row = (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round;
+        Assert.Equal("windy", row.Notes);
+        Assert.True(row.Dirty);
+        Assert.Equal(0, row.Version);
+    }
+
+    [Fact]
+    public async Task Pull_does_not_resurrect_a_round_with_a_pending_delete()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveFromServerAsync(Samples.Synced(round), ServerWriteMode.Pull);
+        await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 4, t.Clock.UtcNow.AddDays(1)), ServerWriteMode.Pull);
+
+        Assert.False(stored);
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id));
+        var tomb = (await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true))!;
+        Assert.True(tomb.Round.Dirty);
+        Assert.NotNull(tomb.Round.DeletedAt);
+    }
+
+    [Fact]
+    public async Task Pull_over_a_clean_round_stores_the_server_copy()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveFromServerAsync(Samples.Synced(round), ServerWriteMode.Pull);
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 4, t.Clock.UtcNow), ServerWriteMode.Pull);
+
+        Assert.True(stored);
+        Assert.Equal("from server", (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round.Notes);
+    }
+
+    [Fact]
+    public async Task Push_accepted_stores_the_server_copy_when_unchanged_since_the_push()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+        var pushed = t.Clock.UtcNow;
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 1, pushed), ServerWriteMode.PushAccepted(pushed));
+
+        Assert.True(stored);
+        var row = (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round;
+        Assert.False(row.Dirty);
+        Assert.Equal(1, row.Version);
+    }
+
+    [Fact]
+    public async Task Push_accepted_with_an_edit_made_during_the_push_keeps_the_local_edit_dirty()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+        var pushed = t.Clock.UtcNow;
+        t.Clock.Advance(TimeSpan.FromSeconds(20));
+        await t.Db.Rounds.SaveHoleAsync(round.Round.Id, Samples.QuickHole(round.Round.Id, 3, 3, 3, 2)); // edit during the push
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 1, pushed), ServerWriteMode.PushAccepted(pushed));
+
+        Assert.False(stored);
+        var loaded = (await t.Db.Rounds.GetAsync(round.Round.Id))!;
+        Assert.True(loaded.Round.Dirty);
+        Assert.Equal("windy", loaded.Round.Notes);          // local content kept
+        Assert.Equal(3, loaded.Holes.Count);                // including the new hole
+        Assert.Equal(1, loaded.Round.Version);              // server-owned fields are recorded
+        Assert.Equal(t.Clock.UtcNow, loaded.Round.ClientUpdatedAt);
+    }
+
+    [Fact]
+    public async Task Server_wins_overwrites_a_dirty_round_and_a_pending_delete()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+
+        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 5, t.Clock.UtcNow.AddDays(1)), ServerWriteMode.ServerWins));
+
+        var row = (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round;
+        Assert.False(row.Dirty);
+        Assert.Equal("from server", row.Notes);
+        Assert.Equal(5, row.Version);
+
+        await t.Db.Rounds.MarkDeletedAsync(round.Round.Id); // synced now, so this is a tombstone
+        Assert.True(await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 6, t.Clock.UtcNow.AddDays(2)), ServerWriteMode.ServerWins));
+        Assert.NotNull(await t.Db.Rounds.GetAsync(round.Round.Id));
+        Assert.Equal(0, await t.Db.Rounds.CountDirtyAsync());
+    }
+
+    [Fact]
+    public async Task Local_save_keeps_server_owned_fields_and_does_not_mutate_the_callers_objects()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        var synced = Samples.Synced(round);
+        synced.Round.TrialCounted = true;
+        await t.Db.Rounds.SaveFromServerAsync(synced, ServerWriteMode.Pull);
+
+        var edit = Samples.FullShotRound(round.Round.Id);   // caller's copy knows nothing of server fields
+        edit.Round.Version = 99;
+        edit.Round.TrialCounted = false;
+        var before = edit.Round.ClientUpdatedAt;
+        t.Clock.Advance(TimeSpan.FromMinutes(1));
+        await t.Db.Rounds.SaveAsync(edit);
+
+        var row = (await t.Db.Rounds.GetAsync(round.Round.Id))!.Round;
+        Assert.Equal(1, row.Version);
+        Assert.NotNull(row.ModifiedAt);
+        Assert.True(row.TrialCounted);
+        Assert.True(row.Dirty);
+        Assert.Equal(99, edit.Round.Version);               // untouched
+        Assert.Equal(before, edit.Round.ClientUpdatedAt);
+        Assert.False(edit.Round.Dirty);
+    }
+
+    [Fact]
+    public async Task A_failing_save_leaves_the_stored_round_intact()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+        var savedAt = t.Clock.UtcNow;
+        t.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        var dup = new RoundRecord(Samples.Round(round.Round.Id), [Samples.QuickHole(round.Round.Id, 1, 4, 4, 2), Samples.QuickHole(round.Round.Id, 1, 4, 5, 2)]);
+        await Assert.ThrowsAnyAsync<Exception>(() => t.Db.Rounds.SaveAsync(dup)); // duplicate hole number
+
+        var loaded = (await t.Db.Rounds.GetAsync(round.Round.Id))!;
+        Assert.Equal(2, loaded.Holes.Count);
+        Assert.Equal(4, loaded.Holes[0].Shots.Count);
+        Assert.Equal(savedAt, loaded.Round.ClientUpdatedAt);
+        Assert.Equal(8, await t.Db.Connection.Table<ShotRow>().CountAsync());
+    }
+
+    [Fact]
+    public async Task Deleting_a_never_synced_round_removes_it_without_a_tombstone()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+
+        await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
+
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true));
+        Assert.Equal(0, await t.Db.Rounds.CountDirtyAsync());
+        Assert.Equal(0, await t.Db.Connection.Table<RoundRow>().CountAsync());
+        Assert.Equal(0, await t.Db.Connection.Table<HoleRow>().CountAsync());
+        Assert.Equal(0, await t.Db.Connection.Table<ShotRow>().CountAsync());
     }
 
     [Fact]

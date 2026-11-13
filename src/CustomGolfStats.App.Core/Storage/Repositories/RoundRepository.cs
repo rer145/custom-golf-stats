@@ -10,20 +10,57 @@ namespace CustomGolfStats.App.Core.Storage.Repositories;
 /// </summary>
 public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
 {
-    /// <summary>Saves a local change: replaces the round's holes and shots, sets Dirty and ClientUpdatedAt = now (on <paramref name="record"/>'s row too).</summary>
+    /// <summary>Saves a local change: replaces the round's holes and shots, sets Dirty and ClientUpdatedAt = now.
+    /// Server-owned fields (Version, ModifiedAt, TrialCounted) are taken from the stored row, not from <paramref name="record"/>.
+    /// The caller's objects are not modified; the write is one transaction, so a failure leaves the stored round untouched.</summary>
     public Task SaveAsync(RoundRecord record)
     {
-        record.Round.ClientUpdatedAt = clock.UtcNow;
-        record.Round.Dirty = true;
-        return db.RunInTransactionAsync(c => Write(c, record));
+        var now = clock.UtcNow;
+        return db.RunInTransactionAsync(c =>
+        {
+            var round = record.Round.Clone();
+            if (c.Find<RoundRow>(round.Id) is { } stored)
+            {
+                round.Version = stored.Version;
+                round.ModifiedAt = stored.ModifiedAt;
+                round.TrialCounted = stored.TrialCounted;
+            }
+            round.ClientUpdatedAt = now;
+            round.Dirty = true;
+            Write(c, record with { Round = round });
+        });
     }
 
-    /// <summary>Stores a copy received from the server: clean, with its own ClientUpdatedAt/Version/ModifiedAt untouched.
-    /// A copy with DeletedAt set becomes a clean tombstone with no holes or shots.</summary>
-    public Task SaveFromServerAsync(RoundRecord record)
+    /// <summary>
+    /// Stores a copy received from the server, subject to <paramref name="mode"/> so unsent local edits are never lost. Returns true
+    /// when the copy was stored. A stored copy is clean with its own ClientUpdatedAt/Version/ModifiedAt; a DeletedAt copy becomes a
+    /// clean tombstone with no holes or shots.
+    /// </summary>
+    public async Task<bool> SaveFromServerAsync(RoundRecord record, ServerWriteMode mode)
     {
-        record.Round.Dirty = false;
-        return db.RunInTransactionAsync(c => Write(c, record));
+        var stored = false;
+        await db.RunInTransactionAsync(c =>
+        {
+            var local = c.Find<RoundRow>(record.Round.Id);
+            switch (mode)
+            {
+                case ServerWriteMode.PullMode when local is { Dirty: true }:
+                    return; // unsent local edit (or pending delete) wins until it is pushed
+                case ServerWriteMode.PushAcceptedMode accepted when local is not null && local.ClientUpdatedAt != accepted.PushedClientUpdatedAt:
+                    // Edited during the push: keep the local round dirty, but record what the server now owns.
+                    local.Version = record.Round.Version;
+                    local.ModifiedAt = record.Round.ModifiedAt;
+                    local.TrialCounted = record.Round.TrialCounted;
+                    c.Update(local);
+                    return;
+            }
+
+            var copy = record.Round.Clone();
+            copy.Dirty = false;
+            Write(c, record with { Round = copy });
+            stored = true;
+        });
+        return stored;
     }
 
     /// <summary>Replaces one hole (and its shots) and marks the round dirty. The round must exist.</summary>
@@ -42,13 +79,21 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         Touch(c, round);
     });
 
-    /// <summary>Tombstones the round: DeletedAt and ClientUpdatedAt = now, dirty (a DELETE is pending), holes and shots removed.
-    /// Unknown ids are ignored.</summary>
+    /// <summary>Tombstones a synced round: DeletedAt and ClientUpdatedAt = now, dirty (a DELETE is pending), holes and shots removed.
+    /// A round the server never saw (Version 0, no ModifiedAt)
+    /// is deleted outright, with no tombstone. Unknown ids are ignored.</summary>
     public Task MarkDeletedAsync(Guid roundId) => db.RunInTransactionAsync(c =>
     {
         var round = c.Find<RoundRow>(roundId);
         if (round is null)
             return;
+        if (round.Version == 0 && round.ModifiedAt is null)
+        {
+            // The server never saw this round: nothing to delete there, so no tombstone is needed.
+            DeleteChildren(c, roundId);
+            c.Delete<RoundRow>(roundId);
+            return;
+        }
         var now = clock.UtcNow;
         round.DeletedAt = now;
         round.ClientUpdatedAt = now;
@@ -121,14 +166,16 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
 
     private static void InsertHole(SQLiteConnection c, Guid roundId, HoleRecord hole)
     {
-        hole.Hole.Id = 0;
-        hole.Hole.RoundId = roundId;
-        c.Insert(hole.Hole);
-        foreach (var shot in hole.Shots.OrderBy(s => s.Sequence))
+        var holeRow = hole.Hole.Clone();
+        holeRow.Id = 0;
+        holeRow.RoundId = roundId;
+        c.Insert(holeRow);
+        foreach (var source in hole.Shots.OrderBy(s => s.Sequence))
         {
+            var shot = source.Clone();
             shot.Id = 0;
             shot.RoundId = roundId;
-            shot.HoleNumber = hole.Hole.HoleNumber;
+            shot.HoleNumber = holeRow.HoleNumber;
             c.Insert(shot);
         }
     }
@@ -159,4 +206,24 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         round.Dirty = true;
         c.Update(round);
     }
+}
+
+/// <summary>How a server copy may overwrite the local round.</summary>
+public abstract record ServerWriteMode
+{
+    private ServerWriteMode() { }
+
+    /// <summary>A pulled change: skipped (returns false) when the stored round is dirty.</summary>
+    public static ServerWriteMode Pull { get; } = new PullMode();
+
+    /// <summary>The server accepted a push of the round as it was at <paramref name="pushedClientUpdatedAt"/>: stored only if the
+    /// local round has not been edited since, otherwise the local round stays dirty.</summary>
+    public static ServerWriteMode PushAccepted(DateTimeOffset pushedClientUpdatedAt) => new PushAcceptedMode(pushedClientUpdatedAt);
+
+    /// <summary>The 409 case: the server copy replaces the local round unconditionally.</summary>
+    public static ServerWriteMode ServerWins { get; } = new ServerWinsMode();
+
+    internal sealed record PullMode : ServerWriteMode;
+    internal sealed record PushAcceptedMode(DateTimeOffset PushedClientUpdatedAt) : ServerWriteMode;
+    internal sealed record ServerWinsMode : ServerWriteMode;
 }
