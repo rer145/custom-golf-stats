@@ -1,0 +1,15 @@
+---
+// Placeholder until Task 3 (profile and handicap) replaces it.
+import AppLayout from '../../layouts/AppLayout.astro';
+
+const email = Astro.locals.session?.email ?? '';
+---
+
+<AppLayout title="Profile">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Profile</h1>
+      <p class="lede">Signed in as {email}.</p>
+    </div>
+  </div>
+</AppLayout>

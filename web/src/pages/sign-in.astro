@@ -1,0 +1,60 @@
+---
+import Field from '../components/Field.astro';
+import Problem from '../components/Problem.astro';
+import PublicLayout from '../layouts/PublicLayout.astro';
+import type { ApiProblem } from '../api/client';
+import { signIn } from '../lib/auth';
+import { serverConfig } from '../lib/config';
+import { writeSessionCookie } from '../lib/cookies';
+import { safeNext } from '../lib/routes';
+
+const next = safeNext(Astro.url.searchParams.get('next'));
+let email = '';
+let problem: ApiProblem | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  email = String(form.get('email') ?? '');
+  const password = String(form.get('password') ?? '');
+  const returnTo = safeNext(String(form.get('next') ?? ''));
+  const config = serverConfig();
+  const now = Date.now();
+  const result = await signIn({ baseUrl: config.apiBaseUrl }, email, password, now);
+  if (result.ok) {
+    writeSessionCookie(Astro.cookies, result.session, config.sessionSecret, now);
+    return Astro.redirect(returnTo, 303);
+  }
+  problem = result.problem;
+  Astro.response.status = problem.status === 503 ? 503 : problem.status >= 500 ? 502 : problem.status === 401 ? 401 : 400;
+} else if (Astro.locals.session) {
+  return Astro.redirect(next, 303);
+}
+---
+
+<PublicLayout title="Sign in">
+  <div class="container page auth-page">
+    <div class="auth-panel">
+      <div class="page-header">
+        <h1 class="display">Sign in</h1>
+        <p class="muted">Pick up where your last round left off.</p>
+      </div>
+      <div class="card">
+        <form class="form" method="post" action={`/sign-in${next === '/stats' ? '' : `?next=${encodeURIComponent(next)}`}`} novalidate>
+          <Problem problem={problem} />
+          <input type="hidden" name="next" value={next} />
+          <Field name="email" label="Email" type="email" autocomplete="email" required value={email} problem={problem} />
+          <Field name="password" label="Password" type="password" autocomplete="current-password" required problem={problem} />
+          <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+        </form>
+      </div>
+      <p class="auth-switch">New here? <a href="/sign-up">Create an account</a></p>
+    </div>
+  </div>
+</PublicLayout>
+
+<style>
+  .auth-page { display: grid; justify-items: center; }
+  .auth-panel { width: 100%; max-width: 420px; }
+  .auth-switch { margin-top: var(--space-5); color: var(--color-text-secondary); }
+  .auth-switch a { display: inline-flex; align-items: center; min-height: 44px; }
+</style>

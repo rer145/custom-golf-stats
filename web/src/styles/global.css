@@ -1,0 +1,224 @@
+/*
+ * Custom Golf Stats web styles. Colours come only from the brand tokens (tokens.css is a verbatim copy of
+ * brand/tokens/tokens.css; a unit test keeps it in sync). Light and dark follow the OS through prefers-color-scheme.
+ */
+@import './tokens.css';
+
+/* Self-hosted brand fonts (brand/fonts, SIL OFL 1.1; licences in /fonts/licenses). */
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/SpaceGrotesk-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/SpaceGrotesk-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url('/fonts/Inter-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url('/fonts/Inter-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Inter'; src: url('/fonts/Inter-SemiBold.ttf') format('truetype'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('/fonts/JetBrainsMono-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('/fonts/JetBrainsMono-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+main { flex: 1 0 auto; }
+
+img, svg { display: block; max-width: 100%; }
+
+h1, h2, h3, h4 { margin: 0; color: var(--color-text); }
+p { margin: 0; }
+
+a { color: var(--color-primary); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* ---- Type scale (tokens.json → type) ---- */
+.display-xl { font-family: var(--font-display); font-weight: 700; font-size: clamp(40px, 7vw, 64px); line-height: 1.02; letter-spacing: -0.03em; }
+.display { font-family: var(--font-display); font-weight: 700; font-size: clamp(32px, 5vw, 44px); line-height: 1.05; letter-spacing: -0.02em; }
+.title { font-family: var(--font-display); font-weight: 700; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
+.heading { font-family: var(--font-display); font-weight: 700; font-size: 18px; line-height: 1.25; letter-spacing: 0; }
+.lede { font-size: 19px; line-height: 1.5; color: var(--color-text-secondary); max-width: 34em; }
+.caption { font-size: 13px; line-height: 1.35; color: var(--color-text-secondary); }
+.muted { color: var(--color-text-secondary); }
+
+/* Numbers: JetBrains Mono with tabular figures. Format them with src/lib/format.ts. */
+.num, .stat { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.num { font-weight: 500; }
+.stat-xl { font-size: 64px; line-height: 1; }
+.stat-l { font-size: 28px; line-height: 1; }
+.stat-m { font-size: 24px; line-height: 1; }
+.stat-s { font-size: 15px; line-height: 1.2; }
+.positive { color: var(--color-positive); }
+.negative { color: var(--color-negative); }
+
+/* ---- Layout ---- */
+.container {
+  width: 100%;
+  max-width: calc(var(--content-max-width) + 2 * var(--space-6));
+  margin-inline: auto;
+  padding-inline: var(--space-6);
+}
+
+.page { padding-block: var(--space-10) var(--space-16); }
+.page-header { display: grid; gap: var(--space-2); margin-bottom: var(--space-8); }
+.stack { display: grid; gap: var(--space-4); }
+
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -100px;
+  z-index: 10;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.skip-link:focus { top: var(--space-4); }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+/*
+ * The Fairway Ink band (site header, BRAND §5 "round header"). It stays dark in both themes, so inside it the
+ * semantic tokens are re-pointed at their on-dark brand values.
+ */
+.band {
+  --color-text: var(--cgs-chalk);
+  --color-text-secondary: var(--cgs-mist);
+  --color-primary: var(--cgs-chalk);
+  --color-on-primary: var(--cgs-ink);
+  background: var(--cgs-ink);
+  color: var(--color-text);
+}
+
+/* ---- Site header ---- */
+.site-header { border-bottom: 1px solid var(--color-border); }
+.site-header .container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  min-height: 72px;
+  padding-block: var(--space-3);
+}
+.brand-link { display: inline-flex; align-items: center; min-height: 44px; margin-right: auto; }
+.brand-link img { height: 28px; width: auto; }
+
+.site-nav ul { display: flex; flex-wrap: wrap; gap: 0 var(--space-1); margin: 0; padding: 0; list-style: none; }
+.site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+.site-nav a:hover { color: var(--color-text); }
+.site-nav a[aria-current='page'] { color: var(--color-text); box-shadow: inset 0 -2px 0 var(--color-text); border-radius: 0; }
+
+.header-actions { display: flex; align-items: center; gap: var(--space-2); }
+.header-actions form { margin: 0; }
+
+@media (max-width: 720px) {
+  .site-nav { order: 3; flex-basis: 100%; }
+  .site-nav ul { margin-inline: calc(-1 * var(--space-3)); }
+}
+
+/* ---- Footer ---- */
+.site-footer { border-top: 1px solid var(--color-border); padding-block: var(--space-8); color: var(--color-text-secondary); font-size: 14px; }
+.site-footer .container { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); align-items: center; justify-content: space-between; }
+.site-footer img { height: 24px; width: auto; }
+.site-footer a { color: var(--color-text-secondary); }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: 600 15px/1 var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn:hover { text-decoration: none; }
+.btn-primary { background: var(--color-primary); color: var(--color-on-primary); }
+.btn-accent { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-secondary { background: transparent; color: var(--color-text); border-color: var(--color-border); }
+.band .btn-secondary { border-color: var(--color-text-secondary); }
+.btn-secondary:hover { border-color: var(--color-text); }
+.btn-hero { min-height: 52px; padding: 0 var(--space-6); font-size: 16px; }
+.btn-block { width: 100%; }
+
+/* ---- Cards ---- */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .card { border-color: transparent; }
+}
+:root[data-theme='dark'] .card { border-color: transparent; }
+
+/* ---- Forms ---- */
+.form { display: grid; gap: var(--space-5); }
+.field { display: grid; gap: var(--space-2); }
+.field label { font-weight: 500; font-size: 15px; }
+.field .hint { font-size: 13px; color: var(--color-text-secondary); }
+.field input, .field select, .field textarea {
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: 400 16px/1.4 var(--font-body);
+}
+.field input:hover { border-color: var(--color-text-secondary); }
+.field input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; border-color: var(--color-primary); }
+.field [aria-invalid='true'] { border-color: var(--color-negative); }
+.field-error { margin: 0; font-size: 14px; font-weight: 500; color: var(--color-negative); }
+.field-error ul { margin: 0; padding-left: 1.1em; }
+
+.problem {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-negative);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 15px;
+}
+.problem strong { color: var(--color-negative); font-weight: 600; }
+
+/* ---- Tables (stats pages) ---- */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.table th, .table td { padding: var(--space-3) var(--space-3); border-bottom: 1px solid var(--color-border); text-align: left; }
+.table thead th { font-family: var(--font-mono); font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); }
+.table td.num, .table th.num { text-align: right; }

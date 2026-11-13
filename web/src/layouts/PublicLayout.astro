@@ -1,0 +1,52 @@
+---
+import BaseHead from '../components/BaseHead.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+/** Layout for the landing, sign-in, sign-up and error pages. */
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+const signedIn = Astro.locals.session !== null;
+const path = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <BaseHead title={title} description={description} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header band">
+      <div class="container">
+        <a class="brand-link" href="/">
+          <img src="/logo/lockup-horizontal-on-dark.svg" alt="Custom Golf Stats" width="159" height="28" />
+        </a>
+        <div class="header-actions">
+          {
+            signedIn ? (
+              <>
+                <a class="btn btn-secondary" href="/stats">Your stats</a>
+                <form method="post" action="/sign-out">
+                  <button class="btn btn-secondary" type="submit">Sign out</button>
+                </form>
+              </>
+            ) : (
+              <>
+                {path !== '/sign-in' && <a class="btn btn-secondary" href="/sign-in">Sign in</a>}
+                {path !== '/sign-up' && <a class="btn btn-primary" href="/sign-up">Create account</a>}
+              </>
+            )
+          }
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter />
+  </body>
+</html>
