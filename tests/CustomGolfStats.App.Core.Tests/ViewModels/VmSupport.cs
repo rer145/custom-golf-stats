@@ -36,14 +36,17 @@ public sealed class FakePedometer : IPedometer
 {
     public PedometerReading? Reading { get; set; }
     public bool Throws { get; set; }
+    public TimeSpan Delay { get; set; }
     public List<(DateTimeOffset From, DateTimeOffset To)> Calls { get; } = [];
 
-    public Task<PedometerReading?> ReadAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public async Task<PedometerReading?> ReadAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
         Calls.Add((from, to));
         if (Throws)
             throw new InvalidOperationException("no motion permission");
-        return Task.FromResult(Reading);
+        if (Delay > TimeSpan.Zero)
+            await Task.Delay(Delay, ct);
+        return Reading;
     }
 }
 
