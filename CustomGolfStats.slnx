@@ -1,8 +1,11 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/CustomGolfStats.Api/CustomGolfStats.Api.csproj" />
+    <Project Path="src/CustomGolfStats.Api.Client/CustomGolfStats.Api.Client.csproj" />
     <Project Path="src/CustomGolfStats.Domain/CustomGolfStats.Domain.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/CustomGolfStats.Api.Tests/CustomGolfStats.Api.Tests.csproj" />
     <Project Path="tests/CustomGolfStats.Domain.Tests/CustomGolfStats.Domain.Tests.csproj" />
   </Folder>
 </Solution>

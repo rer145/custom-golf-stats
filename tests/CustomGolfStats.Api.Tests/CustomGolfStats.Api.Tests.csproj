@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>CustomGolfStats.Api.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The committed OpenAPI document, compared with what the running API serves. -->
+    <Content Include="..\..\src\CustomGolfStats.Api.Client\openapi\CustomGolfStats.Api.json" Link="openapi\CustomGolfStats.Api.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The API runs on the ASP.NET Core shared framework; referencing it here lets restore prune the packages it already
+         contains (for example the data-protection dependencies), as it does for the API project. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CustomGolfStats.Api\CustomGolfStats.Api.csproj" />
+    <ProjectReference Include="..\..\src\CustomGolfStats.Api.Client\CustomGolfStats.Api.Client.csproj" />
+  </ItemGroup>
+
+</Project>
