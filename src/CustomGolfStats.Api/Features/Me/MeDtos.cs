@@ -29,6 +29,13 @@ public sealed record CreateHandicapEntryRequest(DateOnly? EffectiveOn, decimal? 
 public sealed record EntitlementFeatures(bool ShotByShotEntry);
 
 /// <summary>What the signed-in golfer may do. <c>TrialShotRoundsRemaining</c> is null for Paid (unlimited).</summary>
+/// <summary>
+/// Body of <c>DELETE /me</c>: the golfer confirms who they are with exactly one of their current <c>Password</c>, or a fresh
+/// Apple / Google ID token (<c>ExternalIdToken</c>, with <c>ExternalProvider</c> <c>apple</c> or <c>google</c>) for an account
+/// that signs in that way.
+/// </summary>
+public sealed record DeleteAccountRequest(string? Password, string? ExternalProvider, string? ExternalIdToken);
+
 public sealed record EntitlementsResponse(
     string Tier,
     string Role,
