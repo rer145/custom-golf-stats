@@ -4,7 +4,7 @@ import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { formatAverage, formatInteger, formatPercent } from '../../../lib/format';
+import { formatAverage, formatInteger, formatRatio } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
 
@@ -41,8 +41,8 @@ const empty = s !== null && Number(s.scoringAverage9.count) + Number(s.scoringAv
         <StatTiles title="Under par">
           <StatTile label="Birdies" value={formatInteger(s.birdies)} />
           <StatTile label="Eagles" value={formatInteger(s.eagles)} />
-          <StatTile label="Par breakers" value={formatPercent(s.parBreakers.value)} caption={ratioCounts(s.parBreakers)} />
-          <StatTile label="Birdie or better" value={formatPercent(s.birdieOrBetter.value)} caption={ratioCounts(s.birdieOrBetter)} />
+          <StatTile label="Par breakers" value={formatRatio(s.parBreakers)} caption={ratioCounts(s.parBreakers)} />
+          <StatTile label="Birdie or better" value={formatRatio(s.birdieOrBetter)} caption={ratioCounts(s.birdieOrBetter)} />
         </StatTiles>
         <StatTiles title="Average by par" columns={3}>
           <StatTile label="Par 3s" value={formatAverage(s.par3Average.value)} caption={holes(s.par3Average.count)} />

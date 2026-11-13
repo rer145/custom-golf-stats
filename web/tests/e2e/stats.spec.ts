@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DASH, formatAverage, formatDecimal, formatInteger, formatPercent, formatToPar } from '../../src/lib/format';
-import { STATS_SECTIONS, formatDate, sectionHref } from '../../src/lib/stats';
+import { DASH, formatAverage, formatHandicap, formatInteger, formatRatio, formatToPar } from '../../src/lib/format';
+import { STATS_SECTIONS, formatDate, sectionHref, threePuttAvoidance } from '../../src/lib/stats';
 import y from '../fixtures/stats-2025.json' with { type: 'json' };
 import c from '../fixtures/stats-career.json' with { type: 'json' };
 import { USER, signIn } from './support';
@@ -25,7 +25,7 @@ test('overall: tiles and charts show the API numbers', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/stats/2025');
-  await expect(tile(page, 'Handicap index')).toHaveText(formatDecimal(y.overall.handicapIndex));
+  await expect(tile(page, 'Handicap index')).toHaveText(formatHandicap(y.overall.handicapIndex));
   await expect(tileCaption(page, 'Handicap index')).toHaveText(`As of ${formatDate(y.overall.handicapEffectiveOn)}`);
   await expect(tile(page, '18-hole average')).toHaveText(formatAverage(y.overall.scoringAverage18.value));
   await expect(tile(page, 'Holes played')).toHaveText(formatInteger(y.overall.holesPlayed));
@@ -42,9 +42,11 @@ test('overall: tiles and charts show the API numbers', async ({ page }) => {
   }
 
   const drive = chartTable(page, 'Driving accuracy');
-  await expect(drive.locator('tbody tr').nth(0)).toContainText(formatPercent(y.offTheTee.drivingAccuracy.value));
+  await expect(drive.locator('tbody tr').nth(0)).toContainText(formatRatio(y.offTheTee.drivingAccuracy));
   await expect(drive.locator('tbody tr').nth(0)).toContainText('19/29');
-  await expect(chartTable(page, 'Greens in regulation').locator('tbody tr').nth(3)).toContainText(formatPercent(y.approach.girFromRight.value));
+  // The API sends ratios as 0–1 fractions: 19/29 is 65.5%, not 0.7%.
+  await expect(drive.locator('tbody tr').nth(0)).toContainText('65.5%');
+  await expect(chartTable(page, 'Greens in regulation').locator('tbody tr').nth(3)).toContainText(formatRatio(y.approach.girFromRight));
   await expect(chartTable(page, 'Recovery').locator('tbody tr').nth(2)).toContainText('0.0%');
   await expect(chartTable(page, 'Putting averages').locator('tbody tr').nth(0)).toContainText(formatAverage(y.putting.puttsPerGir.value));
   const history = chartTable(page, 'Handicap history').locator('tbody tr');
@@ -89,8 +91,8 @@ test('results: one row per round, linking to its scorecard', async ({ page }) =>
       formatInteger(r.score),
       formatToPar(r.toPar),
       formatInteger(r.putts),
-      formatPercent(r.gir.value),
-      formatPercent(r.drivingAccuracy.value),
+      formatRatio(r.gir),
+      formatRatio(r.drivingAccuracy),
       formatToPar(r.par3ToPar),
       formatToPar(r.par4ToPar),
       formatToPar(r.par5ToPar),
@@ -99,6 +101,9 @@ test('results: one row per round, linking to its scorecard', async ({ page }) =>
   // A real minus and an en dash for "no par 5s".
   await expect(rows.nth(1).locator('td').nth(7)).toHaveText('−1');
   await expect(rows.nth(2).locator('td').nth(9)).toHaveText(DASH);
+  // Ratios are fractions in the API: GIR 7/18 and fairways 9/14.
+  await expect(rows.nth(0).locator('td').nth(5)).toHaveText('38.9%');
+  await expect(rows.nth(0).locator('td').nth(6)).toHaveText('64.3%');
   await rows.nth(0).getByRole('link').click();
   await expect(page).toHaveURL(`/rounds/${y.results.rounds[0]!.roundId}`);
 });
@@ -112,8 +117,8 @@ test('scoring', async ({ page }) => {
   await expect(tile(page, 'High 9')).toHaveText(formatInteger(s.highest9));
   await expect(tile(page, 'Birdies')).toHaveText(formatInteger(s.birdies));
   await expect(tile(page, 'Eagles')).toHaveText('0');
-  await expect(tile(page, 'Par breakers')).toHaveText(formatPercent(s.parBreakers.value));
-  await expect(tile(page, 'Birdie or better')).toHaveText(formatPercent(s.birdieOrBetter.value));
+  await expect(tile(page, 'Par breakers')).toHaveText(formatRatio(s.parBreakers));
+  await expect(tile(page, 'Birdie or better')).toHaveText(formatRatio(s.birdieOrBetter));
   await expect(tile(page, 'Par 3s')).toHaveText(formatAverage(s.par3Average.value));
   await expect(tile(page, 'Par 4s')).toHaveText(formatAverage(s.par4Average.value));
   await expect(tile(page, 'Par 5s')).toHaveText(formatAverage(s.par5Average.value));
@@ -122,9 +127,10 @@ test('scoring', async ({ page }) => {
 test('off the tee', async ({ page }) => {
   await page.goto('/stats/2025/off-the-tee');
   const t = y.offTheTee;
-  await expect(tile(page, 'Driving accuracy')).toHaveText(formatPercent(t.drivingAccuracy.value));
-  await expect(tile(page, 'Missed left')).toHaveText(formatPercent(t.leftTendency.value));
-  await expect(tile(page, 'Missed right')).toHaveText(formatPercent(t.rightTendency.value));
+  await expect(tile(page, 'Driving accuracy')).toHaveText(formatRatio(t.drivingAccuracy));
+  await expect(tile(page, 'Driving accuracy')).toHaveText('65.5%');
+  await expect(tile(page, 'Missed left')).toHaveText(formatRatio(t.leftTendency));
+  await expect(tile(page, 'Missed right')).toHaveText(formatRatio(t.rightTendency));
   const table = page.locator('.after-tee table tbody tr');
   await expect(table.nth(0).locator('td .stat')).toHaveText([t.par4ToParFromFairway, t.par4ToParFromLeft, t.par4ToParFromRight].map((a) => formatToPar(a.value)));
   await expect(table.nth(1).locator('td .stat')).toHaveText(['−0.20', DASH, '+1.50']);
@@ -142,7 +148,7 @@ test('approach and around the green', async ({ page }) => {
     ['Scrambling', a.scrambling],
     ['Hole-outs', a.holeOut],
   ] as const) {
-    await expect(tile(page, label)).toHaveText(formatPercent(r.value));
+    await expect(tile(page, label)).toHaveText(formatRatio(r));
     await expect(tileCaption(page, label)).toHaveText(`${r.numerator}/${r.denominator}`);
   }
 });
@@ -154,9 +160,13 @@ test('putting', async ({ page }) => {
   await expect(tile(page, 'Putts per hole')).toHaveText(formatAverage(p.puttsPerHole.value));
   await expect(tile(page, 'Per 18-hole round')).toHaveText(formatAverage(p.puttsPerRound18.value));
   await expect(tile(page, 'Per 9-hole round')).toHaveText(formatAverage(p.puttsPerRound9.value));
-  await expect(tile(page, 'One-putts')).toHaveText(formatPercent(p.onePutt.value));
-  await expect(tile(page, 'Three-putts')).toHaveText(formatPercent(p.threePuttRate.value));
-  await expect(tile(page, 'Birdie conversion')).toHaveText(formatPercent(p.birdieConversion.value));
+  await expect(tile(page, 'One-putts')).toHaveText(formatRatio(p.onePutt));
+  await expect(tile(page, 'One-putts')).toHaveText('13.5%'); // 5/37
+  // Shown as avoidance: 1 − threePuttRate (3/37), so 34/37.
+  await expect(tile(page, '3-putt avoidance')).toHaveText(formatRatio(threePuttAvoidance(p.threePuttRate)));
+  await expect(tile(page, '3-putt avoidance')).toHaveText('91.9%');
+  await expect(page.locator('[data-stat="3-putt avoidance"] .tile-caption')).toHaveText('34/37');
+  await expect(tile(page, 'Birdie conversion')).toHaveText(formatRatio(p.birdieConversion));
 });
 
 test('courses: one row per course and tee, nulls as dashes', async ({ page }) => {
@@ -177,8 +187,8 @@ test('courses: one row per course and tee, nulls as dashes', async ({ page }) =>
       formatInteger(row.holes),
       formatToPar(row.toPar),
       formatAverage(row.puttsPerHole.value),
-      formatPercent(row.gir.value),
-      formatPercent(row.drivingAccuracy.value),
+      formatRatio(row.gir),
+      formatRatio(row.drivingAccuracy),
       formatToPar(row.par3ToPar.value),
       formatToPar(row.par4ToPar.value),
       formatToPar(row.par5ToPar.value),
@@ -212,8 +222,10 @@ test('handicap: table and chart', async ({ page }) => {
   await expect(rows).toHaveCount(c.handicap.entries.length);
   const newestFirst = [...c.handicap.entries].reverse();
   for (const [i, e] of newestFirst.entries()) {
-    await expect(rows.nth(i)).toHaveText(new RegExp(`${formatDate(e.effectiveOn)}\\s*${formatDecimal(e.index).replace('.', '\\.')}`));
+    await expect(rows.nth(i)).toHaveText(new RegExp(`${formatDate(e.effectiveOn)}\\s*${formatHandicap(e.index).replace(/[.+]/g, (m) => `\\${m}`)}`));
   }
+  // The API stores a plus handicap as a negative index (−1.2 is a +1.2 handicap).
+  await expect(rows.last().locator('td')).toHaveText('+1.2');
   await expect(page.locator('figure[data-chart]')).toHaveAttribute('data-ready', 'true');
 });
 

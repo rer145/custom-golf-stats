@@ -1,7 +1,7 @@
-import { formatAverage, formatDecimal, formatInteger, formatPercent, formatToPar, type Numeric } from './format';
+import { formatAverage, formatDecimal, formatHandicap, formatInteger, formatPercent, formatToPar, type Numeric } from './format';
 
 /** How a chart's values are written (axis ticks, tooltips and the fallback table all use format.ts). */
-export type ValueFormat = 'percent' | 'average' | 'integer' | 'toPar' | 'decimal';
+export type ValueFormat = 'percent' | 'average' | 'integer' | 'toPar' | 'decimal' | 'handicap';
 
 export interface ChartSeries {
   name: string;
@@ -33,7 +33,15 @@ export function formatValue(format: ValueFormat, value: Numeric): string {
       return formatToPar(value);
     case 'decimal':
       return formatDecimal(value);
+    case 'handicap':
+      return formatHandicap(value);
   }
+}
+
+/** An API ratio (0–1 fraction) as a chart percentage (0–100), to plot with format 'percent'. */
+export function ratioChartValue(ratio: { value: Numeric } | null | undefined): number | null {
+  const n = chartValue(ratio?.value);
+  return n === null ? null : n * 100;
 }
 
 /** An API number (`number | string | null`) as a chart value. */

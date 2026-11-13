@@ -5,7 +5,7 @@ import StatTile from '../../components/stats/StatTile.astro';
 import StatTiles from '../../components/stats/StatTiles.astro';
 import StatsShell from '../../components/stats/StatsShell.astro';
 import { chartValue } from '../../lib/chart-spec';
-import { formatDecimal, formatInteger } from '../../lib/format';
+import { formatHandicap, formatInteger } from '../../lib/format';
 import { endSession, isSessionEnded } from '../../lib/guard';
 import { firstProblem, formatDate, pickYear, yearsFrom } from '../../lib/stats';
 
@@ -26,7 +26,7 @@ const latest = entries?.at(-1);
     entries && latest && (
       <>
         <StatTiles columns={2}>
-          <StatTile label="Current index" value={formatDecimal(latest.index)} caption={`As of ${formatDate(latest.effectiveOn)}`} accent size="l" />
+          <StatTile label="Current index" value={formatHandicap(latest.index)} caption={`As of ${formatDate(latest.effectiveOn)}`} accent size="l" />
           <StatTile label="Entries" value={formatInteger(entries.length)} caption={`Since ${formatDate(entries[0]!.effectiveOn)}`} size="l" />
         </StatTiles>
         <Chart
@@ -35,7 +35,7 @@ const latest = entries?.at(-1);
           summary="Handicap index over time, oldest first."
           spec={{
             kind: 'line',
-            format: 'decimal',
+            format: 'handicap',
             highlight: entries.length - 1,
             labels: entries.map((e) => formatDate(e.effectiveOn)),
             series: [{ name: 'Index', values: entries.map((e) => chartValue(e.index)) }],
@@ -55,7 +55,7 @@ const latest = entries?.at(-1);
                 {[...entries].reverse().map((e) => (
                   <tr>
                     <th scope="row" class="num">{formatDate(e.effectiveOn)}</th>
-                    <td class="num">{formatDecimal(e.index)}</td>
+                    <td class="num">{formatHandicap(e.index)}</td>
                   </tr>
                 ))}
               </tbody>

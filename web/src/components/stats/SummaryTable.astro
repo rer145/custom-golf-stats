@@ -1,6 +1,6 @@
 ---
 import type { Schemas } from '../../api/client';
-import { formatAverage, formatInteger, formatPercent, formatToPar } from '../../lib/format';
+import { formatAverage, formatInteger, formatRatio, formatToPar } from '../../lib/format';
 import { formatDate } from '../../lib/stats';
 
 /** The career-style table: one row per year (career) or per course and tee (courses), 9 and 18 holes side by side. */
@@ -94,8 +94,8 @@ const lengths = [
             <td class="num">{formatInteger(row.holes)}</td>
             <td class="num">{formatToPar(row.toPar)}</td>
             <td class="num">{formatAverage(row.puttsPerHole.value)}</td>
-            <td class="num">{formatPercent(row.gir.value)}</td>
-            <td class="num">{formatPercent(row.drivingAccuracy.value)}</td>
+            <td class="num">{formatRatio(row.gir)}</td>
+            <td class="num">{formatRatio(row.drivingAccuracy)}</td>
             {byPar && row.byPar && row.byPar.map((a) => <td class="num">{formatToPar(a.value)}</td>)}
             <td class="num">{formatDate(row.earliest)}</td>
             <td class="num">{formatDate(row.latest)}</td>

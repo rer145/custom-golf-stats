@@ -2,7 +2,7 @@
 import { call } from '../../../api/client';
 import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { formatInteger, formatPercent, formatToPar } from '../../../lib/format';
+import { formatInteger, formatRatio, formatToPar } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, formatShortDate, parseYear, yearsFrom } from '../../../lib/stats';
 
@@ -57,8 +57,8 @@ const rows = r.ok ? r.data.rounds : null;
                 <td class="num strong">{formatInteger(row.score)}</td>
                 <td class="num">{formatToPar(row.toPar)}</td>
                 <td class="num">{formatInteger(row.putts)}</td>
-                <td class="num">{formatPercent(row.gir.value)}</td>
-                <td class="num">{formatPercent(row.drivingAccuracy.value)}</td>
+                <td class="num">{formatRatio(row.gir)}</td>
+                <td class="num">{formatRatio(row.drivingAccuracy)}</td>
                 <td class="num">{formatToPar(row.par3ToPar)}</td>
                 <td class="num">{formatToPar(row.par4ToPar)}</td>
                 <td class="num">{formatToPar(row.par5ToPar)}</td>

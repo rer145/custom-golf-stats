@@ -5,8 +5,8 @@ import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { chartValue } from '../../../lib/chart-spec';
-import { formatInteger, formatPercent, formatToPar } from '../../../lib/format';
+import { ratioChartValue } from '../../../lib/chart-spec';
+import { formatInteger, formatRatio, formatToPar } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
 
@@ -35,9 +35,9 @@ const rows = t
       <>
         {Number(t.drivingAccuracy.denominator) === 0 && <EmptyYear year={year} />}
         <StatTiles columns={3}>
-          <StatTile label="Driving accuracy" value={formatPercent(t.drivingAccuracy.value)} caption={ratioCounts(t.drivingAccuracy)} accent size="l" />
-          <StatTile label="Missed left" value={formatPercent(t.leftTendency.value)} caption={ratioCounts(t.leftTendency)} size="l" />
-          <StatTile label="Missed right" value={formatPercent(t.rightTendency.value)} caption={ratioCounts(t.rightTendency)} size="l" />
+          <StatTile label="Driving accuracy" value={formatRatio(t.drivingAccuracy)} caption={ratioCounts(t.drivingAccuracy)} accent size="l" />
+          <StatTile label="Missed left" value={formatRatio(t.leftTendency)} caption={ratioCounts(t.leftTendency)} size="l" />
+          <StatTile label="Missed right" value={formatRatio(t.rightTendency)} caption={ratioCounts(t.rightTendency)} size="l" />
         </StatTiles>
 
         <section class="card after-tee" aria-labelledby="after-tee-title">
@@ -59,7 +59,7 @@ const rows = t
                     {row.cells.map((c) => (
                       <td class="num">
                         <span class="stat stat-s">{formatToPar(c.value)}</span>
-                        <span class="caption"> {formatInteger(c.count)} holes</span>
+                        <span class="caption"> {formatInteger(c.count)} {Number(c.count) === 1 ? 'hole' : 'holes'}</span>
                       </td>
                     ))}
                   </tr>
@@ -80,7 +80,7 @@ const rows = t
             max: 100,
             highlight: 0,
             labels: ['Fairway', 'Missed left', 'Missed right'],
-            series: [{ name: 'Share', values: [t.drivingAccuracy, t.leftTendency, t.rightTendency].map((x) => chartValue(x.value)) }],
+            series: [{ name: 'Share', values: [t.drivingAccuracy, t.leftTendency, t.rightTendency].map(ratioChartValue) }],
           }}
           detail={{ header: 'Holes', values: [t.drivingAccuracy, t.leftTendency, t.rightTendency].map(ratioCounts) }}
           size="s"

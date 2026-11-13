@@ -6,8 +6,8 @@ import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { chartValue } from '../../../lib/chart-spec';
-import { formatAverage, formatDecimal, formatInteger, formatToPar } from '../../../lib/format';
+import { chartValue, ratioChartValue } from '../../../lib/chart-spec';
+import { formatAverage, formatHandicap, formatInteger, formatToPar } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, formatDate, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
 
@@ -48,7 +48,7 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
         <StatTiles>
           <StatTile
             label="Handicap index"
-            value={formatDecimal(o.handicapIndex)}
+            value={formatHandicap(o.handicapIndex)}
             caption={o.handicapEffectiveOn ? `As of ${formatDate(o.handicapEffectiveOn)}` : 'None recorded'}
             accent
             size="l"
@@ -75,7 +75,7 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
               max: 100,
               highlight: 0,
               labels: ['Fairway', 'Missed left', 'Missed right'],
-              series: [{ name: 'Share', values: [tee.drivingAccuracy, tee.leftTendency, tee.rightTendency].map((r) => chartValue(r.value)) }],
+              series: [{ name: 'Share', values: [tee.drivingAccuracy, tee.leftTendency, tee.rightTendency].map(ratioChartValue) }],
             }}
             detail={{ header: 'Holes', values: [tee.drivingAccuracy, tee.leftTendency, tee.rightTendency].map(ratioCounts) }}
           />
@@ -90,7 +90,7 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
               max: 100,
               highlight: 0,
               labels: ['All holes', 'Fairway', 'Left', 'Right'],
-              series: [{ name: 'GIR', values: [app.gir, app.girFromFairway, app.girFromLeft, app.girFromRight].map((r) => chartValue(r.value)) }],
+              series: [{ name: 'GIR', values: [app.gir, app.girFromFairway, app.girFromLeft, app.girFromRight].map(ratioChartValue) }],
             }}
             detail={{ header: 'Holes', values: [app.gir, app.girFromFairway, app.girFromLeft, app.girFromRight].map(ratioCounts) }}
           />
@@ -103,8 +103,9 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
               kind: 'hbar',
               format: 'percent',
               min: 0,
+              max: 100,
               labels: ['Par breakers', 'Birdie or better'],
-              series: [{ name: 'Share', values: [chartValue(sc.parBreakers.value), chartValue(sc.birdieOrBetter.value)] }],
+              series: [{ name: 'Share', values: [ratioChartValue(sc.parBreakers), ratioChartValue(sc.birdieOrBetter)] }],
             }}
             detail={{ header: 'Holes', values: [ratioCounts(sc.parBreakers), ratioCounts(sc.birdieOrBetter)] }}
           />
@@ -119,7 +120,7 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
               min: 0,
               max: 100,
               labels: ['Sand saves', 'Scrambling', 'Hole-outs'],
-              series: [{ name: 'Share', values: [app.sandSave, app.scrambling, app.holeOut].map((r) => chartValue(r.value)) }],
+              series: [{ name: 'Share', values: [app.sandSave, app.scrambling, app.holeOut].map(ratioChartValue) }],
             }}
             detail={{ header: 'Holes', values: [app.sandSave, app.scrambling, app.holeOut].map(ratioCounts) }}
           />
@@ -144,7 +145,7 @@ const rounds18 = o ? Number(o.scoringAverage18.count) : 0;
             summary="Handicap index over time, oldest first."
             spec={{
               kind: 'line',
-              format: 'decimal',
+              format: 'handicap',
               highlight: hcp.length - 1,
               labels: hcp.map((e) => formatDate(e.effectiveOn)),
               series: [{ name: 'Index', values: hcp.map((e) => chartValue(e.index)) }],

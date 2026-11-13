@@ -1,7 +1,11 @@
 {
   "overall": {
     "year": 2025,
-    "scoringAverage18": { "value": 79, "total": 79, "count": 1 },
+    "scoringAverage18": {
+      "value": 79,
+      "total": 79,
+      "count": 1
+    },
     "holesPlayed": 37,
     "toPar": 16,
     "handicapIndex": 11.8,
@@ -12,15 +16,43 @@
     "rounds18": 1,
     "roundsOtherLength": 1,
     "histogram9": [
-      { "min": null, "max": 39, "count": 1 },
-      { "min": 40, "max": 49, "count": 0 },
-      { "min": 50, "max": null, "count": 0 }
+      {
+        "min": null,
+        "max": 39,
+        "count": 1
+      },
+      {
+        "min": 40,
+        "max": 49,
+        "count": 0
+      },
+      {
+        "min": 50,
+        "max": null,
+        "count": 0
+      }
     ],
     "histogram18": [
-      { "min": null, "max": 79, "count": 1 },
-      { "min": 80, "max": 89, "count": 0 },
-      { "min": 90, "max": 99, "count": 0 },
-      { "min": 100, "max": null, "count": 0 }
+      {
+        "min": null,
+        "max": 79,
+        "count": 1
+      },
+      {
+        "min": 80,
+        "max": 89,
+        "count": 0
+      },
+      {
+        "min": 90,
+        "max": 99,
+        "count": 0
+      },
+      {
+        "min": 100,
+        "max": null,
+        "count": 0
+      }
     ]
   },
   "results": {
@@ -34,8 +66,16 @@
         "score": 79,
         "toPar": 7,
         "putts": 34,
-        "gir": { "value": 38.888889, "numerator": 7, "denominator": 18 },
-        "drivingAccuracy": { "value": 64.285714, "numerator": 9, "denominator": 14 },
+        "gir": {
+          "value": 0.3888888888888889,
+          "numerator": 7,
+          "denominator": 18
+        },
+        "drivingAccuracy": {
+          "value": 0.6428571428571429,
+          "numerator": 9,
+          "denominator": 14
+        },
         "par3ToPar": 0,
         "par4ToPar": 7,
         "par5ToPar": 0
@@ -49,8 +89,16 @@
         "score": 39,
         "toPar": 3,
         "putts": 18,
-        "gir": { "value": 33.333333, "numerator": 3, "denominator": 9 },
-        "drivingAccuracy": { "value": 57.142857, "numerator": 4, "denominator": 7 },
+        "gir": {
+          "value": 0.3333333333333333,
+          "numerator": 3,
+          "denominator": 9
+        },
+        "drivingAccuracy": {
+          "value": 0.5714285714285714,
+          "numerator": 4,
+          "denominator": 7
+        },
         "par3ToPar": -1,
         "par4ToPar": 3,
         "par5ToPar": 1
@@ -64,8 +112,16 @@
         "score": 46,
         "toPar": 6,
         "putts": 20,
-        "gir": { "value": 20, "numerator": 2, "denominator": 10 },
-        "drivingAccuracy": { "value": 75, "numerator": 6, "denominator": 8 },
+        "gir": {
+          "value": 0.2,
+          "numerator": 2,
+          "denominator": 10
+        },
+        "drivingAccuracy": {
+          "value": 0.75,
+          "numerator": 6,
+          "denominator": 8
+        },
         "par3ToPar": 1,
         "par4ToPar": 4,
         "par5ToPar": null
@@ -73,48 +129,168 @@
     ]
   },
   "scoring": {
-    "scoringAverage9": { "value": 39, "total": 39, "count": 1 },
-    "scoringAverage18": { "value": 79, "total": 79, "count": 1 },
+    "scoringAverage9": {
+      "value": 39,
+      "total": 39,
+      "count": 1
+    },
+    "scoringAverage18": {
+      "value": 79,
+      "total": 79,
+      "count": 1
+    },
     "lowest9": 39,
     "highest9": 39,
     "lowest18": 79,
     "highest18": 79,
     "birdies": 2,
     "eagles": 0,
-    "parBreakers": { "value": 8.108108, "numerator": 3, "denominator": 37 },
-    "par3Average": { "value": 3.125, "total": 25, "count": 8 },
-    "par4Average": { "value": 4.6, "total": 92, "count": 20 },
-    "par5Average": { "value": 5.111111, "total": 46, "count": 9 },
-    "birdieOrBetter": { "value": 5.405405, "numerator": 2, "denominator": 37 }
+    "parBreakers": {
+      "value": 0.08108108108108109,
+      "numerator": 3,
+      "denominator": 37
+    },
+    "par3Average": {
+      "value": 3.125,
+      "total": 25,
+      "count": 8
+    },
+    "par4Average": {
+      "value": 4.6,
+      "total": 92,
+      "count": 20
+    },
+    "par5Average": {
+      "value": 5.111111,
+      "total": 46,
+      "count": 9
+    },
+    "birdieOrBetter": {
+      "value": 0.05405405405405406,
+      "numerator": 2,
+      "denominator": 37
+    }
   },
   "offTheTee": {
-    "drivingAccuracy": { "value": 65.517241, "numerator": 19, "denominator": 29 },
-    "leftTendency": { "value": 20.689655, "numerator": 6, "denominator": 29 },
-    "rightTendency": { "value": 13.793103, "numerator": 4, "denominator": 29 },
-    "par4ToParFromFairway": { "value": 0.5, "total": 7, "count": 14 },
-    "par4ToParFromLeft": { "value": 1.25, "total": 5, "count": 4 },
-    "par4ToParFromRight": { "value": 1, "total": 2, "count": 2 },
-    "par5ToParFromFairway": { "value": -0.2, "total": -1, "count": 5 },
-    "par5ToParFromLeft": { "value": null, "total": 0, "count": 0 },
-    "par5ToParFromRight": { "value": 1.5, "total": 3, "count": 2 }
+    "drivingAccuracy": {
+      "value": 0.6551724137931034,
+      "numerator": 19,
+      "denominator": 29
+    },
+    "leftTendency": {
+      "value": 0.20689655172413793,
+      "numerator": 6,
+      "denominator": 29
+    },
+    "rightTendency": {
+      "value": 0.13793103448275862,
+      "numerator": 4,
+      "denominator": 29
+    },
+    "par4ToParFromFairway": {
+      "value": 0.5,
+      "total": 7,
+      "count": 14
+    },
+    "par4ToParFromLeft": {
+      "value": 1.25,
+      "total": 5,
+      "count": 4
+    },
+    "par4ToParFromRight": {
+      "value": 1,
+      "total": 2,
+      "count": 2
+    },
+    "par5ToParFromFairway": {
+      "value": -0.2,
+      "total": -1,
+      "count": 5
+    },
+    "par5ToParFromLeft": {
+      "value": null,
+      "total": 0,
+      "count": 0
+    },
+    "par5ToParFromRight": {
+      "value": 1.5,
+      "total": 3,
+      "count": 2
+    }
   },
   "approach": {
-    "gir": { "value": 32.432432, "numerator": 12, "denominator": 37 },
-    "girFromFairway": { "value": 47.368421, "numerator": 9, "denominator": 19 },
-    "girFromLeft": { "value": 16.666667, "numerator": 1, "denominator": 6 },
-    "girFromRight": { "value": 25, "numerator": 1, "denominator": 4 },
-    "sandSave": { "value": 33.333333, "numerator": 1, "denominator": 3 },
-    "scrambling": { "value": 28, "numerator": 7, "denominator": 25 },
-    "holeOut": { "value": 0, "numerator": 0, "denominator": 37 }
+    "gir": {
+      "value": 0.32432432432432434,
+      "numerator": 12,
+      "denominator": 37
+    },
+    "girFromFairway": {
+      "value": 0.47368421052631576,
+      "numerator": 9,
+      "denominator": 19
+    },
+    "girFromLeft": {
+      "value": 0.16666666666666666,
+      "numerator": 1,
+      "denominator": 6
+    },
+    "girFromRight": {
+      "value": 0.25,
+      "numerator": 1,
+      "denominator": 4
+    },
+    "sandSave": {
+      "value": 0.3333333333333333,
+      "numerator": 1,
+      "denominator": 3
+    },
+    "scrambling": {
+      "value": 0.28,
+      "numerator": 7,
+      "denominator": 25
+    },
+    "holeOut": {
+      "value": 0,
+      "numerator": 0,
+      "denominator": 37
+    }
   },
   "putting": {
-    "puttsPerGir": { "value": 1.833333, "total": 22, "count": 12 },
-    "puttsPerHole": { "value": 1.945946, "total": 72, "count": 37 },
-    "onePutt": { "value": 13.513514, "numerator": 5, "denominator": 37 },
-    "threePuttRate": { "value": 8.108108, "numerator": 3, "denominator": 37 },
-    "puttsPerRound9": { "value": 18, "total": 18, "count": 1 },
-    "puttsPerRound18": { "value": 34, "total": 34, "count": 1 },
-    "birdieConversion": { "value": 16.666667, "numerator": 2, "denominator": 12 }
+    "puttsPerGir": {
+      "value": 1.833333,
+      "total": 22,
+      "count": 12
+    },
+    "puttsPerHole": {
+      "value": 1.945946,
+      "total": 72,
+      "count": 37
+    },
+    "onePutt": {
+      "value": 0.13513513513513514,
+      "numerator": 5,
+      "denominator": 37
+    },
+    "threePuttRate": {
+      "value": 0.08108108108108109,
+      "numerator": 3,
+      "denominator": 37
+    },
+    "puttsPerRound9": {
+      "value": 18,
+      "total": 18,
+      "count": 1
+    },
+    "puttsPerRound18": {
+      "value": 34,
+      "total": 34,
+      "count": 1
+    },
+    "birdieConversion": {
+      "value": 0.16666666666666666,
+      "numerator": 2,
+      "denominator": 12
+    }
   },
   "courses": {
     "courses": [
@@ -123,16 +299,58 @@
         "courseName": "Cedar Ridge Golf Club",
         "teeId": "e0e0e0e0-0000-4000-8000-000000000001",
         "teeName": "Blue",
-        "nine": { "rounds": 0, "average": { "value": null, "total": 0, "count": 0 }, "low": null, "high": null },
-        "eighteen": { "rounds": 1, "average": { "value": 79, "total": 79, "count": 1 }, "low": 79, "high": 79 },
+        "nine": {
+          "rounds": 0,
+          "average": {
+            "value": null,
+            "total": 0,
+            "count": 0
+          },
+          "low": null,
+          "high": null
+        },
+        "eighteen": {
+          "rounds": 1,
+          "average": {
+            "value": 79,
+            "total": 79,
+            "count": 1
+          },
+          "low": 79,
+          "high": 79
+        },
         "holes": 18,
         "toPar": 7,
-        "puttsPerHole": { "value": 1.888889, "total": 34, "count": 18 },
-        "gir": { "value": 38.888889, "numerator": 7, "denominator": 18 },
-        "drivingAccuracy": { "value": 64.285714, "numerator": 9, "denominator": 14 },
-        "par3ToPar": { "value": 0, "total": 0, "count": 4 },
-        "par4ToPar": { "value": 0.7, "total": 7, "count": 10 },
-        "par5ToPar": { "value": 0, "total": 0, "count": 4 },
+        "puttsPerHole": {
+          "value": 1.888889,
+          "total": 34,
+          "count": 18
+        },
+        "gir": {
+          "value": 0.3888888888888889,
+          "numerator": 7,
+          "denominator": 18
+        },
+        "drivingAccuracy": {
+          "value": 0.6428571428571429,
+          "numerator": 9,
+          "denominator": 14
+        },
+        "par3ToPar": {
+          "value": 0,
+          "total": 0,
+          "count": 4
+        },
+        "par4ToPar": {
+          "value": 0.7,
+          "total": 7,
+          "count": 10
+        },
+        "par5ToPar": {
+          "value": 0,
+          "total": 0,
+          "count": 4
+        },
         "earliest": "2025-06-14",
         "latest": "2025-06-14"
       },
@@ -141,16 +359,58 @@
         "courseName": "Willow Creek Municipal",
         "teeId": "e0e0e0e0-0000-4000-8000-000000000002",
         "teeName": "White",
-        "nine": { "rounds": 1, "average": { "value": 39, "total": 39, "count": 1 }, "low": 39, "high": 39 },
-        "eighteen": { "rounds": 0, "average": { "value": null, "total": 0, "count": 0 }, "low": null, "high": null },
+        "nine": {
+          "rounds": 1,
+          "average": {
+            "value": 39,
+            "total": 39,
+            "count": 1
+          },
+          "low": 39,
+          "high": 39
+        },
+        "eighteen": {
+          "rounds": 0,
+          "average": {
+            "value": null,
+            "total": 0,
+            "count": 0
+          },
+          "low": null,
+          "high": null
+        },
         "holes": 19,
         "toPar": 9,
-        "puttsPerHole": { "value": 2, "total": 38, "count": 19 },
-        "gir": { "value": 26.315789, "numerator": 5, "denominator": 19 },
-        "drivingAccuracy": { "value": 66.666667, "numerator": 10, "denominator": 15 },
-        "par3ToPar": { "value": 0, "total": 0, "count": 4 },
-        "par4ToPar": { "value": 0.636364, "total": 7, "count": 11 },
-        "par5ToPar": { "value": 0.5, "total": 2, "count": 4 },
+        "puttsPerHole": {
+          "value": 2,
+          "total": 38,
+          "count": 19
+        },
+        "gir": {
+          "value": 0.2631578947368421,
+          "numerator": 5,
+          "denominator": 19
+        },
+        "drivingAccuracy": {
+          "value": 0.6666666666666666,
+          "numerator": 10,
+          "denominator": 15
+        },
+        "par3ToPar": {
+          "value": 0,
+          "total": 0,
+          "count": 4
+        },
+        "par4ToPar": {
+          "value": 0.636364,
+          "total": 7,
+          "count": 11
+        },
+        "par5ToPar": {
+          "value": 0.5,
+          "total": 2,
+          "count": 4
+        },
         "earliest": "2025-04-12",
         "latest": "2025-05-03"
       }

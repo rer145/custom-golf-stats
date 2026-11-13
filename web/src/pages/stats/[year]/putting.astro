@@ -4,9 +4,9 @@ import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { formatAverage, formatInteger, formatPercent } from '../../../lib/format';
+import { formatAverage, formatInteger, formatRatio } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
-import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { firstProblem, parseYear, ratioCounts, threePuttAvoidance, yearsFrom } from '../../../lib/stats';
 
 const year = parseYear(Astro.params.year);
 if (year === null) return Astro.rewrite('/404');
@@ -34,9 +34,9 @@ const per = (a: { total: number | string; count: number | string }, unit: string
           <StatTile label="Per 9-hole round" value={formatAverage(p.puttsPerRound9.value)} caption={per(p.puttsPerRound9, 'round')} size="l" />
         </StatTiles>
         <StatTiles title="Rates" columns={3}>
-          <StatTile label="One-putts" value={formatPercent(p.onePutt.value)} caption={ratioCounts(p.onePutt)} />
-          <StatTile label="Three-putts" value={formatPercent(p.threePuttRate.value)} caption={ratioCounts(p.threePuttRate)} />
-          <StatTile label="Birdie conversion" value={formatPercent(p.birdieConversion.value)} caption={ratioCounts(p.birdieConversion)} />
+          <StatTile label="One-putts" value={formatRatio(p.onePutt)} caption={ratioCounts(p.onePutt)} />
+          <StatTile label="3-putt avoidance" value={formatRatio(threePuttAvoidance(p.threePuttRate))} caption={ratioCounts(threePuttAvoidance(p.threePuttRate))} />
+          <StatTile label="Birdie conversion" value={formatRatio(p.birdieConversion)} caption={ratioCounts(p.birdieConversion)} />
         </StatTiles>
       </>
     )

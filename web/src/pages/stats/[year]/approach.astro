@@ -6,8 +6,8 @@ import EmptyYear from '../../../components/stats/EmptyYear.astro';
 import StatTile from '../../../components/stats/StatTile.astro';
 import StatTiles from '../../../components/stats/StatTiles.astro';
 import StatsShell from '../../../components/stats/StatsShell.astro';
-import { chartValue } from '../../../lib/chart-spec';
-import { formatPercent } from '../../../lib/format';
+import { ratioChartValue } from '../../../lib/chart-spec';
+import { formatRatio } from '../../../lib/format';
 import { endSession, isSessionEnded } from '../../../lib/guard';
 import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
 
@@ -29,15 +29,15 @@ const a = r.ok ? r.data : null;
       <>
         {Number(a.gir.denominator) === 0 && <EmptyYear year={year} />}
         <StatTiles title="Approach">
-          <StatTile label="GIR" value={formatPercent(a.gir.value)} caption={ratioCounts(a.gir)} accent size="l" />
-          <StatTile label="GIR from fairway" value={formatPercent(a.girFromFairway.value)} caption={ratioCounts(a.girFromFairway)} />
-          <StatTile label="GIR from left" value={formatPercent(a.girFromLeft.value)} caption={ratioCounts(a.girFromLeft)} />
-          <StatTile label="GIR from right" value={formatPercent(a.girFromRight.value)} caption={ratioCounts(a.girFromRight)} />
+          <StatTile label="GIR" value={formatRatio(a.gir)} caption={ratioCounts(a.gir)} accent size="l" />
+          <StatTile label="GIR from fairway" value={formatRatio(a.girFromFairway)} caption={ratioCounts(a.girFromFairway)} />
+          <StatTile label="GIR from left" value={formatRatio(a.girFromLeft)} caption={ratioCounts(a.girFromLeft)} />
+          <StatTile label="GIR from right" value={formatRatio(a.girFromRight)} caption={ratioCounts(a.girFromRight)} />
         </StatTiles>
         <StatTiles title="Around the green" columns={3}>
-          <StatTile label="Sand saves" value={formatPercent(a.sandSave.value)} caption={ratioCounts(a.sandSave)} />
-          <StatTile label="Scrambling" value={formatPercent(a.scrambling.value)} caption={ratioCounts(a.scrambling)} />
-          <StatTile label="Hole-outs" value={formatPercent(a.holeOut.value)} caption={ratioCounts(a.holeOut)} />
+          <StatTile label="Sand saves" value={formatRatio(a.sandSave)} caption={ratioCounts(a.sandSave)} />
+          <StatTile label="Scrambling" value={formatRatio(a.scrambling)} caption={ratioCounts(a.scrambling)} />
+          <StatTile label="Hole-outs" value={formatRatio(a.holeOut)} caption={ratioCounts(a.holeOut)} />
         </StatTiles>
         <ChartGrid>
           <Chart
@@ -52,7 +52,7 @@ const a = r.ok ? r.data : null;
               max: 100,
               highlight: 0,
               labels: ['All holes', 'Fairway', 'Left', 'Right'],
-              series: [{ name: 'GIR', values: [a.gir, a.girFromFairway, a.girFromLeft, a.girFromRight].map((x) => chartValue(x.value)) }],
+              series: [{ name: 'GIR', values: [a.gir, a.girFromFairway, a.girFromLeft, a.girFromRight].map(ratioChartValue) }],
             }}
             detail={{ header: 'Holes', values: [a.gir, a.girFromFairway, a.girFromLeft, a.girFromRight].map(ratioCounts) }}
           />
@@ -67,7 +67,7 @@ const a = r.ok ? r.data : null;
               min: 0,
               max: 100,
               labels: ['Sand saves', 'Scrambling', 'Hole-outs'],
-              series: [{ name: 'Share', values: [a.sandSave, a.scrambling, a.holeOut].map((x) => chartValue(x.value)) }],
+              series: [{ name: 'Share', values: [a.sandSave, a.scrambling, a.holeOut].map(ratioChartValue) }],
             }}
             detail={{ header: 'Holes', values: [a.sandSave, a.scrambling, a.holeOut].map(ratioCounts) }}
           />

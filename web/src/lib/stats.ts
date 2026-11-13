@@ -82,6 +82,13 @@ export function bucketLabel(bucket: Schemas['ScoreBucketDto']): string {
 /** A ratio or average's value, or null (a zero denominator or count). */
 export const valueOf = (x: { value: null | number | string } | null | undefined): number | string | null => x?.value ?? null;
 
+/** 3-putt avoidance: the holes without a three-putt, as a ratio (1 − the API's threePuttRate). */
+export function threePuttAvoidance(rate: Schemas['RatioDto']): Schemas['RatioDto'] {
+  const numerator = Number(rate.numerator);
+  const denominator = Number(rate.denominator);
+  return { value: denominator === 0 ? null : (denominator - numerator) / denominator, numerator: denominator - numerator, denominator };
+}
+
 /** `5/14`: the counts behind a ratio, for a caption. */
 export function ratioCounts(r: Schemas['RatioDto']): string {
   return `${r.numerator}/${r.denominator}`;
