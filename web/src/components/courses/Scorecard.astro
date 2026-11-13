@@ -1,0 +1,126 @@
+---
+import type { Schemas } from '../../api/client';
+import { formatInteger } from '../../lib/format';
+
+/**
+ * A tee version's holes laid out like a printed scorecard: hole numbers across, yards, par and stroke index down,
+ * with Out / In / Total. The front and back nine are separate tables so each fits a phone.
+ */
+interface Props {
+  holes: Schemas['TeeHoleDto'][];
+  caption: string;
+}
+
+const { holes, caption } = Astro.props;
+const sorted = [...holes].sort((a, b) => Number(a.number) - Number(b.number));
+const front = sorted.filter((h) => Number(h.number) <= 9);
+const back = sorted.filter((h) => Number(h.number) >= 10);
+const total = (list: typeof sorted, key: 'par' | 'yardage') => list.reduce((sum, h) => sum + Number(h[key]), 0);
+
+interface Part {
+  label: string;
+  holes: typeof sorted;
+  subtotal?: string;
+  total: boolean;
+}
+const parts: Part[] =
+  back.length === 0
+    ? [{ label: 'Holes', holes: front, total: true }]
+    : front.length === 0
+      ? [{ label: 'Holes', holes: back, total: true }]
+      : [
+          { label: 'Front nine', holes: front, subtotal: 'Out', total: false },
+          { label: 'Back nine', holes: back, subtotal: 'In', total: true },
+        ];
+const rows = [
+  { key: 'yardage', label: 'Yards', sum: true },
+  { key: 'par', label: 'Par', sum: true },
+  { key: 'strokeIndex', label: 'Stroke index', sum: false },
+] as const;
+---
+
+<div class="scorecard">
+  {
+    parts.map((part) => (
+      <div class="table-wrap">
+        <table class="table card-table">
+          <caption class="visually-hidden">
+            {caption}: {part.label.toLowerCase()}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Hole</th>
+              {part.holes.map((h) => (
+                <th scope="col" class="num">
+                  {formatInteger(h.number)}
+                </th>
+              ))}
+              {part.subtotal && (
+                <th scope="col" class="num sum">
+                  {part.subtotal}
+                </th>
+              )}
+              {part.total && (
+                <th scope="col" class="num sum">
+                  Total
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr class={row.key}>
+                <th scope="row">{row.label}</th>
+                {part.holes.map((h) => (
+                  <td class="num">{formatInteger(h[row.key])}</td>
+                ))}
+                {part.subtotal && <td class="num sum">{row.sum ? formatInteger(total(part.holes, row.key as 'par' | 'yardage')) : ''}</td>}
+                {part.total && <td class="num sum">{row.sum ? formatInteger(total(sorted, row.key as 'par' | 'yardage')) : ''}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .scorecard {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .card-table {
+    font-size: 14px;
+  }
+  .card-table th,
+  .card-table td {
+    padding: var(--space-2) var(--space-2);
+    white-space: nowrap;
+  }
+  .card-table thead th {
+    color: var(--color-text-secondary);
+  }
+  .card-table tbody th {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  .card-table td.num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .card-table .par td {
+    font-weight: 700;
+  }
+  .card-table .sum {
+    background: var(--color-chip-bg);
+    font-weight: 700;
+  }
+  .card-table .strokeIndex td {
+    color: var(--color-text-secondary);
+  }
+</style>

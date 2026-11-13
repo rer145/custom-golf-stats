@@ -1,0 +1,74 @@
+---
+/** A GET search form (`q`), shared by course search and the course database search. */
+interface Props {
+  action: string;
+  label: string;
+  value: string;
+  button: string;
+  hint?: string | undefined;
+  errors?: string[] | undefined;
+}
+
+const { action, label, value, button, hint, errors = [] } = Astro.props;
+const id = `search-${action.replace(/[^a-z0-9]+/gi, '-')}`;
+---
+
+<form class="search" method="get" action={action} role="search">
+  <label for={id} class="search-label">{label}</label>
+  {hint && <p class="caption" id={`${id}-hint`}>{hint}</p>}
+  <div class="search-row">
+    <input
+      id={id}
+      name="q"
+      type="search"
+      value={value}
+      autocomplete="off"
+      enterkeyhint="search"
+      aria-invalid={errors.length > 0 ? 'true' : undefined}
+      aria-describedby={[hint ? `${id}-hint` : '', errors.length > 0 ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
+    />
+    <button class="btn btn-primary" type="submit">{button}</button>
+  </div>
+  {
+    errors.length > 0 && (
+      <div class="field-error" id={`${id}-error`}>
+        {errors.map((e) => <p>{e}</p>)}
+      </div>
+    )
+  }
+</form>
+
+<style>
+  .search {
+    display: grid;
+    gap: var(--space-2);
+    max-width: 640px;
+  }
+  .search-label {
+    font-weight: 500;
+    font-size: 15px;
+  }
+  .search-row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .search-row input {
+    flex: 1;
+    min-width: 0;
+    min-height: 52px;
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 17px/1.4 var(--font-body);
+  }
+  .search-row input:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+    border-color: var(--color-primary);
+  }
+  .search-row .btn {
+    min-height: 52px;
+  }
+</style>

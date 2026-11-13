@@ -56,3 +56,17 @@ export function formatSigned(value: Numeric, digits = 1): string {
   if (Number(s.replace(MINUS, '-')) === 0) return (0).toFixed(digits);
   return n > 0 ? `+${s}` : s;
 }
+
+/** One decimal place, no forced sign: course ratings (`72.1`), distances. */
+export function formatTenths(value: Numeric): string {
+  const n = toNumber(value);
+  return n === null ? DASH : fixed(n, 1);
+}
+
+/** A handicap index to 1 dp, in golf's convention: an index below zero is a plus handicap, `+2.1`. */
+export function formatHandicapIndex(value: Numeric): string {
+  const n = toNumber(value);
+  if (n === null) return DASH;
+  const s = Math.abs(n).toFixed(1);
+  return n < 0 && Number(s) !== 0 ? `+${s}` : s;
+}

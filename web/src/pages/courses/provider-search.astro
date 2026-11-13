@@ -1,0 +1,147 @@
+---
+// Course database (provider) search and import: GET /courses/provider-search?query=, POST /courses/import.
+// A course someone already imported links to our copy instead of importing it again.
+import AppLayout from '../../layouts/AppLayout.astro';
+import Problem from '../../components/Problem.astro';
+import BackLink from '../../components/courses/BackLink.astro';
+import SearchBox from '../../components/courses/SearchBox.astro';
+import { call, fieldErrors, type ApiProblem, type Schemas } from '../../api/client';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { formText, notAForm, readForm } from '../../lib/forms';
+
+let q = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 200);
+let importProblem: ApiProblem | null = null;
+let failedId = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  q = formText(form, 'q').trim().slice(0, 200);
+  failedId = formText(form, 'providerCourseId');
+  const r = await call(Astro.locals.api.POST('/courses/import', { body: { providerCourseId: failedId } }));
+  if (isSessionEnded(r)) return endSession(Astro);
+  if (r.ok) return Astro.redirect(`/courses/${r.data.id}?imported=1`, 303);
+  importProblem = r.problem;
+  Astro.response.status = r.problem.status >= 500 ? 502 : r.problem.status === 404 ? 404 : 400;
+}
+
+let results: Schemas['ProviderSearchResultDto'][] | null = null;
+let problem: ApiProblem | null = null;
+if (q) {
+  const r = await call(Astro.locals.api.GET('/courses/provider-search', { params: { query: { query: q } } }));
+  if (isSessionEnded(r)) return endSession(Astro);
+  if (r.ok) results = r.data;
+  else {
+    problem = r.problem;
+    if (Astro.request.method !== 'POST') Astro.response.status = r.problem.status === 400 ? 400 : 502;
+  }
+}
+
+const place = (c: Schemas['ProviderSearchResultDto']) => [c.city, c.region, c.country].filter(Boolean).join(', ');
+---
+
+<AppLayout title="Search the course database">
+  <div class="container page">
+    <div class="page-header">
+      <BackLink href={`/courses${q ? `?q=${encodeURIComponent(q)}` : ''}`} label="Courses" />
+      <h1 class="display">Search the course database</h1>
+      <p class="lede">Import a course with its tees, ratings, slopes and holes. It’s then shared with every golfer here.</p>
+    </div>
+
+    <div class="stack-lg">
+      <SearchBox
+        action="/courses/provider-search"
+        label="Course or club name"
+        value={q}
+        button="Search"
+        errors={fieldErrors(problem, 'query')}
+      />
+      <Problem problem={importProblem} heading="The course wasn’t imported" />
+      {problem && Object.keys(problem.fieldErrors).length === 0 && <Problem problem={problem} />}
+
+      {
+        results && (
+          <section aria-labelledby="results-heading" class="results">
+            <h2 id="results-heading" class="heading">
+              {results.length === 0 ? `Nothing in the course database matches “${q}”` : `Results for “${q}”`}
+            </h2>
+            {results.length > 0 && (
+              <ul class="provider-list">
+                {results.map((c) => (
+                  <li class:list={['provider-row', { failed: c.providerCourseId === failedId && importProblem }]}>
+                    <div class="who">
+                      <span class="course-name">{c.courseName}</span>
+                      <span class="muted">{[c.clubName !== c.courseName ? c.clubName : null, place(c)].filter(Boolean).join(' – ')}</span>
+                    </div>
+                    {c.alreadyImported && c.courseId ? (
+                      <div class="action">
+                        <span class="caption">Already imported</span>
+                        <a class="btn btn-secondary" href={`/courses/${c.courseId}`}>
+                          View course<span class="visually-hidden">: {c.courseName}</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <form method="post" class="action">
+                        <input type="hidden" name="q" value={q} />
+                        <input type="hidden" name="providerCourseId" value={c.providerCourseId} />
+                        <button class="btn btn-primary" type="submit">
+                          Import<span class="visually-hidden"> {c.courseName}</span>
+                        </button>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )
+      }
+
+      <p class="muted">Not in the database? <a href="/courses/new">Enter the course from its scorecard</a>.</p>
+    </div>
+  </div>
+</AppLayout>
+
+<style>
+  .stack-lg {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+  }
+  .results {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .provider-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--color-border);
+  }
+  .provider-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-6);
+    padding: var(--space-4) var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .provider-row.failed {
+    border-bottom-color: var(--color-negative);
+  }
+  .who {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .course-name {
+    font: 700 18px/1.25 var(--font-display);
+  }
+  .action {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0;
+  }
+</style>

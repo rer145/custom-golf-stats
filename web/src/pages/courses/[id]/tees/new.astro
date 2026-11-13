@@ -1,0 +1,94 @@
+---
+// Add a tee to a course (POST /courses/{id}/tees). The tee id is generated when the form is first shown, so a
+// repeated post returns the tee already added (200). A non-admin's tee on a Verified course goes to review (202).
+import { randomUUID } from 'node:crypto';
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import Problem from '../../../../components/Problem.astro';
+import BackLink from '../../../../components/courses/BackLink.astro';
+import TeeFields from '../../../../components/courses/TeeFields.astro';
+import { call, type ApiProblem } from '../../../../api/client';
+import { endSession, isSessionEnded } from '../../../../lib/guard';
+import { notAForm, readForm } from '../../../../lib/forms';
+import { buildTee, emptyTee, localProblem, readTee, remapHoleErrors, teeFromVersion, type TeeValues } from '../../../../components/courses/course-form';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const id = Astro.params.id ?? '';
+const r = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(r)) return endSession(Astro);
+const course = r.ok ? r.data : null;
+let problem: ApiProblem | null = r.ok ? null : r.problem;
+if (!r.ok) Astro.response.status = r.problem.status === 404 ? 404 : 502;
+
+// Par and stroke index usually match across tees: start from the first tee's current holes.
+const firstTee = course?.tees[0];
+const template = firstTee ? teeFromVersion(firstTee, firstTee.versions.find((v) => v.isCurrent) ?? firstTee.versions[0]) : undefined;
+let values: TeeValues = emptyTee(randomUUID(), template);
+
+if (course && Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  values = readTee(form, '');
+  if (!UUID.test(values.id)) values.id = randomUUID();
+  const built = buildTee(values, '', { requireName: true });
+  problem = localProblem(built.errors);
+  if (!problem) {
+    const saved = await call(Astro.locals.api.POST('/courses/{id}/tees', { params: { path: { id } }, body: built.request }));
+    if (isSessionEnded(saved)) return endSession(Astro);
+    if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=tee'}`, 303);
+    problem = { ...saved.problem, fieldErrors: remapHoleErrors(saved.problem.fieldErrors, '', built.holeRows) };
+  }
+  Astro.response.status = problem.status >= 500 ? 502 : problem.status === 409 ? 409 : problem.status === 404 ? 404 : 400;
+}
+
+const reviewed = course?.status === 'Verified' && Astro.locals.session?.role !== 'Admin';
+---
+
+<AppLayout title={course ? `Add a tee to ${course.name}` : 'Add a tee'}>
+  <div class="container page">
+    <div class="page-header">
+      <BackLink href={course ? `/courses/${id}` : '/courses'} label={course?.name ?? 'Courses'} />
+      <h1 class="display">Add a tee</h1>
+      <p class="lede">
+        {
+          reviewed
+            ? 'This course is verified, so the new tee goes to an admin for review first.'
+            : 'Copy the rating, slope and holes from the scorecard. Par and stroke index start from the first tee.'
+        }
+      </p>
+    </div>
+    {
+      course ? (
+        <form class="tee-form" method="post" novalidate>
+          <Problem problem={problem} />
+          <div class="card">
+            <TeeFields values={values} prefix="" problem={problem} />
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">
+              {reviewed ? 'Send for review' : 'Add tee'}
+            </button>
+            <a class="btn btn-secondary" href={`/courses/${id}`}>
+              Cancel
+            </a>
+          </div>
+        </form>
+      ) : (
+        <Problem problem={problem} />
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .tee-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    max-width: 960px;
+  }
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+</style>

@@ -1,0 +1,72 @@
+---
+import Field from '../Field.astro';
+import type { ApiProblem } from '../../api/client';
+import type { DetailsValues } from './course-form';
+
+/** Course details inputs (name, club, address, contact, location), named as the API's fields. */
+interface Props {
+  values: DetailsValues;
+  problem?: ApiProblem | null | undefined;
+}
+
+const { values, problem } = Astro.props;
+const hasLocation = values.latitude !== '' || values.longitude !== '';
+const locationError = Boolean(problem && (problem.fieldErrors.latitude || problem.fieldErrors.longitude));
+---
+
+<div class="details-grid">
+  <div class="span-2">
+    <Field name="name" label="Course name" required autocomplete="off" maxlength={200} value={values.name} problem={problem} />
+  </div>
+  <div class="span-2">
+    <Field name="clubName" label="Club" hint="If the club has more than one course." maxlength={200} value={values.clubName} problem={problem} />
+  </div>
+  <div class="span-2">
+    <Field name="address" label="Address" autocomplete="street-address" maxlength={300} value={values.address} problem={problem} />
+  </div>
+  <Field name="city" label="City" maxlength={100} value={values.city} problem={problem} />
+  <Field name="region" label="State or region" maxlength={100} value={values.region} problem={problem} />
+  <Field name="country" label="Country" maxlength={100} value={values.country} problem={problem} />
+  <Field name="phone" label="Phone" type="tel" maxlength={50} value={values.phone} problem={problem} />
+  <div class="span-2">
+    <Field name="website" label="Website" type="url" inputmode="url" maxlength={300} value={values.website} problem={problem} />
+  </div>
+  <details class="span-2 more" open={hasLocation || locationError}>
+    <summary>Map location</summary>
+    <p class="caption">Optional. Decimal degrees, both or neither. Used to find courses near you.</p>
+    <div class="details-grid">
+      <Field name="latitude" label="Latitude" inputmode="decimal" value={values.latitude} problem={problem} />
+      <Field name="longitude" label="Longitude" inputmode="decimal" value={values.longitude} problem={problem} />
+    </div>
+  </details>
+</div>
+
+<style>
+  .details-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-5) var(--space-4);
+  }
+  .span-2 {
+    grid-column: 1 / -1;
+  }
+  .more {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .more summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .more .details-grid {
+    margin-top: var(--space-3);
+  }
+  @media (max-width: 560px) {
+    .details-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
