@@ -21,6 +21,8 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             var round = record.Round.Clone();
             if (c.Find<RoundRow>(round.Id) is { } stored)
             {
+                if (stored.DeletedAt is not null)
+                    throw new InvalidOperationException($"Round {round.Id} is deleted and cannot be edited.");
                 round.Version = stored.Version;
                 round.ModifiedAt = stored.ModifiedAt;
                 round.TrialCounted = stored.TrialCounted;
@@ -46,8 +48,10 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
             {
                 case ServerWriteMode.PullMode when local is { Dirty: true }:
                     return; // unsent local edit (or pending delete) wins until it is pushed
-                case ServerWriteMode.PushAcceptedMode accepted when local is not null && local.ClientUpdatedAt != accepted.PushedClientUpdatedAt:
-                    // Edited during the push: keep the local round dirty, but record what the server now owns.
+                case ServerWriteMode.PushAcceptedMode when local is null:
+                    return; // the round was purged while its push was in flight: never bring it back
+                case ServerWriteMode.PushAcceptedMode accepted when local.ClientUpdatedAt != accepted.PushedClientUpdatedAt:
+                    // Edited (or deleted) during the push: keep the local round dirty, but record what the server now owns.
                     local.Version = record.Round.Version;
                     local.ModifiedAt = record.Round.ModifiedAt;
                     local.TrialCounted = record.Round.TrialCounted;
@@ -79,21 +83,14 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         Touch(c, round);
     });
 
-    /// <summary>Tombstones a synced round: DeletedAt and ClientUpdatedAt = now, dirty (a DELETE is pending), holes and shots removed.
-    /// A round the server never saw (Version 0, no ModifiedAt)
-    /// is deleted outright, with no tombstone. Unknown ids are ignored.</summary>
+    /// <summary>Tombstones the round (even one never synced, since its push may be in flight): DeletedAt and ClientUpdatedAt = now, dirty (a DELETE is pending), holes and shots removed.
+    /// Unknown ids are ignored. After the DELETE is pushed
+    /// (a 404 counts as success) call <see cref="PurgeTombstoneAsync"/>.</summary>
     public Task MarkDeletedAsync(Guid roundId) => db.RunInTransactionAsync(c =>
     {
         var round = c.Find<RoundRow>(roundId);
         if (round is null)
             return;
-        if (round.Version == 0 && round.ModifiedAt is null)
-        {
-            // The server never saw this round: nothing to delete there, so no tombstone is needed.
-            DeleteChildren(c, roundId);
-            c.Delete<RoundRow>(roundId);
-            return;
-        }
         var now = clock.UtcNow;
         round.DeletedAt = now;
         round.ClientUpdatedAt = now;
@@ -101,6 +98,22 @@ public sealed class RoundRepository(SQLiteAsyncConnection db, IClock clock)
         c.Update(round);
         DeleteChildren(c, roundId);
     });
+
+    /// <summary>Removes a tombstone row once its DELETE has been pushed. Returns false (and removes nothing) if the round is
+    /// missing or is not a tombstone.</summary>
+    public async Task<bool> PurgeTombstoneAsync(Guid roundId)
+    {
+        var purged = false;
+        await db.RunInTransactionAsync(c =>
+        {
+            if (c.Find<RoundRow>(roundId) is not { DeletedAt: not null })
+                return;
+            DeleteChildren(c, roundId);
+            c.Delete<RoundRow>(roundId);
+            purged = true;
+        });
+        return purged;
+    }
 
     /// <summary>Clears the dirty flag after a successful push. When <paramref name="ifClientUpdatedAtIs"/> is given the flag is
     /// cleared only if the round has not been edited since that value was pushed; returns whether it was cleared.</summary>
@@ -217,7 +230,7 @@ public abstract record ServerWriteMode
     public static ServerWriteMode Pull { get; } = new PullMode();
 
     /// <summary>The server accepted a push of the round as it was at <paramref name="pushedClientUpdatedAt"/>: stored only if the
-    /// local round has not been edited since, otherwise the local round stays dirty.</summary>
+    /// local round exists and has not been edited since; otherwise the local round stays dirty (or stays gone).</summary>
     public static ServerWriteMode PushAccepted(DateTimeOffset pushedClientUpdatedAt) => new PushAcceptedMode(pushedClientUpdatedAt);
 
     /// <summary>The 409 case: the server copy replaces the local round unconditionally.</summary>

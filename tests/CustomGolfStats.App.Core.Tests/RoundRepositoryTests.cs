@@ -402,19 +402,119 @@ public class RoundRepositoryTests
     }
 
     [Fact]
-    public async Task Deleting_a_never_synced_round_removes_it_without_a_tombstone()
+    public async Task Deleting_a_never_synced_round_still_leaves_a_dirty_tombstone()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round); // never synced: Version 0, no ModifiedAt
+
+        await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
+
+        var tomb = (await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true))!;
+        Assert.True(tomb.Round.Dirty);
+        Assert.NotNull(tomb.Round.DeletedAt);
+        Assert.Empty(tomb.Holes);
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id));
+    }
+
+    [Fact]
+    public async Task A_push_that_lands_after_a_delete_does_not_resurrect_the_round()
     {
         await using var t = await TempDb.CreateAsync();
         var round = Samples.FullShotRound();
         await t.Db.Rounds.SaveAsync(round);
+        var pushed = t.Clock.UtcNow;
+        t.Clock.Advance(TimeSpan.FromSeconds(5));
+        await t.Db.Rounds.MarkDeletedAsync(round.Round.Id); // deleted while the push is in flight
 
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 1, pushed), ServerWriteMode.PushAccepted(pushed));
+
+        Assert.False(stored);
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id));
+        var tomb = (await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true))!;
+        Assert.True(tomb.Round.Dirty);          // the DELETE is still to be sent
+        Assert.NotNull(tomb.Round.DeletedAt);
+    }
+
+    [Fact]
+    public async Task Push_accepted_with_no_local_row_is_a_no_op()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 1, t.Clock.UtcNow), ServerWriteMode.PushAccepted(t.Clock.UtcNow));
+
+        Assert.False(stored);
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true));
+    }
+
+    [Fact]
+    public async Task Pull_with_no_local_row_stores_the_round()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+
+        var stored = await t.Db.Rounds.SaveFromServerAsync(ServerCopy(round, 2, t.Clock.UtcNow), ServerWriteMode.Pull);
+
+        Assert.True(stored);
+        var loaded = (await t.Db.Rounds.GetAsync(round.Round.Id))!;
+        Assert.False(loaded.Round.Dirty);
+        Assert.Equal(2, loaded.Holes.Count);
+    }
+
+    [Fact]
+    public async Task Purging_removes_only_tombstones()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var live = Samples.FullShotRound();
+        var gone = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(live);
+        await t.Db.Rounds.SaveAsync(gone);
+        await t.Db.Rounds.MarkDeletedAsync(gone.Round.Id);
+
+        Assert.False(await t.Db.Rounds.PurgeTombstoneAsync(live.Round.Id));
+        Assert.False(await t.Db.Rounds.PurgeTombstoneAsync(Guid.NewGuid()));
+        Assert.True(await t.Db.Rounds.PurgeTombstoneAsync(gone.Round.Id));
+
+        Assert.NotNull(await t.Db.Rounds.GetAsync(live.Round.Id));
+        Assert.Null(await t.Db.Rounds.GetAsync(gone.Round.Id, includeDeleted: true));
+        Assert.Equal(1, await t.Db.Connection.Table<RoundRow>().CountAsync());
+    }
+
+    [Fact]
+    public async Task A_local_save_over_a_tombstone_throws_and_leaves_it_deleted()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
         await t.Db.Rounds.MarkDeletedAsync(round.Round.Id);
 
-        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true));
-        Assert.Equal(0, await t.Db.Rounds.CountDirtyAsync());
-        Assert.Equal(0, await t.Db.Connection.Table<RoundRow>().CountAsync());
-        Assert.Equal(0, await t.Db.Connection.Table<HoleRow>().CountAsync());
-        Assert.Equal(0, await t.Db.Connection.Table<ShotRow>().CountAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => t.Db.Rounds.SaveAsync(round));
+
+        Assert.Null(await t.Db.Rounds.GetAsync(round.Round.Id));
+        var tomb = (await t.Db.Rounds.GetAsync(round.Round.Id, includeDeleted: true))!;
+        Assert.NotNull(tomb.Round.DeletedAt);
+        Assert.Empty(tomb.Holes);
+    }
+
+    [Fact]
+    public async Task A_failing_hole_save_leaves_the_round_intact()
+    {
+        await using var t = await TempDb.CreateAsync();
+        var round = Samples.FullShotRound();
+        await t.Db.Rounds.SaveAsync(round);
+        var savedAt = t.Clock.UtcNow;
+        t.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        // Replacing hole 1 deletes the old rows first; the broken record (null shots) then throws mid-write.
+        var broken = new HoleRecord(Samples.QuickHole(round.Round.Id, 1, 4, 4, 2).Hole, null!);
+        await Assert.ThrowsAnyAsync<Exception>(() => t.Db.Rounds.SaveHoleAsync(round.Round.Id, broken));
+
+        var loaded = (await t.Db.Rounds.GetAsync(round.Round.Id))!;
+        Assert.Equal(2, loaded.Holes.Count);
+        Assert.Equal(4, loaded.Holes[0].Shots.Count);
+        Assert.Equal(savedAt, loaded.Round.ClientUpdatedAt);
+        Assert.Equal(8, await t.Db.Connection.Table<ShotRow>().CountAsync());
     }
 
     [Fact]
