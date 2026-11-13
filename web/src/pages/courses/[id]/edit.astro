@@ -1,0 +1,86 @@
+---
+// Edit course details (PUT /courses/{id} replaces all of them). On a Verified course a non-admin's edit becomes a
+// flag for an admin (202): the course page then says it was sent for review.
+import AppLayout from '../../../layouts/AppLayout.astro';
+import Problem from '../../../components/Problem.astro';
+import BackLink from '../../../components/courses/BackLink.astro';
+import DetailsFields from '../../../components/courses/DetailsFields.astro';
+import { call, type ApiProblem } from '../../../api/client';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { notAForm, readForm } from '../../../lib/forms';
+import { DETAIL_FIELDS, buildDetails, detailsFromCourse, readDetails, type DetailsValues } from '../../../components/courses/course-form';
+import { fields, formProblem } from '../../../components/courses/problems';
+import { localProblem, pageStatus } from '../../../lib/problems';
+
+const id = Astro.params.id ?? '';
+const r = await call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(r)) return endSession(Astro);
+const course = r.ok ? r.data : null;
+let values: DetailsValues | null = course ? detailsFromCourse(course) : null;
+let problem: ApiProblem | null = r.ok ? null : r.problem;
+if (!r.ok) Astro.response.status = pageStatus(r.problem.status);
+
+if (course && Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  values = readDetails(form);
+  const built = buildDetails(values);
+  problem = localProblem(built.errors);
+  if (!problem) {
+    const saved = await call(Astro.locals.api.PUT('/courses/{id}', { params: { path: { id } }, body: built.request }));
+    if (isSessionEnded(saved)) return endSession(Astro);
+    if (saved.ok) return Astro.redirect(`/courses/${id}?${saved.status === 202 ? 'review=1' : 'saved=details'}`, 303);
+    problem = saved.problem;
+  }
+  Astro.response.status = pageStatus(problem.status);
+}
+
+const isAdmin = Astro.locals.session?.role === 'Admin';
+---
+
+<AppLayout title={course ? `Edit ${course.name}` : 'Edit course'}>
+  <div class="container page">
+    <div class="page-header">
+      <BackLink href={course ? `/courses/${id}` : '/courses'} label={course?.name ?? 'Courses'} />
+      <h1 class="display">Edit course details</h1>
+      {
+        course?.status === 'Verified' && !isAdmin ? (
+          <p class="lede">This course is verified. Your changes go to an admin, who updates the course if they check out.</p>
+        ) : (
+          <p class="lede">Name, address and contact details. Tee ratings and holes are changed per tee.</p>
+        )
+      }
+    </div>
+    {
+      values ? (
+        <form class="form edit-form" method="post" novalidate>
+          <Problem problem={formProblem(problem, fields(...DETAIL_FIELDS))} />
+          <div class="card">
+            <DetailsFields values={values} problem={problem} />
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">
+              {course?.status === 'Verified' && !isAdmin ? 'Send for review' : 'Save details'}
+            </button>
+            <a class="btn btn-secondary" href={`/courses/${id}`}>
+              Cancel
+            </a>
+          </div>
+        </form>
+      ) : (
+        <Problem problem={problem} />
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .edit-form {
+    max-width: 720px;
+  }
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+</style>

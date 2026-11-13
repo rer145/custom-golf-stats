@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!-- Release: HTTPS only. Debug builds replace this file with DebugResources/xml/network_security_config.xml (see the csproj). -->
+  <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

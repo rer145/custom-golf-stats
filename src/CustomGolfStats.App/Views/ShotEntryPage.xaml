@@ -1,0 +1,162 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.ShotEntryPage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:vm="using:CustomGolfStats.App.Core.ViewModels"
+                 xmlns:controls="using:CustomGolfStats.App.Controls">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Hole header with the live derived summary -->
+    <Border x:Name="HeaderBand" Style="{StaticResource BrandRoundHeaderBandStyle}" Padding="8,8,20,12">
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" Background="Transparent"
+                Foreground="{StaticResource BrandPaletteChalkBrush}" AutomationProperties.Name="Back" VerticalAlignment="Top">
+          <FontIcon Glyph="&#xE72B;" FontSize="18" />
+        </Button>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+          <TextBlock Text="{x:Bind local:Display.HoleTitle(ViewModel.HoleNumber), Mode=OneWay}" Style="{StaticResource BrandTextHeadingStyle}"
+                     Foreground="{StaticResource BrandPaletteChalkBrush}" />
+          <TextBlock Text="{x:Bind local:Display.HoleFacts(ViewModel.Par, ViewModel.Yardage, 0), Mode=OneWay}" Style="{StaticResource BrandRoundHeaderLabelStyle}" />
+          <TextBlock Text="{x:Bind local:Display.SummaryLine(ViewModel.Summary, ViewModel.RunningScore), Mode=OneWay}"
+                     Style="{StaticResource BrandTextCaptionStyle}" Foreground="{StaticResource BrandPaletteMistBrush}" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock Text="{x:Bind local:Ui.Label('Strokes')}" Style="{StaticResource BrandRoundHeaderLabelStyle}" HorizontalAlignment="Right" />
+          <TextBlock Text="{x:Bind local:Display.Score(ViewModel.RunningScore), Mode=OneWay}" Style="{StaticResource BrandRoundHeaderHighlightStyle}" HorizontalAlignment="Right" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace2}">
+        <Border Style="{StaticResource BrandNoticeStyle}" Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsRestoredDraft), Mode=OneWay}">
+          <TextBlock Text="Picked up where you left off: these shots were saved on this device but the hole was not finished."
+                     Style="{StaticResource BrandTextCaptionStyle}" />
+        </Border>
+
+        <!-- Shots so far: tap to edit -->
+        <ListView ItemsSource="{x:Bind ViewModel.Shots}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnShotClick"
+                  ItemContainerStyle="{StaticResource BrandListItemStyle}" ScrollViewer.VerticalScrollMode="Disabled">
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="vm:ShotItem">
+              <Border Style="{StaticResource BrandCardStyle}" Padding="12,6,4,6">
+                <Grid ColumnSpacing="10">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="28" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{x:Bind local:Display.Number(Shot.Sequence)}" Style="{StaticResource BrandTextStatSStyle}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{x:Bind local:Display.ShotLine(Shot, StartUnit, EndUnit)}" Style="{StaticResource BrandTextCaptionStyle}" VerticalAlignment="Center" />
+                  <Button Grid.Column="2" Click="OnDeleteShot" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Delete shot">
+                    <FontIcon Glyph="&#xE711;" FontSize="14" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Errors}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{x:Bind}" Style="{StaticResource BrandTextErrorStyle}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- The shot being entered (hidden once the hole is holed, unless a shot is being edited) -->
+        <Border Style="{StaticResource BrandCardStyle}" Padding="12"
+                Visibility="{x:Bind local:ShotEntryPage.EntryVisible(ViewModel.IsComplete, ViewModel.EditingIndex), Mode=OneWay}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{x:Bind local:Display.ShotHeading(ViewModel.EditingIndex, ViewModel.Shots.Count), Mode=OneWay}"
+                       Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+
+            <TextBlock Text="From" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <controls:ChipPicker ItemsSource="{x:Bind ViewModel.StartLies}" SelectedItem="{Binding StartLie, Mode=TwoWay}" />
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox InputScope="Number" AutomationProperties.Name="Start distance"
+                       Text="{Binding StartDistance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
+              <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.StartUnit, Mode=OneWay}" VerticalAlignment="Center" Style="{StaticResource BrandTextStatSStyle}" Width="28" />
+            </Grid>
+
+            <TextBlock Text="Club" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled">
+              <controls:ChipPicker ItemsSource="{x:Bind ViewModel.Clubs}" SelectedItem="{Binding Club, Mode=TwoWay}" SingleRow="True" />
+            </ScrollViewer>
+
+            <TextBlock Text="Shot" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <controls:ChipPicker ItemsSource="{x:Bind ViewModel.ShotTypes}" SelectedItem="{Binding ShotType, Mode=TwoWay}" />
+
+            <TextBlock Text="Ended" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <controls:ChipPicker ItemsSource="{x:Bind ViewModel.EndLies}" SelectedItem="{Binding EndLie, Mode=TwoWay}" />
+            <Grid ColumnSpacing="8" Visibility="{x:Bind local:Ui.CollapsedIf(ViewModel.IsHoled), Mode=OneWay}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBox InputScope="Number" PlaceholderText="Distance left" AutomationProperties.Name="Distance left"
+                       Text="{Binding EndDistance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
+              <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.EndUnit, Mode=OneWay}" VerticalAlignment="Center" Style="{StaticResource BrandTextStatSStyle}" Width="28" />
+            </Grid>
+
+            <TextBlock Text="Direction" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <controls:ChipPicker ItemsSource="{x:Bind ViewModel.Directions}" SelectedItem="{Binding Direction, Mode=TwoWay}" />
+
+            <controls:Stepper Label="Penalty strokes" Minimum="0" Value="{x:Bind ViewModel.PenaltyStrokes, Mode=TwoWay}" />
+
+            <TextBlock Text="Shape (optional)" Style="{StaticResource BrandTextBodyStrongStyle}" />
+            <controls:ChipPicker ItemsSource="{x:Bind ViewModel.Shapes}" SelectedItem="{Binding Shape, Mode=TwoWay}" AllowNone="True" />
+
+            <ItemsControl ItemsSource="{x:Bind ViewModel.DraftErrors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Text="{x:Bind}" Style="{StaticResource BrandTextErrorStyle}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Cancel editing" Command="{x:Bind ViewModel.CancelEditCommand}" Style="{StaticResource BrandLinkButtonStyle}"
+                    Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.EditingIndex), Mode=OneWay}" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+        <Button Content="Delete this hole" Click="OnDeleteHole" Style="{StaticResource BrandDangerLinkButtonStyle}"
+                Visibility="{x:Bind local:Ui.CollapsedIf(ViewModel.IsNewPlaying), Mode=OneWay}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="20,8,20,12" Background="{ThemeResource BrandBackgroundBrush}" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,1,0,0">
+      <!-- Thumb zone: the next shot is always one tap away, whatever is scrolled into view above. -->
+      <Grid ColumnSpacing="8" RowSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Button Content="Undo" Command="{x:Bind ViewModel.UndoLastShotCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" MinHeight="{StaticResource BrandButtonHeightLarge}" />
+        <Button Grid.Column="1" Content="{x:Bind local:Display.ShotButtonText(ViewModel.EditingIndex), Mode=OneWay}" Command="{x:Bind ViewModel.AddShotCommand}"
+                Style="{StaticResource BrandAccentButtonStyle}" MinHeight="{StaticResource BrandButtonHeightLarge}" />
+        <Button Grid.Row="1" Grid.ColumnSpan="2" Content="Save hole" Command="{x:Bind ViewModel.SaveCommand}"
+                Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsComplete), Mode=OneWay}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+      </Grid>
+    </Border>
+  </Grid>
+</local:RoutePage>

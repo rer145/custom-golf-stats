@@ -1,0 +1,118 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.ManualCoursePage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:vm="using:CustomGolfStats.App.Core.ViewModels">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="Add a course" Style="{StaticResource BrandTextTitleStyle}" VerticalAlignment="Center" />
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace3}">
+        <TextBox Header="Course name" Text="{x:Bind ViewModel.Name, Mode=TwoWay}" />
+        <TextBox Header="Club (optional)" Text="{x:Bind ViewModel.ClubName, Mode=TwoWay}" />
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox Header="Town" Text="{x:Bind ViewModel.City, Mode=TwoWay}" />
+          <TextBox Grid.Column="1" Header="Region" Text="{x:Bind ViewModel.Region, Mode=TwoWay}" />
+        </Grid>
+        <TextBox Header="Country" Text="{x:Bind ViewModel.Country, Mode=TwoWay}" />
+
+        <TextBlock Text="{x:Bind local:Ui.Label('Tee')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox Header="Tee name" Text="{x:Bind ViewModel.TeeName, Mode=TwoWay}" />
+          <ComboBox Grid.Column="1" Header="For" ItemsSource="{x:Bind ViewModel.Genders}" SelectedItem="{Binding Gender, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={StaticResource EnumText}}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox InputScope="CurrencyAmount" Header="Course rating" PlaceholderText="71.2" Text="{Binding Rating, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=double}" />
+          <TextBox InputScope="Number" Grid.Column="1" Header="Slope" PlaceholderText="128" Text="{Binding Slope, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" />
+        </Grid>
+
+        <TextBlock Text="{x:Bind local:Ui.Label('Holes')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Button Content="9 holes" Click="OnNine" Style="{StaticResource BrandSecondaryButtonStyle}" />
+          <Button Grid.Column="1" Content="18 holes" Click="OnEighteen" Style="{StaticResource BrandSecondaryButtonStyle}" />
+        </Grid>
+        <Grid ColumnSpacing="8" Margin="0,4,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="#" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="1" Text="PAR" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="2" Text="YARDS" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+          <TextBlock Grid.Column="3" Text="SI" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+        </Grid>
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Holes}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ManualHoleEntry">
+              <Grid ColumnSpacing="8" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="40" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Bind local:Display.Number(Number)}" VerticalAlignment="Center" Style="{StaticResource BrandTextStatSStyle}" />
+                <TextBox InputScope="Number" Grid.Column="1" Text="{Binding Par, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" AutomationProperties.Name="Par" />
+                <TextBox InputScope="Number" Grid.Column="2" Text="{Binding Yardage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" AutomationProperties.Name="Yards" />
+                <TextBox InputScope="Number" Grid.Column="3" Text="{Binding StrokeIndex, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NumberText}, ConverterParameter=int}" AutomationProperties.Name="Stroke index" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Errors}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{x:Bind}" Style="{StaticResource BrandTextErrorStyle}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="20,8,20,12" Background="{ThemeResource BrandBackgroundBrush}" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,1,0,0">
+      <Button Content="Save course" Command="{x:Bind ViewModel.SaveCommand}" Style="{StaticResource BrandHeroButtonStyle}" />
+    </Border>
+  </Grid>
+</local:RoutePage>

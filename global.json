@@ -1,5 +1,8 @@
 {
   "test": {
     "runner": "Microsoft.Testing.Platform"
+  },
+  "msbuild-sdks": {
+    "Uno.Sdk": "7.0.5"
   }
 }

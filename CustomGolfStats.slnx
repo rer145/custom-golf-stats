@@ -2,11 +2,14 @@
   <Folder Name="/src/">
     <Project Path="src/CustomGolfStats.Api/CustomGolfStats.Api.csproj" />
     <Project Path="src/CustomGolfStats.Api.Client/CustomGolfStats.Api.Client.csproj" />
+    <Project Path="src/CustomGolfStats.App/CustomGolfStats.App.csproj" />
+    <Project Path="src/CustomGolfStats.App.Core/CustomGolfStats.App.Core.csproj" />
     <Project Path="src/CustomGolfStats.Domain/CustomGolfStats.Domain.csproj" />
     <Project Path="src/CustomGolfStats.Migration/CustomGolfStats.Migration.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CustomGolfStats.Api.Tests/CustomGolfStats.Api.Tests.csproj" />
+    <Project Path="tests/CustomGolfStats.App.Core.Tests/CustomGolfStats.App.Core.Tests.csproj" />
     <Project Path="tests/CustomGolfStats.Domain.Tests/CustomGolfStats.Domain.Tests.csproj" />
     <Project Path="tests/CustomGolfStats.Migration.Tests/CustomGolfStats.Migration.Tests.csproj" />
   </Folder>

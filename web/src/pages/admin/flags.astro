@@ -1,0 +1,155 @@
+---
+import AdminNav from '../../components/admin/AdminNav.astro';
+import Notice from '../../components/Notice.astro';
+import Problem from '../../components/Problem.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
+import { call, type ApiProblem } from '../../api/client';
+import { isoDate } from '../../lib/admin';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { pageStatus } from '../../lib/problems';
+
+const STATUSES = ['Open', 'Resolved', 'Dismissed'] as const;
+const requested = Astro.url.searchParams.get('status') ?? 'Open';
+const status = (STATUSES as readonly string[]).includes(requested) ? requested : 'Open';
+const done = Astro.url.searchParams.get('done');
+const api = Astro.locals.api;
+const hrefFor = (s: string) => (s === 'Open' ? '/admin/flags' : `/admin/flags?status=${s}`);
+
+let problem: ApiProblem | null = null;
+let failedId: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const id = formText(form, 'id');
+  const decision = formText(form, 'decision');
+  if (decision !== 'resolve' && decision !== 'dismiss') {
+    problem = { status: 400, message: 'Choose resolve or dismiss.', fieldErrors: {} };
+  } else {
+    const result = await call(
+      decision === 'resolve'
+        ? api.POST('/admin/flags/{id}/resolve', { params: { path: { id } } })
+        : api.POST('/admin/flags/{id}/dismiss', { params: { path: { id } } }),
+    );
+    if (isSessionEnded(result)) return endSession(Astro);
+    if (result.ok) {
+      const next = new URLSearchParams();
+      if (status !== 'Open') next.set('status', status);
+      next.set('done', decision === 'resolve' ? 'resolved' : 'dismissed');
+      return Astro.redirect(`/admin/flags?${next}`, 303);
+    }
+    problem = result.problem;
+  }
+  failedId = id;
+  Astro.response.status = pageStatus(problem.status);
+}
+
+const list = await call(api.GET('/admin/flags', { params: { query: { status } } }));
+if (isSessionEnded(list)) return endSession(Astro);
+const flags = list.ok ? list.data : [];
+if (!list.ok) {
+  problem = list.problem;
+  Astro.response.status = pageStatus(list.problem.status);
+}
+---
+
+<AppLayout title="Flags · Admin">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Flags</h1>
+      <p class="lede">Reports and proposed changes from golfers. Resolve a flag once it is dealt with, or dismiss it.</p>
+    </div>
+    <AdminNav />
+    <Notice spaced message={done === 'resolved' ? 'Flag resolved.' : done === 'dismissed' ? 'Flag dismissed.' : null} />
+    <Problem problem={problem} heading={failedId ? 'Flag not updated' : undefined} />
+
+    <nav class="chips" aria-label="Flag status">
+      {
+        STATUSES.map((s) => (
+          <a href={hrefFor(s)} aria-current={status === s ? 'true' : undefined}>
+            {s}
+          </a>
+        ))
+      }
+    </nav>
+
+    {
+      flags.length === 0 ? (
+        <p class="muted" data-empty>
+          {status === 'Open' ? 'No open flags. Nothing is waiting for a decision.' : `No ${status.toLowerCase()} flags.`}
+        </p>
+      ) : (
+        <div class="table-wrap">
+          <table class="table">
+            <caption class="visually-hidden">{status} flags, oldest first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Course</th>
+                <th scope="col">Note</th>
+                <th scope="col">Reported</th>
+                {status === 'Open' && (
+                  <th scope="col">
+                    <span class="visually-hidden">Actions</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {flags.map((f) => (
+                <tr data-flag={f.note}>
+                  <th scope="row">
+                    <a href={`/admin/courses/${f.courseId}`}>{f.courseName}</a>
+                    {(f.teeName || f.holeNumber !== null) && (
+                      <span class="caption where">
+                        {[f.teeName, f.holeNumber !== null ? `Hole ${f.holeNumber}` : null].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </th>
+                  <td class="note">{f.note}</td>
+                  <td>
+                    <span class="num">{isoDate(f.createdAt)}</span>
+                    {f.reporterEmail && <span class="caption where">{f.reporterEmail}</span>}
+                  </td>
+                  {status === 'Open' && (
+                    <td>
+                      <form class="actions" method="post" action={hrefFor(status)}>
+                        <input type="hidden" name="id" value={f.id} />
+                        <button class="btn btn-primary" type="submit" name="decision" value="resolve" aria-label={`Resolve flag: ${f.note}`}>
+                          Resolve
+                        </button>
+                        <button class="btn btn-secondary" type="submit" name="decision" value="dismiss" aria-label={`Dismiss flag: ${f.note}`}>
+                          Dismiss
+                        </button>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+  .chips a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .chips a[aria-current='true'] { background: var(--color-chip-bg); border-color: var(--color-primary); }
+  .where { display: block; }
+  .note { max-width: 36em; overflow-wrap: anywhere; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
+  th a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+</style>

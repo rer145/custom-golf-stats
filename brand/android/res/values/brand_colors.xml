@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_ink">#0E2A21</color>
+    <color name="brand_fairway">#1B5E3F</color>
+    <color name="brand_orange">#E2662B</color>
+    <color name="brand_orange_deep">#B84C17</color>
+    <color name="brand_rough">#4A5A52</color>
+    <color name="brand_chalk">#F5F6F2</color>
+    <color name="brand_line">#D9DED6</color>
+    <color name="brand_mist">#B9C7BF</color>
+    <color name="brand_on_accent">#081C15</color>
+</resources>

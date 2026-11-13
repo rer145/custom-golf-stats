@@ -1,0 +1,97 @@
+---
+import { call } from '../../../api/client';
+import Chart from '../../../components/stats/Chart.astro';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { ratioChartValue } from '../../../lib/chart-spec';
+import { formatInteger, formatRatio, formatToPar } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/off-the-tee', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+const t = r.ok ? r.data : null;
+
+const rows = t
+  ? [
+      { label: 'Par 4', cells: [t.par4ToParFromFairway, t.par4ToParFromLeft, t.par4ToParFromRight] },
+      { label: 'Par 5', cells: [t.par5ToParFromFairway, t.par5ToParFromLeft, t.par5ToParFromRight] },
+    ]
+  : [];
+---
+
+<StatsShell section="off-the-tee" year={year} years={years} lede="Where the tee shot went on par 4s and 5s, and what it cost." problem={problem}>
+  {
+    t && (
+      <>
+        {Number(t.drivingAccuracy.denominator) === 0 && <EmptyYear year={year} />}
+        <StatTiles columns={3}>
+          <StatTile label="Driving accuracy" value={formatRatio(t.drivingAccuracy)} caption={ratioCounts(t.drivingAccuracy)} accent size="l" />
+          <StatTile label="Missed left" value={formatRatio(t.leftTendency)} caption={ratioCounts(t.leftTendency)} size="l" />
+          <StatTile label="Missed right" value={formatRatio(t.rightTendency)} caption={ratioCounts(t.rightTendency)} size="l" />
+        </StatTiles>
+
+        <section class="card after-tee" aria-labelledby="after-tee-title">
+          <h2 id="after-tee-title" class="title">Average to par after the tee shot</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Hole</th>
+                  <th scope="col" class="num">Fairway</th>
+                  <th scope="col" class="num">Left rough</th>
+                  <th scope="col" class="num">Right rough</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    {row.cells.map((c) => (
+                      <td class="num">
+                        <span class="stat stat-s">{formatToPar(c.value)}</span>
+                        <span class="caption"> {formatInteger(c.count)} {Number(c.count) === 1 ? 'hole' : 'holes'}</span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <Chart
+          title="Tee shot results"
+          labelHeader="Tee shot"
+          summary="Share of tee shots that found the fairway, missed left and missed right."
+          spec={{
+            kind: 'hbar',
+            format: 'percent',
+            min: 0,
+            max: 100,
+            highlight: 0,
+            labels: ['Fairway', 'Missed left', 'Missed right'],
+            series: [{ name: 'Share', values: [t.drivingAccuracy, t.leftTendency, t.rightTendency].map(ratioChartValue) }],
+          }}
+          detail={{ header: 'Holes', values: [t.drivingAccuracy, t.leftTendency, t.rightTendency].map(ratioCounts) }}
+          size="s"
+        />
+      </>
+    )
+  }
+</StatsShell>
+
+<style>
+  .after-tee { display: grid; gap: var(--space-4); }
+  .after-tee .caption { display: block; }
+</style>

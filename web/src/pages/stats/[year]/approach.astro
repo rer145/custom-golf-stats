@@ -1,0 +1,79 @@
+---
+import { call } from '../../../api/client';
+import Chart from '../../../components/stats/Chart.astro';
+import ChartGrid from '../../../components/stats/ChartGrid.astro';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { ratioChartValue } from '../../../lib/chart-spec';
+import { formatRatio } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/approach', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+const a = r.ok ? r.data : null;
+---
+
+<StatsShell section="approach" year={year} years={years} lede="Greens in regulation, and getting up and down when you miss." problem={problem}>
+  {
+    a && (
+      <>
+        {Number(a.gir.denominator) === 0 && <EmptyYear year={year} />}
+        <StatTiles title="Approach">
+          <StatTile label="GIR" value={formatRatio(a.gir)} caption={ratioCounts(a.gir)} accent size="l" />
+          <StatTile label="GIR from fairway" value={formatRatio(a.girFromFairway)} caption={ratioCounts(a.girFromFairway)} />
+          <StatTile label="GIR from left" value={formatRatio(a.girFromLeft)} caption={ratioCounts(a.girFromLeft)} />
+          <StatTile label="GIR from right" value={formatRatio(a.girFromRight)} caption={ratioCounts(a.girFromRight)} />
+        </StatTiles>
+        <StatTiles title="Around the green" columns={3}>
+          <StatTile label="Sand saves" value={formatRatio(a.sandSave)} caption={ratioCounts(a.sandSave)} />
+          <StatTile label="Scrambling" value={formatRatio(a.scrambling)} caption={ratioCounts(a.scrambling)} />
+          <StatTile label="Hole-outs" value={formatRatio(a.holeOut)} caption={ratioCounts(a.holeOut)} />
+        </StatTiles>
+        <ChartGrid>
+          <Chart
+            title="Greens in regulation"
+            labelHeader="From"
+            size="s"
+            summary="Greens in regulation overall and after a tee shot in the fairway, left or right."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              highlight: 0,
+              labels: ['All holes', 'Fairway', 'Left', 'Right'],
+              series: [{ name: 'GIR', values: [a.gir, a.girFromFairway, a.girFromLeft, a.girFromRight].map(ratioChartValue) }],
+            }}
+            detail={{ header: 'Holes', values: [a.gir, a.girFromFairway, a.girFromLeft, a.girFromRight].map(ratioCounts) }}
+          />
+          <Chart
+            title="Recovery"
+            labelHeader="Stat"
+            size="s"
+            summary="Sand saves, scrambling and hole-outs as percentages."
+            spec={{
+              kind: 'hbar',
+              format: 'percent',
+              min: 0,
+              max: 100,
+              labels: ['Sand saves', 'Scrambling', 'Hole-outs'],
+              series: [{ name: 'Share', values: [a.sandSave, a.scrambling, a.holeOut].map(ratioChartValue) }],
+            }}
+            detail={{ header: 'Holes', values: [a.sandSave, a.scrambling, a.holeOut].map(ratioCounts) }}
+          />
+        </ChartGrid>
+      </>
+    )
+  }
+</StatsShell>

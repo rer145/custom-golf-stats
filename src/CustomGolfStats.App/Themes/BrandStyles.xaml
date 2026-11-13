@@ -1,0 +1,265 @@
+<!--
+  Control styles for Custom Golf Stats (brand/BRAND.md section 5). Every colour, font, size and radius comes from the generated
+  BrandTokens.xaml; nothing here is a raw value from the brand kit except layout choices the guide states (44 pt targets etc.).
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <!-- The colour mark and lockup are for light backgrounds. -->
+      <BitmapImage x:Key="BrandMarkImage" UriSource="ms-appx:///Assets/Brand/mark-color-256.png" />
+      <BitmapImage x:Key="BrandLockupStackedImage" UriSource="ms-appx:///Assets/Brand/lockup-stacked-on-light@2x.png" />
+      <!-- WinUI defaults that pages and controls fall back to. -->
+      <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
+      <!-- Focused inputs underline in the brand primary instead of the system accent. -->
+      <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BrandPrimaryBrush" />
+      <!-- Toggle buttons and chips: chosen = primary fill. -->
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackground" ResourceKey="BrandSurfaceBrush" />
+      <StaticResource x:Key="ToggleButtonForeground" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="BrandBorderBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="BrandPrimaryBrush" />
+      <!-- System accent and list selection follow the brand, never the platform blue. -->
+      <StaticResource x:Key="SystemAccentColor" ResourceKey="BrandPrimaryColor" />
+      <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
+      <!-- Round header band: Fairway Ink on light. -->
+      <StaticResource x:Key="BrandRoundHeaderBandBrush" ResourceKey="BrandPaletteInkBrush" />
+      <!-- Cards: 1 px border on light. -->
+      <StaticResource x:Key="BrandCardBorderBrush" ResourceKey="BrandBorderBrush" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <!-- The reversed mark and on-dark lockup are for Fairway Ink backgrounds. -->
+      <BitmapImage x:Key="BrandMarkImage" UriSource="ms-appx:///Assets/Brand/mark-reversed-256.png" />
+      <BitmapImage x:Key="BrandLockupStackedImage" UriSource="ms-appx:///Assets/Brand/lockup-stacked-on-dark@2x.png" />
+      <StaticResource x:Key="ApplicationPageBackgroundThemeBrush" ResourceKey="BrandBackgroundBrush" />
+      <!-- Toggle buttons and chips: chosen = primary fill. -->
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleButtonBackground" ResourceKey="BrandSurfaceBrush" />
+      <StaticResource x:Key="ToggleButtonForeground" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="BrandBorderBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="BrandOnPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="BrandPrimaryBrush" />
+      <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="BrandPrimaryBrush" />
+      <!-- System accent and list selection follow the brand, never the platform blue. -->
+      <StaticResource x:Key="SystemAccentColor" ResourceKey="BrandPrimaryColor" />
+      <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="BrandChipBgBrush" />
+      <StaticResource x:Key="ListViewItemForegroundSelected" ResourceKey="BrandTextBrush" />
+      <StaticResource x:Key="ListViewItemForeground" ResourceKey="BrandTextBrush" />
+      <!-- Round header band: the page is already Fairway Ink on dark, so the band lifts to the dark surface to stay a band. -->
+      <StaticResource x:Key="BrandRoundHeaderBandBrush" ResourceKey="BrandSurfaceBrush" />
+      <!-- Cards: no border on dark (BRAND.md section 5). -->
+      <SolidColorBrush x:Key="BrandCardBorderBrush" Color="Transparent" />
+      <!-- Focused inputs underline in the brand primary instead of the system accent. -->
+      <StaticResource x:Key="TextControlBorderBrushFocused" ResourceKey="BrandPrimaryBrush" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- Screen padding is 20 on mobile. -->
+  <Thickness x:Key="BrandScreenPadding">20,16,20,24</Thickness>
+
+  <!-- ===== Pages ===== -->
+  <Style x:Key="BrandPageStyle" TargetType="Page">
+    <Setter Property="Background" Value="{ThemeResource BrandBackgroundBrush}" />
+  </Style>
+
+  <!-- ===== Text ===== -->
+  <Style x:Key="BrandTextSecondaryStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextBodyStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextSecondaryBrush}" />
+  </Style>
+  <Style x:Key="BrandTextCaptionSecondaryStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextCaptionStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextSecondaryBrush}" />
+  </Style>
+  <!-- Errors read in the negative colour (Pin Deep on light, accent text on dark), never Pin Orange on light. -->
+  <Style x:Key="BrandTextErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextCaptionStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandNegativeBrush}" />
+  </Style>
+
+  <!-- ===== Buttons (44 tall, radius sm) ===== -->
+  <Style x:Key="BrandButtonBaseStyle" TargetType="Button">
+    <Setter Property="MinHeight" Value="{StaticResource BrandButtonHeight}" />
+    <Setter Property="MinWidth" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Padding" Value="20,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBodySemiBold}" />
+    <Setter Property="FontSize" Value="{StaticResource BrandFontSizeMd}" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <!-- Primary: Fairway background, white text (dark: Chalk background, Ink text). -->
+  <Style x:Key="BrandPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandButtonBaseStyle}">
+    <Setter Property="Background" Value="{ThemeResource BrandPrimaryBrush}" />
+    <Setter Property="Foreground" Value="{ThemeResource BrandOnPrimaryBrush}" />
+  </Style>
+
+  <!-- Accent: Pin Orange with Cup text. Only for "add" actions. -->
+  <Style x:Key="BrandAccentButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandButtonBaseStyle}">
+    <Setter Property="Background" Value="{ThemeResource BrandAccentBrush}" />
+    <Setter Property="Foreground" Value="{ThemeResource BrandOnAccentBrush}" />
+  </Style>
+
+  <!-- Secondary: transparent with a 1 px border. -->
+  <Style x:Key="BrandSecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandButtonBaseStyle}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource BrandBorderBrush}" />
+    <Setter Property="BorderThickness" Value="{StaticResource BrandBorderThickness}" />
+  </Style>
+
+  <!-- Hero call to action: 52 tall. -->
+  <Style x:Key="BrandHeroButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandPrimaryButtonStyle}">
+    <Setter Property="MinHeight" Value="{StaticResource BrandButtonHeightLarge}" />
+  </Style>
+
+  <!-- Text-only button (links such as "Create an account"), still a 44 pt target. -->
+  <Style x:Key="BrandLinkButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandButtonBaseStyle}">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{ThemeResource BrandPrimaryBrush}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBodyMedium}" />
+  </Style>
+
+  <!-- ===== Inputs (44 tall, radius sm) ===== -->
+  <Style x:Key="BrandTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
+    <Setter Property="MinHeight" Value="{StaticResource BrandInputHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBody}" />
+    <Setter Property="FontSize" Value="{StaticResource BrandFontSizeMd}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="BrandPasswordBoxStyle" TargetType="PasswordBox" BasedOn="{StaticResource DefaultPasswordBoxStyle}">
+    <Setter Property="MinHeight" Value="{StaticResource BrandInputHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBody}" />
+    <Setter Property="FontSize" Value="{StaticResource BrandFontSizeMd}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style TargetType="TextBox" BasedOn="{StaticResource BrandTextBoxStyle}" />
+  <Style TargetType="PasswordBox" BasedOn="{StaticResource BrandPasswordBoxStyle}" />
+
+  <!-- ===== Surfaces ===== -->
+  <!-- Card: white surface with a 1 px border on Chalk; on dark the surface with no border (BrandCardBorderBrush). No shadows. -->
+  <Style x:Key="BrandCardStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource BrandSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource BrandCardBorderBrush}" />
+    <Setter Property="BorderThickness" Value="{StaticResource BrandBorderThickness}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusLg}" />
+    <Setter Property="Padding" Value="{StaticResource BrandPadding4}" />
+  </Style>
+
+  <!-- Stat tile: value in statM, caption below (radius md). -->
+  <Style x:Key="BrandStatTileStyle" TargetType="Border" BasedOn="{StaticResource BrandCardStyle}">
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusMd}" />
+  </Style>
+
+  <!-- Round header band: Fairway Ink (surfaceInverse on light, the dark surface on dark) with the score in statXL. -->
+  <Style x:Key="BrandRoundHeaderBandStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource BrandRoundHeaderBandBrush}" />
+    <Setter Property="Padding" Value="20,16,20,20" />
+  </Style>
+  <Style x:Key="BrandRoundHeaderScoreStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatXLStyle}">
+    <Setter Property="Foreground" Value="{StaticResource BrandPaletteChalkBrush}" />
+  </Style>
+  <Style x:Key="BrandRoundHeaderLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextLabelStyle}">
+    <Setter Property="Foreground" Value="{StaticResource BrandPaletteMistBrush}" />
+  </Style>
+  <!-- The hero number on dark may use Pin Orange itself (24 px bold and up). -->
+  <Style x:Key="BrandRoundHeaderHighlightStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatLStyle}">
+    <Setter Property="Foreground" Value="{StaticResource BrandPaletteOrangeBrush}" />
+  </Style>
+
+  <!-- ===== Lists and sections ===== -->
+  <!-- A section heading: mono label, upper case by the caller (Ui.Label). -->
+  <Style x:Key="BrandSectionLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextLabelStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextSecondaryBrush}" />
+    <Setter Property="Margin" Value="0,12,0,0" />
+  </Style>
+  <!-- Stat value in a tile (statM) with an Inter 13 caption below (BrandTextCaptionSecondaryStyle). -->
+  <Style x:Key="BrandStatValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextStatMStyle}" />
+  <!-- A tappable row: a card with no ListView chrome. -->
+  <Style x:Key="BrandListItemStyle" TargetType="ListViewItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,0,0,8" />
+    <Setter Property="MinHeight" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <!-- One-tap choice chip (ChipPicker): pill, 44 tall, chosen = primary fill. -->
+  <Style x:Key="BrandChipStyle" TargetType="ToggleButton">
+    <Setter Property="MinHeight" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="MinWidth" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Padding" Value="14,0" />
+    <Setter Property="CornerRadius" Value="22" />
+    <Setter Property="BorderThickness" Value="{StaticResource BrandBorderThickness}" />
+    <Setter Property="FontFamily" Value="{StaticResource BrandFontBodyMedium}" />
+    <Setter Property="FontSize" Value="{StaticResource BrandFontSizeMd}" />
+  </Style>
+  <!-- On/off flag (fairway hit, missed left...): a 44 tall toggle with a 1 px border. -->
+  <Style x:Key="BrandFlagToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource BrandChipStyle}">
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <!-- Number fields: 44 tall, radius sm, mono digits. -->
+  <Style x:Key="BrandNumberBoxStyle" TargetType="NumberBox">
+    <Setter Property="MinHeight" Value="{StaticResource BrandInputHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="SpinButtonPlacementMode" Value="Hidden" />
+  </Style>
+  <Style TargetType="NumberBox" BasedOn="{StaticResource BrandNumberBoxStyle}" />
+  <!-- Small destructive text action ("Delete hole"): negative colour, still 44 tall. -->
+  <Style x:Key="BrandDangerLinkButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandLinkButtonStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandNegativeBrush}" />
+  </Style>
+  <!-- Square icon-sized button (44 x 44) for row actions such as favorite and delete. -->
+  <Style x:Key="BrandIconButtonStyle" TargetType="Button" BasedOn="{StaticResource BrandSecondaryButtonStyle}">
+    <Setter Property="Width" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Height" Value="{StaticResource BrandTouchTarget}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <!-- Notice card on home (sync notices): surface card with an accent-text heading. -->
+  <Style x:Key="BrandNoticeStyle" TargetType="Border" BasedOn="{StaticResource BrandCardStyle}">
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusMd}" />
+  </Style>
+
+  <!-- Notice / error banner shown by the app shell. -->
+  <Style x:Key="BrandBannerStyle" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource BrandSurfaceInverseBrush}" />
+    <Setter Property="CornerRadius" Value="{StaticResource BrandRadiusSm}" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="Margin" Value="12" />
+  </Style>
+  <Style x:Key="BrandBannerTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BrandTextCaptionStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource BrandTextInverseBrush}" />
+  </Style>
+</ResourceDictionary>

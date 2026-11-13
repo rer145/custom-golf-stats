@@ -1,0 +1,80 @@
+---
+import AdminNav from '../../components/admin/AdminNav.astro';
+import Notice from '../../components/Notice.astro';
+import Field from '../../components/Field.astro';
+import Problem from '../../components/Problem.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
+import { call, type ApiProblem } from '../../api/client';
+import { parseWholeNumber } from '../../lib/admin';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { localProblem, pageStatus } from '../../lib/problems';
+
+const api = Astro.locals.api;
+const saved = Astro.url.searchParams.has('saved');
+let problem: ApiProblem | null = null;
+let posted: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  posted = formText(form, 'trialShotRounds');
+  const parsed = parseWholeNumber(posted);
+  if ('error' in parsed) {
+    problem = localProblem({ trialShotRounds: [parsed.error] });
+  } else if (parsed.value === null) {
+    problem = localProblem({ trialShotRounds: ['Enter how many rounds.'] });
+  } else {
+    const result = await call(api.PUT('/admin/settings', { body: { trialShotRounds: parsed.value } }));
+    if (isSessionEnded(result)) return endSession(Astro);
+    if (result.ok) return Astro.redirect('/admin/settings?saved=1', 303);
+    problem = result.problem;
+  }
+  if (problem) Astro.response.status = pageStatus(problem.status);
+}
+
+const current = await call(api.GET('/admin/settings'));
+if (isSessionEnded(current)) return endSession(Astro);
+const loadProblem = current.ok ? null : current.problem;
+if (loadProblem) Astro.response.status = pageStatus(loadProblem.status);
+const shown = posted ?? (current.ok ? String(current.data.trialShotRounds) : '');
+---
+
+<AppLayout title="Settings · Admin">
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Settings</h1>
+      <p class="lede">App-wide settings.</p>
+    </div>
+    <AdminNav />
+    <Notice spaced message={saved ? 'Settings saved.' : null} />
+    <Problem problem={loadProblem} />
+
+    <section class="card stack panel" aria-labelledby="trial-h">
+      <h2 class="title" id="trial-h">Free trial</h2>
+      <form class="form" method="post" action="/admin/settings" novalidate>
+        <Problem problem={problem} />
+        <Field
+          name="trialShotRounds"
+          label="Shot-by-shot rounds for Free golfers"
+          hint="How many rounds a Free golfer can log shot by shot before it needs a Paid tier. Whole number, 0 or more."
+          type="number"
+          min="0"
+          step="1"
+          inputmode="numeric"
+          value={shown}
+          problem={problem}
+        />
+        <div>
+          <button class="btn btn-primary" type="submit">
+            Save settings
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+</AppLayout>
+
+<style>
+  .panel { max-width: 560px; }
+</style>

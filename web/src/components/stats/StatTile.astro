@@ -1,0 +1,52 @@
+---
+/**
+ * One stat: an uppercase mono label, the value (already formatted by format.ts), and an optional caption with the
+ * counts behind it. Use inside <StatTiles> (a <dl>). `accent` marks the one number that matters in a region.
+ */
+interface Props {
+  label: string;
+  value: string;
+  caption?: string | undefined;
+  accent?: boolean;
+  size?: 'l' | 'm';
+}
+
+const { label, value, caption, accent = false, size = 'm' } = Astro.props;
+---
+
+<div class:list={['tile', { accent }]} data-stat={label}>
+  <dt class="tile-label">{label}</dt>
+  <dd>
+    <span class:list={['stat', size === 'l' ? 'stat-l' : 'stat-m', 'tile-value']}>{value}</span>
+    {caption && <span class="caption num tile-caption">{caption}</span>}
+  </dd>
+</div>
+
+<style>
+  .tile {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    min-width: 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .tile { border-color: transparent; }
+  }
+  :root[data-theme='dark'] .tile { border-color: transparent; }
+  .tile-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  dd { display: grid; gap: var(--space-2); margin: 0; }
+  .tile-value { font-weight: 700; color: var(--color-text); }
+  .accent .tile-value { color: var(--color-accent-text); }
+  .tile-caption { font-weight: 400; }
+</style>

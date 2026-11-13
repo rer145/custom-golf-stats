@@ -1,0 +1,40 @@
+---
+/** A confirmation after a redirect or an action ("Saved.", "Sent for review."). Renders nothing without a message. */
+interface Props {
+  message?: string | null | undefined;
+  heading?: string | undefined;
+  /** Adds space below, for pages that stack it above their content (the admin pages). */
+  spaced?: boolean | undefined;
+}
+
+const { message, heading, spaced = false } = Astro.props;
+---
+
+{
+  message && (
+    <div class:list={['notice', { spaced }]} role="status" data-notice>
+      {heading && <strong>{heading}</strong>}
+      <p>{message}</p>
+    </div>
+  )
+}
+
+<style>
+  .notice {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-positive);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 15px;
+  }
+  .notice.spaced {
+    margin: 0 0 var(--space-5);
+  }
+  .notice strong {
+    color: var(--color-positive);
+    font-weight: 600;
+  }
+</style>

@@ -1,0 +1,41 @@
+---
+import { call } from '../../../api/client';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import SummaryTable, { type SummaryRow } from '../../../components/stats/SummaryTable.astro';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, parseYear, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/courses', { params: { query: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+const rows: SummaryRow[] | null = r.ok
+  ? r.data.courses.map((c) => ({
+      key: `${c.courseId}:${c.teeId}`,
+      header: c.courseName,
+      sub: `${c.teeName} tees`,
+      nine: c.nine,
+      eighteen: c.eighteen,
+      holes: c.holes,
+      toPar: c.toPar,
+      puttsPerHole: c.puttsPerHole,
+      gir: c.gir,
+      drivingAccuracy: c.drivingAccuracy,
+      byPar: [c.par3ToPar, c.par4ToPar, c.par5ToPar],
+      earliest: c.earliest,
+      latest: c.latest,
+    }))
+  : null;
+---
+
+<StatsShell section="courses" year={year} years={years} lede="Each course and tee you played this season. Par 3, 4 and 5 columns are the average to par." problem={problem}>
+  {rows && rows.length === 0 && <EmptyYear year={year} />}
+  {rows && rows.length > 0 && <SummaryTable caption={`Courses played in ${year}`} rowHeader="Course" rows={rows} byPar />}
+</StatsShell>

@@ -1,0 +1,56 @@
+---
+import { call } from '../../../api/client';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { formatAverage, formatInteger, formatRatio } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { firstProblem, parseYear, ratioCounts, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/scoring', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+const s = r.ok ? r.data : null;
+const rounds = (n: number | string) => `${formatInteger(n)} ${Number(n) === 1 ? 'round' : 'rounds'}`;
+const holes = (n: number | string) => `${formatInteger(n)} ${Number(n) === 1 ? 'hole' : 'holes'}`;
+const empty = s !== null && Number(s.scoringAverage9.count) + Number(s.scoringAverage18.count) + Number(s.par3Average.count) + Number(s.par4Average.count) + Number(s.par5Average.count) === 0;
+---
+
+<StatsShell section="scoring" year={year} years={years} lede="Averages, best and worst rounds, and the holes under par." problem={problem}>
+  {
+    s && (
+      <>
+        {empty && <EmptyYear year={year} />}
+        <StatTiles title="Scoring average">
+          <StatTile label="18 holes" value={formatAverage(s.scoringAverage18.value)} caption={rounds(s.scoringAverage18.count)} accent size="l" />
+          <StatTile label="9 holes" value={formatAverage(s.scoringAverage9.value)} caption={rounds(s.scoringAverage9.count)} size="l" />
+        </StatTiles>
+        <StatTiles title="Best and worst">
+          <StatTile label="Low 18" value={formatInteger(s.lowest18)} />
+          <StatTile label="High 18" value={formatInteger(s.highest18)} />
+          <StatTile label="Low 9" value={formatInteger(s.lowest9)} />
+          <StatTile label="High 9" value={formatInteger(s.highest9)} />
+        </StatTiles>
+        <StatTiles title="Under par">
+          <StatTile label="Birdies" value={formatInteger(s.birdies)} />
+          <StatTile label="Eagles" value={formatInteger(s.eagles)} />
+          <StatTile label="Par breakers" value={formatRatio(s.parBreakers)} caption={ratioCounts(s.parBreakers)} />
+          <StatTile label="Birdie or better" value={formatRatio(s.birdieOrBetter)} caption={ratioCounts(s.birdieOrBetter)} />
+        </StatTiles>
+        <StatTiles title="Average by par" columns={3}>
+          <StatTile label="Par 3s" value={formatAverage(s.par3Average.value)} caption={holes(s.par3Average.count)} />
+          <StatTile label="Par 4s" value={formatAverage(s.par4Average.value)} caption={holes(s.par4Average.count)} />
+          <StatTile label="Par 5s" value={formatAverage(s.par5Average.value)} caption={holes(s.par5Average.count)} />
+        </StatTiles>
+      </>
+    )
+  }
+</StatsShell>

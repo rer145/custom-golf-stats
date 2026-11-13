@@ -1,0 +1,155 @@
+---
+// Manual course entry: details plus one or more tees, each with up to 18 holes (POST /courses).
+// The course and tee ids are generated here when the form is first shown and travel with every post, so posting
+// the same form twice (a retry, a double click, back-and-resubmit) returns the course already created (200)
+// instead of creating a duplicate. "Add a tee" and "Remove" re-render the form on the server, so no script is needed.
+import { randomUUID } from 'node:crypto';
+import AppLayout from '../../layouts/AppLayout.astro';
+import Problem from '../../components/Problem.astro';
+import BackLink from '../../components/courses/BackLink.astro';
+import DetailsFields from '../../components/courses/DetailsFields.astro';
+import TeeFields from '../../components/courses/TeeFields.astro';
+import { call, type ApiProblem, type Schemas } from '../../api/client';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { DETAIL_FIELDS, MAX_TEES, buildDetails, buildTee, emptyDetails, emptyTee, errorsUnder, postedTeeCount, readDetails, readTee, remapHoleErrors, type Errors, type TeeValues } from '../../components/courses/course-form';
+import { fields, formProblem, isTeeField } from '../../components/courses/problems';
+import { localProblem, pageStatus } from '../../lib/problems';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const idOr = (value: string): string => (UUID.test(value) ? value : randomUUID());
+
+let courseId: string = randomUUID();
+let details = emptyDetails();
+let tees: TeeValues[] = [emptyTee(randomUUID())];
+let problem: ApiProblem | null = null;
+let focusTee: number | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  courseId = idOr(formText(form, 'id'));
+  details = readDetails(form);
+  tees = Array.from({ length: postedTeeCount(form) }, (_, i) => {
+    const tee = readTee(form, `tees[${i}].`);
+    return { ...tee, id: idOr(tee.id) };
+  });
+  const intent = formText(form, 'intent');
+
+  if (intent === 'add-tee') {
+    if (tees.length < MAX_TEES) tees.push(emptyTee(randomUUID(), tees[0]));
+    focusTee = tees.length - 1;
+  } else if (intent.startsWith('remove-tee:')) {
+    const index = Number(intent.slice('remove-tee:'.length));
+    if (tees.length > 1 && Number.isInteger(index) && index >= 0 && index < tees.length) tees.splice(index, 1);
+  } else {
+    const builtDetails = buildDetails(details);
+    const builtTees = tees.map((t, i) => buildTee(t, `tees[${i}].`, { requireName: true }));
+    const local: Errors = { ...builtDetails.errors, ...Object.assign({}, ...builtTees.map((b) => b.errors)) };
+    problem = localProblem(local);
+    if (!problem) {
+      const body: Schemas['CreateCourseRequest'] = { id: courseId, ...builtDetails.request, tees: builtTees.map((b) => b.request) };
+      const r = await call(Astro.locals.api.POST('/courses', { body }));
+      if (isSessionEnded(r)) return endSession(Astro);
+      if (r.ok) return Astro.redirect(`/courses/${r.data.id}?saved=created`, 303);
+      let fieldErrors = r.problem.fieldErrors;
+      builtTees.forEach((b, i) => (fieldErrors = remapHoleErrors(fieldErrors, `tees[${i}].`, b.holeRows)));
+      problem = { ...r.problem, fieldErrors };
+      if (r.problem.status === 409) {
+        // The ids are taken (this form already saved a course under another name, or a clash): new ids let the
+        // next save create the course instead of hitting the same conflict again.
+        courseId = randomUUID();
+        tees = tees.map((t) => ({ ...t, id: randomUUID() }));
+        problem = { ...problem, message: `${r.problem.message} Save again to add it as a new course.` };
+      }
+    }
+    if (problem) Astro.response.status = pageStatus(problem.status);
+  }
+}
+
+const teesError = problem?.fieldErrors.tees ?? [];
+const isDetail = fields(...DETAIL_FIELDS, 'tees');
+const shownProblem = formProblem(problem, (key) => isDetail(key) || tees.some((_, i) => isTeeField(key, `tees[${i}].`)));
+---
+
+<AppLayout title="Enter a course">
+  <div class="container page">
+    <div class="page-header">
+      <BackLink href="/courses" label="Courses" />
+      <h1 class="display">Enter a course</h1>
+      <p class="lede">Copy it from the scorecard. Add a tee for each set of markers you might play.</p>
+    </div>
+
+    <form class="course-form" method="post" action="/courses/new" novalidate>
+      <input type="hidden" name="id" value={courseId} />
+      <input type="hidden" name="teeCount" value={tees.length} />
+      {/* Enter in a field saves (the first submit button is the form's default), never "Remove". */}
+      <button class="visually-hidden" type="submit" name="intent" value="save" tabindex="-1" aria-hidden="true">Save course</button>
+      <Problem problem={shownProblem} />
+
+      <section class="card form-section" aria-labelledby="details-heading">
+        <h2 id="details-heading" class="title">Course</h2>
+        <DetailsFields values={details} problem={problem} />
+      </section>
+
+      {teesError.length > 0 && <p class="field-error">{teesError.join(' ')}</p>}
+
+      {
+        tees.map((tee, i) => (
+          <section class="card form-section" aria-labelledby={`tee-${i}-heading`} id={focusTee === i ? 'new-tee' : `tee-${i}`}>
+            <div class="tee-head">
+              <h2 id={`tee-${i}-heading`} class="title">
+                {tee.name.trim() ? `${tee.name.trim()} tee` : `Tee ${i + 1}`}
+              </h2>
+              {tees.length > 1 && (
+                <button class="btn btn-secondary" type="submit" name="intent" value={`remove-tee:${i}`}>
+                  Remove<span class="visually-hidden"> tee {i + 1}</span>
+                </button>
+              )}
+            </div>
+            {errorsUnder(problem, `tees[${i}].id`).length > 0 && <p class="field-error">{errorsUnder(problem, `tees[${i}].id`).join(' ')}</p>}
+            <TeeFields values={tee} prefix={`tees[${i}].`} problem={problem} autofocus={focusTee === i} />
+          </section>
+        ))
+      }
+
+      <div class="form-actions">
+        {
+          tees.length < MAX_TEES && (
+            <button class="btn btn-secondary" type="submit" name="intent" value="add-tee" formaction="/courses/new#new-tee">
+              Add another tee
+            </button>
+          )
+        }
+        <button class="btn btn-primary btn-hero" type="submit" name="intent" value="save">Save course</button>
+      </div>
+    </form>
+  </div>
+</AppLayout>
+
+<style>
+  .course-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    max-width: 960px;
+  }
+  .form-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+  .tee-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-4);
+  }
+</style>

@@ -1,0 +1,95 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.QuickHolePage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:controls="using:CustomGolfStats.App.Controls">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <TextBlock Text="{x:Bind local:Display.HoleTitle(ViewModel.HoleNumber), Mode=OneWay}" Style="{StaticResource BrandTextTitleStyle}" />
+        <TextBlock Text="{x:Bind local:Display.HoleFacts(ViewModel.Par, ViewModel.Yardage, ViewModel.StrokeIndex), Mode=OneWay}"
+                   Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+        <TextBlock Text="{x:Bind local:Ui.Label('To par')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" HorizontalAlignment="Right" />
+        <TextBlock Text="{x:Bind local:QuickHolePage.ToParText(ViewModel.ToPar), Mode=OneWay}" Style="{StaticResource BrandTextStatLStyle}" HorizontalAlignment="Right" />
+      </StackPanel>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace2}">
+        <controls:Stepper Label="Score" Minimum="1" Maximum="20" Value="{x:Bind ViewModel.Score, Mode=TwoWay}" />
+        <controls:Stepper Label="Putts" Minimum="0" Maximum="10" Value="{x:Bind ViewModel.Putts, Mode=TwoWay}" />
+
+        <!-- Green in regulation: suggested from score and putts, the golfer can override it -->
+        <Border Style="{StaticResource BrandCardStyle}" Padding="12,8">
+          <StackPanel Spacing="4">
+            <ToggleButton Content="Green in regulation" IsChecked="{x:Bind ViewModel.Gir, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="{x:Bind local:Display.SuggestedGir(ViewModel.SuggestedGir), Mode=OneWay}" VerticalAlignment="Center"
+                         Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+              <Button Grid.Column="1" Content="Use suggestion" Command="{x:Bind ViewModel.ResetGirCommand}" Style="{StaticResource BrandLinkButtonStyle}"
+                      Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.GirOverridden), Mode=OneWay}" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Tee shot (not on par 3s) -->
+        <StackPanel Spacing="8" Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.HasTeeShotFlags), Mode=OneWay}">
+          <TextBlock Text="{x:Bind local:Ui.Label('Tee shot')}" Style="{StaticResource BrandSectionLabelStyle}" />
+          <ToggleButton Content="Fairway hit" IsChecked="{x:Bind ViewModel.FairwayHit, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ToggleButton Content="Left" IsChecked="{x:Bind ViewModel.TeeShotLeft, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+            <ToggleButton Grid.Column="1" Content="Right" IsChecked="{x:Bind ViewModel.TeeShotRight, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+            <ToggleButton Grid.Column="2" Content="Short" IsChecked="{x:Bind ViewModel.TeeShotShort, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+            <ToggleButton Grid.Column="3" Content="Long" IsChecked="{x:Bind ViewModel.TeeShotLong, Mode=TwoWay}" Style="{StaticResource BrandFlagToggleStyle}" />
+          </Grid>
+        </StackPanel>
+
+        <TextBlock Text="{x:Bind local:Ui.Label('Trouble')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <controls:Stepper Label="Penalty strokes" Minimum="0" Value="{x:Bind ViewModel.PenaltyStrokes, Mode=TwoWay}" />
+        <controls:Stepper Label="Greenside bunker shots" Minimum="0" Maximum="10" Value="{x:Bind ViewModel.GreensideSandShots, Mode=TwoWay}" />
+        <controls:Stepper Label="Fairway bunker shots" Minimum="0" Maximum="10" Value="{x:Bind ViewModel.FairwaySandShots, Mode=TwoWay}" />
+
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Errors}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{x:Bind}" Style="{StaticResource BrandTextErrorStyle}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+        <Button Content="Delete this hole" Click="OnDelete" Style="{StaticResource BrandDangerLinkButtonStyle}"
+                Visibility="{x:Bind local:Ui.CollapsedIf(ViewModel.IsNewPlaying), Mode=OneWay}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Padding="20,8,20,12" Background="{ThemeResource BrandBackgroundBrush}" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,1,0,0">
+      <Button Content="Save hole" Command="{x:Bind ViewModel.SaveCommand}" IsEnabled="{x:Bind ViewModel.CanSave, Mode=OneWay}" Style="{StaticResource BrandHeroButtonStyle}" />
+    </Border>
+  </Grid>
+</local:RoutePage>

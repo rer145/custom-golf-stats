@@ -1,0 +1,209 @@
+---
+import AdminNav from '../../../../components/admin/AdminNav.astro';
+import Notice from '../../../../components/Notice.astro';
+import Problem from '../../../../components/Problem.astro';
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import { call, fieldErrors, type ApiProblem } from '../../../../api/client';
+import { unmatchedReason, unmatchedVersions } from '../../../../lib/admin';
+import { formatInteger } from '../../../../lib/format';
+import { formText, notAForm, readForm } from '../../../../lib/forms';
+import { endSession, isSessionEnded } from '../../../../lib/guard';
+import { pageStatus } from '../../../../lib/problems';
+
+const { id = '' } = Astro.params;
+const api = Astro.locals.api;
+const here = `/admin/courses/${id}/merge`;
+const query = (Astro.url.searchParams.get('query') ?? '').trim();
+const roundsMoved = Astro.url.searchParams.get('rounds');
+const flagsMoved = Astro.url.searchParams.get('flags');
+
+let problem: ApiProblem | null = null;
+let chosen = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  chosen = formText(form, 'intoCourseId');
+  const result = await call(
+    api.POST('/admin/courses/{id}/merge', { params: { path: { id } }, body: { intoCourseId: chosen === '' ? null : chosen } }),
+  );
+  if (isSessionEnded(result)) return endSession(Astro);
+  if (result.ok) {
+    const done = new URLSearchParams({ rounds: String(result.data.roundsMoved), flags: String(result.data.flagsMoved) });
+    return Astro.redirect(`${here}?${done}`, 303);
+  }
+  problem = result.problem;
+  Astro.response.status = pageStatus(problem.status);
+}
+
+const loaded = await call(api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(loaded)) return endSession(Astro);
+const course = loaded.ok ? loaded.data : null;
+const loadProblem = loaded.ok ? null : loaded.problem;
+if (loadProblem) Astro.response.status = pageStatus(loadProblem.status);
+
+// Candidates to merge into: found by search, never the course itself or one that has been merged away.
+let candidates: { id: string; name: string; clubName: string | null; city: string | null; region: string | null; status: string }[] = [];
+let searchProblem: ApiProblem | null = null;
+if (course && !course.mergedIntoCourseId && (query || chosen)) {
+  const found = await call(api.GET('/admin/courses', { params: { query: query ? { query } : {} } }));
+  if (isSessionEnded(found)) return endSession(Astro);
+  if (found.ok) candidates = found.data.filter((c) => c.id !== id && !c.mergedIntoCourseId);
+  else searchProblem = found.problem;
+}
+const unmatched = unmatchedVersions(problem);
+const targetErrors = fieldErrors(problem, 'intoCourseId');
+const showMergeProblem = problem && targetErrors.length === 0;
+const done = roundsMoved !== null && flagsMoved !== null;
+---
+
+<AppLayout title={`Merge ${course?.name ?? 'course'} · Admin`}>
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">Merge course</h1>
+      <p class="lede">{course ? `Merge “${course.name}” into the course it duplicates.` : 'This course could not be loaded.'}</p>
+    </div>
+    <AdminNav />
+    <p><a class="back" href={`/admin/courses/${id}`}>Back to the course</a></p>
+    <Problem problem={loadProblem} />
+
+    {
+      course && done && (
+        <div class="stack" data-merge-result>
+          <Notice
+            spaced
+            message={
+              course.mergedIntoCourseId
+                ? `Merged. ${formatInteger(roundsMoved)} ${Number(roundsMoved) === 1 ? 'round' : 'rounds'} and ${formatInteger(flagsMoved)} open ${Number(flagsMoved) === 1 ? 'flag' : 'flags'} moved.`
+                : null
+            }
+          />
+          {course.mergedIntoCourseId && (
+            <p>
+              <a class="btn btn-primary" href={`/admin/courses/${course.mergedIntoCourseId}`}>
+                Open the course it was merged into
+              </a>
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    {
+      course && !done && course.mergedIntoCourseId && (
+        <p class="problem" data-merged>
+          This course has already been merged into <a href={`/admin/courses/${course.mergedIntoCourseId}`}>another course</a>.
+        </p>
+      )
+    }
+
+    {
+      course && !course.mergedIntoCourseId && (
+        <div class="stack">
+          <section class="card stack" aria-labelledby="pick-h">
+            <h2 class="title" id="pick-h">1. Find the course to merge into</h2>
+            <form class="search" method="get" action={here} role="search">
+              <div class="field">
+                <label for="target-query">Search by name, club or city</label>
+                <input id="target-query" name="query" type="search" value={query} autocomplete="off" />
+              </div>
+              <button class="btn btn-secondary" type="submit">
+                Search
+              </button>
+            </form>
+            <Problem problem={searchProblem} />
+          </section>
+
+          {(query || chosen) && (
+            <section class="card stack" aria-labelledby="confirm-h">
+              <h2 class="title" id="confirm-h">2. Choose it and merge</h2>
+              {showMergeProblem && <Problem problem={problem} heading={problem?.status === 409 ? 'Not merged' : undefined} />}
+              {unmatched.length > 0 && (
+                <div class="stack" data-unmatched>
+                  <p>
+                    These tee versions have rounds on them but nothing to move to. Add matching tees or versions to the target course, then try again. Nothing was changed.
+                  </p>
+                  <div class="table-wrap">
+                    <table class="table">
+                      <caption class="visually-hidden">Tee versions that could not be matched</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Tee</th>
+                          <th scope="col">Effective from</th>
+                          <th scope="col" class="num">Rounds</th>
+                          <th scope="col">Why</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unmatched.map((u) => (
+                          <tr data-reason={u.reason}>
+                            <th scope="row">
+                              {u.teeName} <span class="muted">({u.gender})</span>
+                            </th>
+                            <td>
+                              <span class="num">{u.effectiveFrom}</span>
+                            </td>
+                            <td class="num">{formatInteger(u.rounds)}</td>
+                            <td>{unmatchedReason(u.reason)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <form class="form" method="post" action={query ? `${here}?query=${encodeURIComponent(query)}` : here}>
+                <fieldset class="targets" aria-describedby={targetErrors.length > 0 ? 'target-error' : undefined}>
+                  <legend class="heading">Merge into</legend>
+                  {candidates.length === 0 && <p class="muted" data-empty>No other courses match.</p>}
+                  {candidates.map((c) => (
+                    <label class="target" data-candidate={c.name}>
+                      <input type="radio" name="intoCourseId" value={c.id} checked={chosen === c.id} required />
+                      <span>
+                        <span class="target-name">{c.name}</span>
+                        <span class="caption">{[c.clubName !== c.name ? c.clubName : null, c.city, c.region].filter(Boolean).join(' · ')}</span>
+                      </span>
+                    </label>
+                  ))}
+                  {targetErrors.length > 0 && (
+                    <p class="field-error" id="target-error">
+                      {targetErrors.join(' ')}
+                    </p>
+                  )}
+                </fieldset>
+                <p class="muted">Every round on this course moves to the matching tee version on the target, and its open flags move too. This can't be undone.</p>
+                <div>
+                  <button class="btn btn-primary" type="submit" disabled={candidates.length === 0}>
+                    Merge course
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+        </div>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .back { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+  .search { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+  .search .field { flex: 1 1 260px; max-width: 420px; }
+  .targets { display: grid; gap: var(--space-2); border: 0; margin: 0; padding: 0; min-width: 0; }
+  .targets legend { padding: 0; margin-bottom: var(--space-2); }
+  .target {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    min-height: var(--touch-target);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .target:has(input:checked) { border-color: var(--color-primary); background: var(--color-chip-bg); }
+  .target input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--color-primary); }
+  .target input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+  .target-name { display: block; font-weight: 500; }
+</style>

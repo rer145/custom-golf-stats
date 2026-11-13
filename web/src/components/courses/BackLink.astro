@@ -1,0 +1,27 @@
+---
+/** The "up one level" link above a page heading. */
+interface Props {
+  href: string;
+  label: string;
+}
+
+const { href, label } = Astro.props;
+---
+
+<a class="back" href={href}>
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+    <path d="M10 3.5L5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+  {label}
+</a>
+
+<style>
+  .back {
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--touch-target);
+    font-weight: 500;
+  }
+</style>

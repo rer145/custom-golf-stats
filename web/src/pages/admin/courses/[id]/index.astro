@@ -1,0 +1,219 @@
+---
+import AdminNav from '../../../../components/admin/AdminNav.astro';
+import Notice from '../../../../components/Notice.astro';
+import Field from '../../../../components/Field.astro';
+import Problem from '../../../../components/Problem.astro';
+import AppLayout from '../../../../layouts/AppLayout.astro';
+import { call, type ApiProblem } from '../../../../api/client';
+import { isoDate, parseDecimal } from '../../../../lib/admin';
+import { formatInteger, formatRating } from '../../../../lib/format';
+import { formText, notAForm, readForm } from '../../../../lib/forms';
+import { endSession, isSessionEnded } from '../../../../lib/guard';
+import { localProblem, pageStatus } from '../../../../lib/problems';
+
+const { id = '' } = Astro.params;
+const api = Astro.locals.api;
+const here = `/admin/courses/${id}`;
+const saved = Astro.url.searchParams.get('saved');
+const NOTICES: Record<string, string> = { details: 'Course details saved.', verified: 'Course verified.', version: 'Tee version corrected.' };
+
+const TEXT_FIELDS = [
+  { name: 'name', label: 'Name', required: true },
+  { name: 'clubName', label: 'Club name' },
+  { name: 'address', label: 'Address' },
+  { name: 'city', label: 'City' },
+  { name: 'region', label: 'Region' },
+  { name: 'country', label: 'Country' },
+  { name: 'phone', label: 'Phone', type: 'tel' },
+  { name: 'website', label: 'Website', type: 'url' },
+] as const;
+
+let problem: ApiProblem | null = null;
+let posted: Record<string, string> | null = null;
+let failedAction: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const action = formText(form, 'action');
+  if (action === 'verify') {
+    const result = await call(api.POST('/admin/courses/{id}/verify', { params: { path: { id } } }));
+    if (isSessionEnded(result)) return endSession(Astro);
+    if (result.ok) return Astro.redirect(`${here}?saved=verified`, 303);
+    problem = result.problem;
+    failedAction = 'verify';
+  } else {
+    posted = Object.fromEntries([...TEXT_FIELDS.map((f) => f.name), 'latitude', 'longitude'].map((k) => [k, formText(form, k)]));
+    const lat = parseDecimal(posted.latitude ?? '');
+    const lng = parseDecimal(posted.longitude ?? '');
+    const errors: Record<string, string[]> = {};
+    if ('error' in lat) errors.latitude = [lat.error];
+    if ('error' in lng) errors.longitude = [lng.error];
+    failedAction = 'details';
+    if (Object.keys(errors).length > 0) {
+      problem = localProblem(errors);
+    } else {
+      const text = (k: string) => {
+        const v = (posted?.[k] ?? '').trim();
+        return v === '' ? null : v;
+      };
+      const result = await call(
+        api.PUT('/admin/courses/{id}', {
+          params: { path: { id } },
+          body: {
+            name: text('name'),
+            clubName: text('clubName'),
+            address: text('address'),
+            city: text('city'),
+            region: text('region'),
+            country: text('country'),
+            phone: text('phone'),
+            website: text('website'),
+            latitude: 'value' in lat ? lat.value : null,
+            longitude: 'value' in lng ? lng.value : null,
+          },
+        }),
+      );
+      if (isSessionEnded(result)) return endSession(Astro);
+      if (result.ok) return Astro.redirect(`${here}?saved=details`, 303);
+      problem = result.problem;
+    }
+  }
+  if (problem) Astro.response.status = pageStatus(problem.status);
+}
+
+const loaded = await call(api.GET('/courses/{id}', { params: { path: { id } } }));
+if (isSessionEnded(loaded)) return endSession(Astro);
+const course = loaded.ok ? loaded.data : null;
+const loadProblem = loaded.ok ? null : loaded.problem;
+if (loadProblem) Astro.response.status = pageStatus(loadProblem.status);
+
+const value = (name: string, stored: string | number | null | undefined) => posted?.[name] ?? (stored === null || stored === undefined ? '' : String(stored));
+const STATUS_LABELS: Record<string, string> = { Imported: 'Imported', UserEdited: 'User edited', Verified: 'Verified' };
+---
+
+<AppLayout title={`${course?.name ?? 'Course'} · Admin`}>
+  <div class="container page">
+    <div class="page-header">
+      <h1 class="display">{course?.name ?? 'Course'}</h1>
+      <p class="lede">Edit details, verify the course, correct tee versions or merge it into another course.</p>
+    </div>
+    <AdminNav />
+    <Notice spaced message={saved ? NOTICES[saved] : null} />
+    <Problem problem={loadProblem} />
+
+    {
+      course && (
+        <div class="stack">
+          {course.mergedIntoCourseId && (
+            <p class="problem" data-merged>
+              This course was merged into <a href={`/admin/courses/${course.mergedIntoCourseId}`}>another course</a> and no longer appears in search.
+            </p>
+          )}
+
+          <section class="card stack" aria-labelledby="status-h">
+            <h2 class="title" id="status-h">Status</h2>
+            <p>
+              <span data-status={course.status} class="status">
+                {STATUS_LABELS[course.status] ?? course.status}
+              </span>
+              <span class="muted"> · last verified <span class="num">{isoDate(course.lastVerifiedAt)}</span></span>
+            </p>
+            {failedAction === 'verify' && <Problem problem={problem} />}
+            <form method="post" action={here}>
+              <input type="hidden" name="action" value="verify" />
+              <button class="btn btn-primary" type="submit">
+                Verify course
+              </button>
+            </form>
+          </section>
+
+          <section class="card stack" aria-labelledby="details-h">
+            <h2 class="title" id="details-h">Details</h2>
+            <form class="form details" method="post" action={here} novalidate>
+              <input type="hidden" name="action" value="details" />
+              {failedAction === 'details' && <Problem problem={problem} />}
+              {TEXT_FIELDS.map((f) => (
+                <Field
+                  name={f.name}
+                  label={f.label}
+                  value={value(f.name, course[f.name])}
+                  problem={failedAction === 'details' ? problem : null}
+                  required={'required' in f}
+                  type={'type' in f ? f.type : 'text'}
+                />
+              ))}
+              <Field name="latitude" label="Latitude" inputmode="decimal" value={value('latitude', course.latitude)} problem={failedAction === 'details' ? problem : null} />
+              <Field name="longitude" label="Longitude" inputmode="decimal" value={value('longitude', course.longitude)} problem={failedAction === 'details' ? problem : null} />
+              <div>
+                <button class="btn btn-primary" type="submit">
+                  Save details
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card stack" aria-labelledby="tees-h">
+            <h2 class="title" id="tees-h">Tees and versions</h2>
+            <p class="muted">Correcting a version changes it in place, including for rounds already played on it.</p>
+            {course.tees.length === 0 && <p class="muted">This course has no tees.</p>}
+            {course.tees.map((tee) => (
+              <div class="table-wrap" data-tee={tee.name}>
+                <table class="table">
+                  <caption class="heading">
+                    {tee.name} <span class="muted">({tee.gender})</span>
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Effective from</th>
+                      <th scope="col" class="num">Par</th>
+                      <th scope="col" class="num">Rating</th>
+                      <th scope="col" class="num">Slope</th>
+                      <th scope="col">
+                        <span class="visually-hidden">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tee.versions.map((v) => (
+                      <tr>
+                        <th scope="row">
+                          <span class="num">{v.effectiveFrom}</span>
+                          {v.isCurrent && <span class="caption"> current</span>}
+                        </th>
+                        <td class="num">{formatInteger(v.par)}</td>
+                        <td class="num">{formatRating(v.rating)}</td>
+                        <td class="num">{formatInteger(v.slope)}</td>
+                        <td>
+                          <a class="btn btn-secondary" href={`/admin/courses/${course.id}/tees/${tee.id}/versions/${v.id}`} aria-label={`Correct ${tee.name} version from ${v.effectiveFrom}`}>
+                            Correct
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </section>
+
+          <section class="card stack" aria-labelledby="merge-h">
+            <h2 class="title" id="merge-h">Merge duplicate</h2>
+            <p class="muted">Move this course's rounds and open flags to the course it duplicates. The course then disappears from search.</p>
+            <p>
+              <a class="btn btn-secondary" href={`/admin/courses/${course.id}/merge`}>
+                Merge into another course
+              </a>
+            </p>
+          </section>
+        </div>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .details { max-width: 560px; }
+  .status { font-weight: 600; }
+  caption { text-align: left; padding: var(--space-2) var(--space-3); }
+</style>

@@ -1,0 +1,14 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- The repository default is a single net10.0 target; this project multi-targets (see the csproj). -->
+    <TargetFramework></TargetFramework>
+    <!--
+      NU1507: multiple package sources with central package management and no source mapping
+      NETSDK1201: specifying a RID does not create a self-contained app
+      PRI257: the default language (en) is not one of the included resources
+    -->
+    <NoWarn>$(NoWarn);NU1507;NETSDK1201;PRI257</NoWarn>
+  </PropertyGroup>
+</Project>

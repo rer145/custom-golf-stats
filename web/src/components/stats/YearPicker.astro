@@ -1,0 +1,57 @@
+---
+import type { SectionSlug } from '../../lib/stats';
+
+/**
+ * Season picker: a plain GET form to /stats, which redirects to the same section for the chosen year. Works without
+ * JavaScript; the button stays so keyboard users choose when to go.
+ */
+interface Props {
+  year: number;
+  years: number[];
+  section?: SectionSlug;
+  /** Where the form goes (default /stats); /rounds reuses the picker with an "All years" option. */
+  action?: string;
+  allOption?: boolean;
+  selected?: string;
+}
+
+const { year, years, section, action = '/stats', allOption = false, selected = String(year) } = Astro.props;
+const options = [...new Set([...years, year])].sort((a, b) => b - a);
+---
+
+<form class="year-picker" method="get" action={action}>
+  {section && <input type="hidden" name="section" value={section} />}
+  <label for="year-picker-year">Season</label>
+  <div class="controls">
+    <select id="year-picker-year" name="year">
+      {allOption && <option value="all" selected={selected === 'all'}>All years</option>}
+      {options.map((y) => <option value={String(y)} selected={selected === String(y)}>{y}</option>)}
+    </select>
+    <button class="btn btn-secondary" type="submit">Show</button>
+  </div>
+</form>
+
+<style>
+  .year-picker { display: grid; gap: var(--space-2); }
+  label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  .controls { display: flex; gap: var(--space-2); }
+  select {
+    min-height: var(--touch-target);
+    min-width: 8.5em;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 500 16px/1 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  select:hover { border-color: var(--color-text-secondary); }
+</style>

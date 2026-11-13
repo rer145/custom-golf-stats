@@ -1,0 +1,19 @@
+---
+/** Shown above a year section when the golfer played no rounds that year. */
+interface Props {
+  year: number;
+}
+
+const { year } = Astro.props;
+---
+
+<p class="empty-year card" data-empty-year={year}>
+  <span class="heading">No rounds in {year}.</span>
+  <span class="muted">Every stat below is blank until you play one. Pick another season above, or see all your rounds.</span>
+  <a href="/rounds">Your rounds</a>
+</p>
+
+<style>
+  .empty-year { display: grid; gap: var(--space-2); justify-items: start; }
+  a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+</style>

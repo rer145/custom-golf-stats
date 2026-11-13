@@ -1,0 +1,478 @@
+---
+// Course detail: details, each tee's current version as a scorecard, the version history, and a form to flag a
+// problem. Also "make this my home course" (PUT /me is a full replace, so the current profile is read first).
+import AppLayout from '../../../layouts/AppLayout.astro';
+import Field from '../../../components/Field.astro';
+import Problem from '../../../components/Problem.astro';
+import BackLink from '../../../components/courses/BackLink.astro';
+import Notice from '../../../components/Notice.astro';
+import Scorecard from '../../../components/courses/Scorecard.astro';
+import StatusBadge from '../../../components/courses/StatusBadge.astro';
+import { call, fieldErrors, type ApiProblem, type Schemas } from '../../../api/client';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { formText, notAForm, readForm } from '../../../lib/forms';
+import { formatDate, formatInteger, formatRating } from '../../../lib/format';
+import { formatEffectiveFrom } from '../../../components/courses/dates';
+import { fields, formProblem } from '../../../components/courses/problems';
+import { pageStatus } from '../../../lib/problems';
+
+const id = Astro.params.id ?? '';
+let flagProblem: ApiProblem | null = null;
+let homeProblem: ApiProblem | null = null;
+const flagValues = { teeId: '', holeNumber: '', note: '' };
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const intent = formText(form, 'intent');
+  if (intent === 'home') {
+    const me = await call(Astro.locals.api.GET('/me'));
+    if (isSessionEnded(me)) return endSession(Astro);
+    if (me.ok) {
+      const p = me.data;
+      const r = await call(
+        Astro.locals.api.PUT('/me', {
+          body: { firstName: p.firstName, lastName: p.lastName, gender: p.gender, ghinNumber: p.ghinNumber, homeCourseId: id, units: p.units },
+        }),
+      );
+      if (isSessionEnded(r)) return endSession(Astro);
+      if (r.ok) return Astro.redirect(`/courses/${id}?saved=home`, 303);
+      homeProblem = r.problem;
+    } else {
+      homeProblem = me.problem;
+    }
+    Astro.response.status = pageStatus(homeProblem.status);
+  } else {
+    flagValues.teeId = formText(form, 'teeId');
+    flagValues.holeNumber = formText(form, 'holeNumber').trim();
+    flagValues.note = formText(form, 'note');
+    const hole = flagValues.holeNumber === '' ? null : Number(flagValues.holeNumber);
+    if (hole !== null && !Number.isInteger(hole)) {
+      flagProblem = { status: 400, message: 'Check the highlighted fields.', fieldErrors: { holeNumber: ['Enter a hole number from 1 to 18.'] } };
+    } else {
+      const r = await call(
+        Astro.locals.api.POST('/courses/{id}/flags', {
+          params: { path: { id } },
+          body: { teeId: flagValues.teeId || null, holeNumber: hole, note: flagValues.note },
+        }),
+      );
+      if (isSessionEnded(r)) return endSession(Astro);
+      if (r.ok) return Astro.redirect(`/courses/${id}?flagged=1#report`, 303);
+      flagProblem = r.problem;
+    }
+    Astro.response.status = pageStatus(flagProblem.status);
+  }
+}
+
+const [courseResult, meResult] = await Promise.all([
+  call(Astro.locals.api.GET('/courses/{id}', { params: { path: { id } } })),
+  call(Astro.locals.api.GET('/me')),
+]);
+if (isSessionEnded(courseResult) || isSessionEnded(meResult)) return endSession(Astro);
+const course = courseResult.ok ? courseResult.data : null;
+if (!courseResult.ok) Astro.response.status = pageStatus(courseResult.problem.status);
+const isHome = meResult.ok && meResult.data.homeCourseId === id;
+const isAdmin = Astro.locals.session?.role === 'Admin';
+const reviewed = course?.status === 'Verified' && !isAdmin;
+
+const params = Astro.url.searchParams;
+const savedMessages: Record<string, string> = {
+  created: 'Course saved. It’s now in search for every golfer.',
+  details: 'Course details saved.',
+  tee: 'Tee added.',
+  version: 'New tee version saved. Rounds from its date on use it; earlier rounds keep the old numbers.',
+  home: 'This is now your home course.',
+};
+const notice = params.get('imported')
+  ? 'Course imported. It’s now in search for every golfer.'
+  : (savedMessages[params.get('saved') ?? ''] ?? null);
+const review = params.get('review') ? 'This course is verified, so your change was sent to an admin. It shows here once they accept it.' : null;
+const flagged = params.get('flagged') ? 'Thanks. An admin will check it.' : null;
+
+const place = course ? [course.city, course.region, course.country].filter(Boolean).join(', ') : '';
+const genderLabel = (g: Schemas['Gender']) => (g === 'Male' ? 'Men' : g === 'Female' ? 'Women' : null);
+const sourceLabel = (s: Schemas['CourseSource']) => (s === 'GolfCourseApi' ? 'Course database' : s === 'Golftrack' ? 'Golftrack' : 'Entered by a golfer');
+const current = (tee: Schemas['TeeDto']) => tee.versions.find((v) => v.isCurrent) ?? tee.versions[tee.versions.length - 1];
+const byDateDesc = (tee: Schemas['TeeDto']) => [...tee.versions].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+---
+
+<AppLayout title={course?.name ?? 'Course'}>
+  <div class="container page">
+    {
+      !course ? (
+        <div class="page-header">
+          <BackLink href="/courses" label="Courses" />
+          <h1 class="display">{courseResult.ok ? '' : courseResult.problem.status === 404 ? 'Course not found' : 'Course unavailable'}</h1>
+          <Problem problem={courseResult.ok ? null : courseResult.problem} />
+        </div>
+      ) : (
+        <>
+          <div class="page-header">
+            <BackLink href="/courses" label="Courses" />
+            <div class="title-row">
+              <h1 class="display">{course.name}</h1>
+              <StatusBadge status={course.status} />
+            </div>
+            {(course.clubName && course.clubName !== course.name) || place ? (
+              <p class="lede">{[course.clubName && course.clubName !== course.name ? course.clubName : null, place].filter(Boolean).join(' – ')}</p>
+            ) : null}
+            {course.status === 'Verified' && course.lastVerifiedAt && <p class="caption">Checked against the official ratings {formatDate(course.lastVerifiedAt)}.</p>}
+          </div>
+
+          <div class="stack-lg">
+            <Notice message={notice} heading="Saved" />
+            <Notice message={review} heading="Sent for review" />
+            <Problem problem={formProblem(homeProblem, () => false)} heading="Home course not changed" />
+            {course.mergedIntoCourseId && (
+              <p class="problem">
+                This course was merged into another. <a href={`/courses/${course.mergedIntoCourseId}`}>Open the current course</a>
+              </p>
+            )}
+
+            <section class="overview" aria-label="Course details">
+              <dl class="facts">
+                {course.address && (
+                  <div>
+                    <dt>Address</dt>
+                    <dd>{course.address}</dd>
+                  </div>
+                )}
+                {course.phone && (
+                  <div>
+                    <dt>Phone</dt>
+                    <dd>
+                      <a href={`tel:${course.phone.replace(/[^+\d]/g, '')}`}>{course.phone}</a>
+                    </dd>
+                  </div>
+                )}
+                {course.website && /^https?:\/\//i.test(course.website) && (
+                  <div>
+                    <dt>Website</dt>
+                    <dd>
+                      <a href={course.website} rel="noopener noreferrer nofollow" target="_blank">
+                        {course.website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Source</dt>
+                  <dd>{sourceLabel(course.source)}</dd>
+                </div>
+              </dl>
+              <div class="actions">
+                <a class="btn btn-secondary" href={`/courses/${course.id}/edit`}>Edit details</a>
+                <a class="btn btn-secondary" href={`/courses/${course.id}/tees/new`}>Add a tee</a>
+                {isHome ? (
+                  <span class="home-flag">
+                    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                      <path d="M2.5 7.5L8 3l5.5 4.5V13h-11z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                    </svg>
+                    Your home course
+                  </span>
+                ) : (
+                  <form method="post">
+                    <input type="hidden" name="intent" value="home" />
+                    <button class="btn btn-secondary" type="submit">
+                      Make this my home course
+                    </button>
+                  </form>
+                )}
+              </div>
+              {reviewed && <p class="caption">This course is verified: edits and new tees go to an admin for review before they show.</p>}
+            </section>
+
+            <section class="tees" aria-labelledby="tees-heading">
+              <h2 id="tees-heading" class="visually-hidden">Tees</h2>
+              {course.tees.length === 0 && <p class="muted">No tees yet. <a href={`/courses/${course.id}/tees/new`}>Add one from the scorecard</a>.</p>}
+              {course.tees.map((tee) => {
+                const v = current(tee);
+                return (
+                  <article class="card tee" aria-labelledby={`tee-${tee.id}`}>
+                    <header class="tee-header">
+                      <div>
+                        <h3 id={`tee-${tee.id}`} class="title">
+                          {tee.name}
+                        </h3>
+                        {genderLabel(tee.gender) && <p class="caption">Rated for {genderLabel(tee.gender)?.toLowerCase()}</p>}
+                      </div>
+                      <a class="btn btn-secondary" href={`/courses/${course.id}/tees/${tee.id}/versions/new`}>
+                        New version<span class="visually-hidden"> of the {tee.name} tee</span>
+                      </a>
+                    </header>
+                    {v && (
+                      <>
+                        <dl class="numbers">
+                          <div>
+                            <dt>Par</dt>
+                            <dd class="stat stat-m">{formatInteger(v.par)}</dd>
+                          </div>
+                          <div>
+                            <dt>Rating</dt>
+                            <dd class="stat stat-m">{formatRating(v.rating)}</dd>
+                          </div>
+                          <div>
+                            <dt>Slope</dt>
+                            <dd class="stat stat-m">{formatInteger(v.slope)}</dd>
+                          </div>
+                          {(v.frontRating !== null || v.frontSlope !== null) && (
+                            <div class="split">
+                              <dt>Front</dt>
+                              <dd class="stat stat-s">
+                                {formatRating(v.frontRating)} / {formatInteger(v.frontSlope)}
+                              </dd>
+                            </div>
+                          )}
+                          {(v.backRating !== null || v.backSlope !== null) && (
+                            <div class="split">
+                              <dt>Back</dt>
+                              <dd class="stat stat-s">
+                                {formatRating(v.backRating)} / {formatInteger(v.backSlope)}
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
+                        {v.holes.length > 0 && <Scorecard holes={v.holes} caption={`${tee.name} tee`} />}
+                      </>
+                    )}
+                    <details class="history" open={tee.versions.length > 1}>
+                      <summary>
+                        Versions <span class="num">({formatInteger(tee.versions.length)})</span>
+                      </summary>
+                      <div class="table-wrap">
+                        <table class="table">
+                          <caption class="visually-hidden">Versions of the {tee.name} tee</caption>
+                          <thead>
+                            <tr>
+                              <th scope="col">Effective from</th>
+                              <th scope="col" class="num">Par</th>
+                              <th scope="col" class="num">Rating</th>
+                              <th scope="col" class="num">Slope</th>
+                              <th scope="col">Source</th>
+                              <th scope="col">Changed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {byDateDesc(tee).map((version) => (
+                              <tr>
+                                <th scope="row">
+                                  {formatEffectiveFrom(version.effectiveFrom)}
+                                  {version.isCurrent && <span class="current">In use today</span>}
+                                </th>
+                                <td class="num">{formatInteger(version.par)}</td>
+                                <td class="num">{formatRating(version.rating)}</td>
+                                <td class="num">{formatInteger(version.slope)}</td>
+                                <td>{sourceLabel(version.source)}</td>
+                                <td>{formatDate(version.changedAt)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  </article>
+                );
+              })}
+            </section>
+
+            <section class="card report" id="report" aria-labelledby="report-heading">
+              <h2 id="report-heading" class="title">Something wrong?</h2>
+              <p class="muted">Tell an admin what doesn’t match the scorecard. They’ll check it and fix the course for everyone.</p>
+              <Notice message={flagged} heading="Reported" />
+              <form class="form" method="post" action={`/courses/${course.id}#report`} novalidate>
+                <input type="hidden" name="intent" value="flag" />
+                <Problem problem={formProblem(flagProblem, fields('teeId', 'holeNumber', 'note'))} />
+                <div class="report-where">
+                  <div class="field">
+                    <label for="flag-tee">Tee</label>
+                    <select
+                      id="flag-tee"
+                      name="teeId"
+                      aria-invalid={fieldErrors(flagProblem, 'teeId').length > 0 ? 'true' : undefined}
+                      aria-describedby={fieldErrors(flagProblem, 'teeId').length > 0 ? 'flag-tee-error' : undefined}
+                    >
+                      <option value="">The whole course</option>
+                      {course.tees.map((t) => (
+                        <option value={t.id} selected={flagValues.teeId === t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {fieldErrors(flagProblem, 'teeId').length > 0 && (
+                      <div class="field-error" id="flag-tee-error">
+                        <p>{fieldErrors(flagProblem, 'teeId').join(' ')}</p>
+                      </div>
+                    )}
+                  </div>
+                  <Field name="holeNumber" label="Hole (optional)" inputmode="numeric" class="num" value={flagValues.holeNumber} problem={flagProblem} />
+                </div>
+                <div class="field">
+                  <label for="flag-note">What’s wrong</label>
+                  <textarea
+                    id="flag-note"
+                    name="note"
+                    rows="4"
+                    maxlength="4000"
+                    aria-invalid={fieldErrors(flagProblem, 'note').length > 0 ? 'true' : undefined}
+                    aria-describedby={fieldErrors(flagProblem, 'note').length > 0 ? 'flag-note-error' : undefined}
+                  set:text={flagValues.note}
+                  />
+                  {fieldErrors(flagProblem, 'note').length > 0 && (
+                    <div class="field-error" id="flag-note-error">
+                      <p>{fieldErrors(flagProblem, 'note').join(' ')}</p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <button class="btn btn-primary" type="submit">
+                    Send report
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+  }
+  .stack-lg,
+  .tees {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stack-lg {
+    display: grid;
+    gap: var(--space-8);
+  }
+  .overview {
+    display: grid;
+    gap: var(--space-5);
+  }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4) var(--space-10);
+    margin: 0;
+  }
+  .facts dt,
+  .numbers dt {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  .facts dd {
+    margin: var(--space-1) 0 0;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .actions form {
+    margin: 0;
+  }
+  .home-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--touch-target);
+    padding: 0 var(--space-2);
+    color: var(--color-positive);
+    font-weight: 600;
+  }
+  .tees {
+    display: grid;
+    gap: var(--space-6);
+  }
+  .tee {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+    min-width: 0;
+  }
+  .tee-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .numbers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4) var(--space-8);
+    margin: 0;
+  }
+  .numbers dd {
+    margin: var(--space-2) 0 0;
+  }
+  .numbers .split {
+    align-self: end;
+  }
+  .history summary {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--touch-target);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .history .table th[scope='row'] {
+    font-weight: 500;
+  }
+  .current {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--color-chip-bg);
+    color: var(--color-positive);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .report {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 720px;
+  }
+  .report-where {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .report select,
+  .report textarea {
+    width: 100%;
+    min-height: var(--touch-target);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 16px/1.4 var(--font-body);
+  }
+  .report textarea {
+    resize: vertical;
+  }
+  .report [aria-invalid='true'] {
+    border-color: var(--color-negative);
+  }
+  @media (max-width: 480px) {
+    .report-where {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

@@ -1,0 +1,72 @@
+---
+import { call } from '../../../api/client';
+import Chart from '../../../components/stats/Chart.astro';
+import ChartGrid from '../../../components/stats/ChartGrid.astro';
+import EmptyYear from '../../../components/stats/EmptyYear.astro';
+import StatTile from '../../../components/stats/StatTile.astro';
+import StatTiles from '../../../components/stats/StatTiles.astro';
+import StatsShell from '../../../components/stats/StatsShell.astro';
+import { chartValue } from '../../../lib/chart-spec';
+import { formatInteger } from '../../../lib/format';
+import { endSession, isSessionEnded } from '../../../lib/guard';
+import { bucketLabel, firstProblem, parseYear, sectionHref, yearsFrom } from '../../../lib/stats';
+import { pageStatus } from '../../../lib/problems';
+
+const year = parseYear(Astro.params.year);
+if (year === null) return Astro.rewrite('/404');
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/{year}/season', { params: { path: { year } } }))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+const s = r.ok ? r.data : null;
+const total = s ? Number(s.rounds9) + Number(s.rounds18) + Number(s.roundsOtherLength) : 0;
+---
+
+<StatsShell section="season" year={year} years={years} lede="Rounds played, and how the scores spread out." problem={problem}>
+  {
+    s && (
+      <>
+        {total === 0 && <EmptyYear year={year} />}
+        <StatTiles columns={3}>
+          <StatTile label="9-hole rounds" value={formatInteger(s.rounds9)} size="l" />
+          <StatTile label="18-hole rounds" value={formatInteger(s.rounds18)} size="l" accent />
+          <StatTile label="Other lengths" value={formatInteger(s.roundsOtherLength)} caption="Count toward per-hole stats only" size="l" />
+        </StatTiles>
+        <ChartGrid>
+          <Chart
+            title="9-hole scores"
+            labelHeader="Score"
+            summary="How many 9-hole rounds fell in each score range."
+            spec={{
+              kind: 'bar',
+              format: 'integer',
+              min: 0,
+              labels: s.histogram9.map(bucketLabel),
+              series: [{ name: 'Rounds', values: s.histogram9.map((b) => chartValue(b.count)) }],
+            }}
+          />
+          <Chart
+            title="18-hole scores"
+            labelHeader="Score"
+            summary="How many 18-hole rounds fell in each score range."
+            spec={{
+              kind: 'bar',
+              format: 'integer',
+              min: 0,
+              labels: s.histogram18.map(bucketLabel),
+              series: [{ name: 'Rounds', values: s.histogram18.map((b) => chartValue(b.count)) }],
+            }}
+          />
+        </ChartGrid>
+        <p>
+          <a class="btn btn-secondary" href={sectionHref('results', year)}>
+            See every round in {year}
+          </a>
+        </p>
+      </>
+    )
+  }
+</StatsShell>

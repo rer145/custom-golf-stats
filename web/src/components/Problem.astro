@@ -1,0 +1,20 @@
+---
+import type { ApiProblem } from '../api/client';
+
+/** Shows a problem's message (409/502 details, sign-in failures, "check the highlighted fields"). Renders nothing without one. */
+interface Props {
+  problem?: ApiProblem | null | undefined;
+  heading?: string | undefined;
+}
+
+const { problem, heading } = Astro.props;
+---
+
+{
+  problem && (
+    <div class="problem" role="alert" data-problem-status={problem.status}>
+      {heading && <strong>{heading}</strong>}
+      <p>{problem.message}</p>
+    </div>
+  )
+}

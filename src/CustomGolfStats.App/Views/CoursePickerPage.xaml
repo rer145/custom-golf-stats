@@ -1,0 +1,124 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.CoursePickerPage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:rows="using:CustomGolfStats.App.Core.Storage.Rows"
+                 xmlns:api="using:CustomGolfStats.Api.Client">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="Choose a course" Style="{StaticResource BrandTextTitleStyle}" VerticalAlignment="Center" />
+    </Grid>
+
+    <!-- Search -->
+    <Grid Grid.Row="1" Padding="20,8,20,4" ColumnSpacing="8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBox PlaceholderText="Course, club or town" Text="{x:Bind ViewModel.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+               KeyDown="OnSearchKeyDown" AutomationProperties.Name="Search courses" />
+      <Button Grid.Column="1" Content="Search" Command="{x:Bind ViewModel.SearchCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+    </Grid>
+
+    <ScrollViewer Grid.Row="2">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace2}">
+        <TextBlock Text="{x:Bind ViewModel.Message, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.Message), Mode=OneWay}"
+                   Style="{StaticResource BrandTextSecondaryStyle}" />
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+
+        <!-- Saved on this device (works offline) -->
+        <TextBlock Text="{x:Bind local:Ui.Label('On this device')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <TextBlock Text="No saved courses match. Search online or add one by hand."
+                   Visibility="{x:Bind local:Ui.VisibleIfZero(ViewModel.LocalResults.Count), Mode=OneWay}"
+                   Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+        <ListView x:Name="LocalList" ItemsSource="{x:Bind ViewModel.LocalResults}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnLocalClick"
+                  ItemContainerStyle="{StaticResource BrandListItemStyle}" ScrollViewer.VerticalScrollMode="Disabled">
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="rows:CourseRow">
+              <Border Style="{StaticResource BrandCardStyle}" Padding="16,8,4,8">
+                <Grid ColumnSpacing="8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                    <TextBlock Text="{x:Bind local:Display.Place(ClubName, City, Region)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}"
+                               Visibility="{x:Bind local:Display.PlaceVisibility(ClubName, City, Region)}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Click="OnToggleFavorite" Style="{StaticResource BrandIconButtonStyle}"
+                          AutomationProperties.Name="{x:Bind local:Display.FavoriteName(IsFavorite)}">
+                    <FontIcon Glyph="{x:Bind local:Display.FavoriteGlyph(IsFavorite)}" FontSize="18" Foreground="{ThemeResource BrandPrimaryBrush}" />
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+
+        <ProgressRing IsActive="{x:Bind ViewModel.IsSearchingOnline, Mode=OneWay}" Width="28" Height="28" HorizontalAlignment="Left"
+                      Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsSearchingOnline), Mode=OneWay}" />
+
+        <!-- Shared course database -->
+        <StackPanel Visibility="{x:Bind local:Ui.VisibleIfPositive(ViewModel.OnlineResults.Count), Mode=OneWay}" Spacing="8">
+          <TextBlock Text="{x:Bind local:Ui.Label('Shared courses')}" Style="{StaticResource BrandSectionLabelStyle}" />
+          <ListView ItemsSource="{x:Bind ViewModel.OnlineResults}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnOnlineClick"
+                    ItemContainerStyle="{StaticResource BrandListItemStyle}" ScrollViewer.VerticalScrollMode="Disabled">
+            <ListView.ItemTemplate>
+              <DataTemplate x:DataType="api:CourseSummaryDto">
+                <Border Style="{StaticResource BrandCardStyle}" Padding="16,12">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                    <TextBlock Text="{x:Bind local:Display.Place(ClubName, City, Region)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </StackPanel>
+
+        <!-- Course provider: imported only when picked -->
+        <StackPanel Visibility="{x:Bind local:Ui.VisibleIfPositive(ViewModel.ProviderResults.Count), Mode=OneWay}" Spacing="8">
+          <TextBlock Text="{x:Bind local:Ui.Label('From the course directory')}" Style="{StaticResource BrandSectionLabelStyle}" />
+          <ListView ItemsSource="{x:Bind ViewModel.ProviderResults}" SelectionMode="None"
+                    ItemContainerStyle="{StaticResource BrandListItemStyle}" ScrollViewer.VerticalScrollMode="Disabled">
+            <ListView.ItemTemplate>
+              <DataTemplate x:DataType="api:ProviderSearchResultDto">
+                <Border Style="{StaticResource BrandCardStyle}" Padding="16,8,8,8">
+                  <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                      <TextBlock Text="{x:Bind CourseName}" Style="{StaticResource BrandTextBodyStrongStyle}" />
+                      <TextBlock Text="{x:Bind local:Display.Place(ClubName, City, Region)}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="{x:Bind local:Display.ImportText(AlreadyImported)}" Click="OnImport"
+                            Style="{StaticResource BrandSecondaryButtonStyle}" HorizontalAlignment="Right" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </StackPanel>
+
+        <Button Content="+ Add a course by hand" Command="{x:Bind ViewModel.AddManualCourseCommand}" Style="{StaticResource BrandAccentButtonStyle}" Margin="0,16,0,0" />
+        <TextBlock Text="Works offline. The course is saved to your account the next time you sync." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</local:RoutePage>

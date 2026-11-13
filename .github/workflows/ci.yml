@@ -18,3 +18,38 @@ jobs:
       - run: dotnet test --solution CustomGolfStats.slnx --configuration Release
       # The build regenerates the OpenAPI document; fail if the committed copy is stale.
       - run: git diff --exit-code -- src/CustomGolfStats.Api.Client/openapi
+      # The app's theme resources are generated from the brand tokens; fail if the committed copy is stale.
+      # (On Linux the solution builds only the app's net10.0-desktop head; the iOS and Android heads build on macOS.)
+      - run: dotnet run tools/generate-uno-theme.cs
+      - run: git diff --exit-code -- src/CustomGolfStats.App/Themes/BrandTokens.xaml
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      # The committed API types must match the committed OpenAPI document.
+      - run: npm run gen:api
+      - run: git diff --exit-code -- src/api/schema.d.ts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: ignore

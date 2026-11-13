@@ -1,0 +1,72 @@
+---
+import Field from '../components/Field.astro';
+import Problem from '../components/Problem.astro';
+import PublicLayout from '../layouts/PublicLayout.astro';
+import type { ApiProblem } from '../api/client';
+import { register, signIn } from '../lib/auth';
+import { serverConfig } from '../lib/config';
+import { writeSessionCookie } from '../lib/cookies';
+import { formText, notAForm, readForm } from '../lib/forms';
+
+let email = '';
+let problem: ApiProblem | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  email = formText(form, 'email');
+  const password = formText(form, 'password');
+  const config = serverConfig();
+  const target = { baseUrl: config.apiBaseUrl };
+  const registered = await register(target, email, password);
+  if (registered.ok) {
+    const now = Date.now();
+    const signedIn = await signIn(target, email, password, now);
+    if (signedIn.ok) {
+      writeSessionCookie(Astro.cookies, signedIn.session, config.sessionSecret, now);
+      return Astro.redirect('/profile', 303);
+    }
+    // The account exists; only the automatic sign-in failed.
+    return Astro.redirect('/sign-in', 303);
+  }
+  problem = registered.problem;
+  Astro.response.status = problem.status >= 500 ? (problem.status === 503 ? 503 : 502) : 400;
+} else if (Astro.locals.session) {
+  return Astro.redirect('/stats', 303);
+}
+---
+
+<PublicLayout title="Create account">
+  <div class="container page auth-page">
+    <div class="auth-panel">
+      <div class="page-header">
+        <h1 class="display">Create your account</h1>
+        <p class="muted">Free to start. Your rounds stay yours.</p>
+      </div>
+      <div class="card">
+        <form class="form" method="post" action="/sign-up" novalidate>
+          <Problem problem={problem} />
+          <Field name="email" label="Email" type="email" autocomplete="email" required value={email} problem={problem} />
+          <Field
+            name="password"
+            label="Password"
+            type="password"
+            autocomplete="new-password"
+            required
+            hint="At least 6 characters, with an upper and a lower case letter, a number and a symbol."
+            problem={problem}
+          />
+          <button class="btn btn-primary btn-block" type="submit">Create account</button>
+        </form>
+      </div>
+      <p class="auth-switch">Already have an account? <a href="/sign-in">Sign in</a></p>
+    </div>
+  </div>
+</PublicLayout>
+
+<style>
+  .auth-page { display: grid; justify-items: center; }
+  .auth-panel { width: 100%; max-width: 420px; }
+  .auth-switch { margin-top: var(--space-5); color: var(--color-text-secondary); }
+  .auth-switch a { display: inline-flex; align-items: center; min-height: 44px; }
+</style>

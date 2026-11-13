@@ -1,0 +1,91 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.ProfilePage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views"
+                 xmlns:rows="using:CustomGolfStats.App.Core.Storage.Rows">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid Padding="8,8,20,0" ColumnSpacing="4">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Button Click="OnBack" Style="{StaticResource BrandIconButtonStyle}" AutomationProperties.Name="Back">
+        <FontIcon Glyph="&#xE72B;" FontSize="18" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="Profile" Style="{StaticResource BrandTextTitleStyle}" VerticalAlignment="Center" />
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace3}">
+        <TextBlock Text="{x:Bind ViewModel.Email, Mode=OneWay}" Style="{StaticResource BrandTextSecondaryStyle}" />
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox Header="First name" Text="{x:Bind ViewModel.FirstName, Mode=TwoWay}" />
+          <TextBox Grid.Column="1" Header="Last name" Text="{x:Bind ViewModel.LastName, Mode=TwoWay}" />
+        </Grid>
+        <Grid ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBox Header="GHIN number" Text="{x:Bind ViewModel.GhinNumber, Mode=TwoWay}" InputScope="Number" />
+          <ComboBox Grid.Column="1" Header="Units" ItemsSource="{x:Bind local:ProfilePage.UnitChoices}" SelectedItem="{Binding Units, Mode=TwoWay}"
+                    HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" />
+        </Grid>
+        <Button Content="Save profile" Command="{x:Bind ViewModel.SaveProfileCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+        <TextBlock Text="Profile saved." Style="{StaticResource BrandTextCaptionStyle}" Foreground="{ThemeResource BrandPositiveBrush}"
+                   Visibility="{x:Bind local:Ui.VisibleIf(ViewModel.IsSaved), Mode=OneWay}" />
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+
+        <!-- Handicap -->
+        <TextBlock Text="{x:Bind local:Ui.Label('Handicap index')}" Style="{StaticResource BrandSectionLabelStyle}" />
+        <Border Style="{StaticResource BrandStatTileStyle}">
+          <StackPanel>
+            <TextBlock Text="{x:Bind local:Display.Handicap(ViewModel.LatestHandicapIndex), Mode=OneWay}" Style="{StaticResource BrandTextStatLStyle}" />
+            <TextBlock Text="Latest" Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+          </StackPanel>
+        </Border>
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox InputScope="Formula" Header="New index" PlaceholderText="e.g. 12.4 or +2.1" Text="{x:Bind ViewModel.NewHandicapText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+          <CalendarDatePicker Grid.Column="1" Header="Effective" Date="{Binding NewHandicapDate, Mode=TwoWay, Converter={StaticResource DateOffset}}"
+                              HorizontalAlignment="Stretch" MinHeight="{StaticResource BrandInputHeight}" DateFormat="{}{day.integer} {month.abbreviated} {year.full}" />
+          <Button Grid.Column="2" Content="+ Add" Command="{x:Bind ViewModel.AddHandicapCommand}" Style="{StaticResource BrandAccentButtonStyle}" VerticalAlignment="Bottom" />
+        </Grid>
+        <TextBlock Text="A plus handicap (better than scratch) starts with +, like +2.1." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+        <ItemsControl ItemsSource="{x:Bind ViewModel.HandicapErrors}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{x:Bind}" Style="{StaticResource BrandTextErrorStyle}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ItemsControl ItemsSource="{x:Bind ViewModel.HandicapHistory}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="rows:HandicapRow">
+              <Grid Padding="0,10" BorderBrush="{ThemeResource BrandBorderBrush}" BorderThickness="0,0,0,1">
+                <TextBlock Text="{x:Bind local:Display.DateOrNone(EffectiveOn)}" Style="{StaticResource BrandTextBodyStyle}" />
+                <TextBlock Text="{x:Bind local:Display.Handicap(Index)}" Style="{StaticResource BrandTextStatSStyle}" HorizontalAlignment="Right" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Button Content="Sign out" Command="{x:Bind ViewModel.SignOutCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" Margin="0,24,0,0" />
+        <TextBlock Text="Signing out keeps your rounds on this device." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</local:RoutePage>

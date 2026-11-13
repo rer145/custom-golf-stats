@@ -1,0 +1,107 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <!--
+      Mobile heads build on macOS (Xcode and the iOS/Android workloads). Everywhere else (CI on ubuntu) only the desktop head
+      builds, so the solution test run stays green without mobile workloads. `-p:AppDesktopOnly=true` gives the same desktop-only
+      build on macOS (for example to run the solution in Release exactly like CI).
+    -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(AppDesktopOnly)' != 'true'">net10.0-ios;net10.0-android;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX')) or '$(AppDesktopOnly)' == 'true'">net10.0-desktop</TargetFrameworks>
+
+    <OutputType>Exe</OutputType>
+    <UnoSingleProject>true</UnoSingleProject>
+    <!-- Uno Hot Design (a paid designer tool) is not used; Hot Reload through the dev server still works. -->
+    <UnoDisableHotDesign>true</UnoDisableHotDesign>
+    <RootNamespace>CustomGolfStats.App</RootNamespace>
+
+    <ApplicationTitle>Custom Golf Stats</ApplicationTitle>
+    <ApplicationId>com.customgolfstats.app</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationPublisher>Custom Golf Stats</ApplicationPublisher>
+    <Description>Custom Golf Stats: golf rounds, shot by shot.</Description>
+
+    <!-- https://aka.platform.uno/singleproject-features -->
+    <UnoFeatures>
+      Mvvm;
+      Skia;
+    </UnoFeatures>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!--
+    LOCAL WORKAROUND, Debug only; remove after Xcode 26.1 is installed. The installed iOS workload (26.1) asks for Xcode 26.1 and
+    this machine has Xcode 26.0, which builds and runs simulator apps fine once: the Xcode version check is off, only the platform
+    SDK assemblies are trimmed (the default None link mode fails with MT0180 against the 26.0 SDK; the app's own and third-party
+    assemblies stay whole for sqlite-net and JSON reflection), trim analysis of untrimmed assemblies is suppressed, and
+    UHR001 (Hot Reload prefers MTouchLink=None) / MT0079 (Xcode 26.1 recommended) are demoted to messages.
+    Release builds keep Xcode validation, the SDK's default linking and every trim warning.
+  -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug'">
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+    <MtouchLink>SdkOnly</MtouchLink>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);UHR001;MT0079</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- Simulator builds are signed ad hoc so the Keychain entitlement (Platforms/iOS/Entitlements.plist) applies without a
+       developer certificate. Device builds use a real signing identity (CodesignKey / provisioning profile). -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug' and !$(RuntimeIdentifier.StartsWith('ios-'))">
+    <CodesignKey>-</CodesignKey>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CustomGolfStats.App.Core\CustomGolfStats.App.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <!-- sqlite-net maps the row types and the API client serializes its DTOs by reflection: keep them whole when trimming. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="CustomGolfStats.App.Core" RootMode="All" />
+    <TrimmerRootAssembly Include="CustomGolfStats.Api.Client" RootMode="All" />
+  </ItemGroup>
+
+  <!-- Development-only platform settings: plain HTTP to the local API (iOS ATS exception, Android cleartext to 10.0.2.2). Debug
+       builds get them; a Release build can opt in with -p:AllowLocalCleartext=true to smoke-test against a local API. -->
+  <PropertyGroup>
+    <UseLocalCleartext Condition="'$(Configuration)' == 'Debug' or '$(AllowLocalCleartext)' == 'true'">true</UseLocalCleartext>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' == 'true' and '$(TargetFramework)' == 'net10.0-ios'">
+    <PartialAppManifest Include="Platforms\iOS\Info.Debug.plist" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' == 'true' and '$(TargetFramework)' == 'net10.0-android'">
+    <AndroidResource Remove="Platforms\Android\Resources\xml\network_security_config.xml" />
+    <AndroidResource Include="Platforms\Android\DebugResources\xml\network_security_config.xml" Link="Platforms\Android\Resources\xml\network_security_config.xml" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalCleartext)' != 'true' or '$(TargetFramework)' != 'net10.0-android'">
+    <AndroidResource Remove="Platforms\Android\DebugResources\**" />
+    <None Remove="Platforms\Android\DebugResources\**" />
+  </ItemGroup>
+
+  <!-- A store build must name its API: without -p:ApiBaseUrl a Release mobile build would talk to 127.0.0.1. -->
+  <Target Name="RequireApiBaseUrlForRelease" BeforeTargets="BeforeBuild"
+          Condition="'$(Configuration)' == 'Release' and '$(ApiBaseUrl)' == '' and ('$(TargetFramework)' == 'net10.0-ios' or '$(TargetFramework)' == 'net10.0-android')">
+    <Error Code="CGS0001" Text="Release builds for iOS and Android need the API address: dotnet build -c Release -p:ApiBaseUrl=https://api.example.com/" />
+  </Target>
+
+  <!-- API base URL for this build: dotnet build -p:ApiBaseUrl=https://api.example.com/ (see Composition/AppConfig.cs). -->
+  <ItemGroup Condition="'$(ApiBaseUrl)' != ''">
+    <AssemblyMetadata Include="ApiBaseUrl" Value="$(ApiBaseUrl)" />
+  </ItemGroup>
+
+  <!-- Brand kit (brand/BRAND.md). Icons and splash go through Uno.Resizetizer; fonts are bundled as content. -->
+  <ItemGroup>
+    <UnoIcon Include="Assets\Icons\icon.svg" ForegroundFile="Assets\Icons\icon_foreground.svg" ForegroundScale="0.7" Color="#0E2A21" />
+    <UnoSplashScreen Include="Assets\Splash\splash_screen.svg" BaseSize="120,120" BackgroundColor="#0E2A21" />
+    <Content Include="..\..\brand\fonts\*.ttf" Link="Assets\Fonts\%(Filename)%(Extension)" />
+    <Content Include="..\..\brand\fonts\licenses\*" Link="Assets\Fonts\licenses\%(Filename)%(Extension)" />
+    <Content Include="..\..\brand\logo\png\mark-color-256.png;..\..\brand\logo\png\mark-reversed-256.png;..\..\brand\logo\png\lockup-stacked-on-light@2x.png;..\..\brand\logo\png\lockup-stacked-on-dark@2x.png"
+             Link="Assets\Brand\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

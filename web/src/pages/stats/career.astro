@@ -1,0 +1,38 @@
+---
+import { call } from '../../api/client';
+import StatsShell from '../../components/stats/StatsShell.astro';
+import SummaryTable, { type SummaryRow } from '../../components/stats/SummaryTable.astro';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { firstProblem, pickYear, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/career'))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const years = yearsFrom(yearsR);
+// The year the season tabs lead back to.
+const year = pickYear(years, Astro.url.searchParams.get('year'));
+const rows: SummaryRow[] | null = r.ok
+  ? r.data.years.map((y) => ({
+      key: String(y.year),
+      header: String(y.year),
+      href: `/stats/${y.year}`,
+      nine: y.nine,
+      eighteen: y.eighteen,
+      holes: y.holes,
+      toPar: y.toPar,
+      puttsPerHole: y.puttsPerHole,
+      gir: y.gir,
+      drivingAccuracy: y.drivingAccuracy,
+      earliest: y.earliest,
+      latest: y.latest,
+    }))
+  : null;
+---
+
+<StatsShell section="career" year={year} years={years} lede="Every season side by side." problem={problem}>
+  {rows && rows.length === 0 && <p class="lede">No rounds yet. Each season you play gets a row here.</p>}
+  {rows && rows.length > 0 && <SummaryTable caption="Career, by year" rowHeader="Year" rows={rows} />}
+</StatsShell>

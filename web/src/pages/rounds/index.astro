@@ -1,0 +1,103 @@
+---
+import { call } from '../../api/client';
+import AppLayout from '../../layouts/AppLayout.astro';
+import Problem from '../../components/Problem.astro';
+import YearPicker from '../../components/stats/YearPicker.astro';
+import { formatDate, formatInteger, formatToPar } from '../../lib/format';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { firstProblem, parseYear, yearsFrom } from '../../lib/stats';
+import { pageStatus } from '../../lib/problems';
+
+const api = Astro.locals.api;
+const yearsR = await call(api.GET('/stats/years'));
+if (isSessionEnded(yearsR)) return endSession(Astro);
+const years = yearsFrom(yearsR);
+
+// ?year=all lists every round; a year lists that season; anything else (or nothing) the latest season.
+const requested = Astro.url.searchParams.get('year');
+const all = requested === 'all' || years.length === 0;
+const year = all ? null : (parseYear(requested) ?? years[0]!);
+
+const r = await call(api.GET('/rounds', year === null ? {} : { params: { query: { year } } }));
+if (isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = pageStatus(problem.status);
+const rounds = r.ok ? r.data : null;
+const entryLabel = { Quick: 'Quick', ShotByShot: 'Shot by shot' } as const;
+---
+
+<AppLayout title={year === null ? 'Rounds' : `Rounds ${year}`}>
+  <div class="container page">
+    <div class="page-header rounds-header">
+      <div class="heading-block">
+        <h1 class="display">{year === null ? 'All rounds' : `Rounds, ${year}`}</h1>
+        <p class="lede">Every round you’ve played, newest first. Open one for its scorecard.</p>
+      </div>
+      {years.length > 0 && <YearPicker year={year ?? years[0]!} years={years} action="/rounds" allOption selected={year === null ? 'all' : String(year)} />}
+    </div>
+
+    <Problem problem={problem} heading="Couldn’t load your rounds" />
+
+    {
+      rounds && rounds.length === 0 && (
+        <p class="card empty">
+          {year === null ? 'No rounds yet. Rounds you play show up here.' : `No rounds in ${year}. Pick another season above.`}
+        </p>
+      )
+    }
+    {
+      rounds && rounds.length > 0 && (
+        <div class="table-wrap list-wrap">
+          <table class="table rounds">
+            <caption class="visually-hidden">{year === null ? 'All rounds' : `Rounds in ${year}`}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Course</th>
+                <th scope="col" class="num">Holes</th>
+                <th scope="col" class="num">Score</th>
+                <th scope="col" class="num">To par</th>
+                <th scope="col">Entry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rounds.map((round) => (
+                <tr data-round={round.id}>
+                  <th scope="row" class="num">
+                    <a href={`/rounds/${round.id}`} aria-label={`Scorecard for ${formatDate(round.playedOn)}, ${round.courseName}`}>
+                      {formatDate(round.playedOn)}
+                    </a>
+                  </th>
+                  <td>
+                    {round.courseName} <span class="muted">({round.teeName})</span>
+                  </td>
+                  <td class="num">{formatInteger(round.holes)}</td>
+                  <td class="num strong">{formatInteger(round.score)}</td>
+                  <td class="num">{formatToPar(round.toPar)}</td>
+                  <td class="muted">{entryLabel[round.entryMode] ?? round.entryMode}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .rounds-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-6); }
+  .heading-block { display: grid; gap: var(--space-2); }
+  .list-wrap { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .list-wrap { border-color: transparent; }
+  }
+  :root[data-theme='dark'] .list-wrap { border-color: transparent; }
+  .rounds { white-space: nowrap; }
+  .rounds td:nth-child(2) { white-space: normal; min-width: 12em; }
+  .rounds th, .rounds td { padding-block: var(--space-1); }
+  .rounds tbody tr:last-child th, .rounds tbody tr:last-child td { border-bottom: 0; }
+  .rounds th[scope='row'] { text-align: left; }
+  .rounds th[scope='row'] a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+  .rounds .strong { font-weight: 700; }
+</style>

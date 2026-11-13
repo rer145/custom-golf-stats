@@ -1,0 +1,258 @@
+---
+import Field from '../Field.astro';
+import { fieldErrors, type ApiProblem } from '../../api/client';
+import { GENDERS, HOLE_ROWS, type TeeValues } from './course-form';
+
+/**
+ * Inputs for one tee: name and gender (new tees), the date a new version takes effect, rating and slope, and the
+ * 18 hole rows (front and back nine side by side on wide screens). `prefix` is `tees[0].` on the manual course form.
+ */
+interface Props {
+  values: TeeValues;
+  prefix: string;
+  problem?: ApiProblem | null | undefined;
+  /** Show tee name and gender (adding a tee); a new version keeps the tee's. */
+  identity?: boolean;
+  /** Show the effective date (new version). */
+  effectiveFrom?: boolean;
+  /** Focus the tee name (a tee just added). */
+  autofocus?: boolean;
+}
+
+const { values, prefix, problem, identity = true, effectiveFrom = false, autofocus = false } = Astro.props;
+const id = (name: string) => `f-${(prefix + name).replace(/[^A-Za-z0-9_-]/g, '-')}`;
+const hasSplit = [values.frontRating, values.frontSlope, values.backRating, values.backSlope].some((v) => v !== '');
+const splitErrors = ['frontRating', 'frontSlope', 'backRating', 'backSlope'].some((k) => fieldErrors(problem, prefix + k).length > 0);
+const holesErrors = fieldErrors(problem, `${prefix}holes`);
+const nines = [
+  { label: 'Front nine', rows: Array.from({ length: 9 }, (_, i) => i) },
+  { label: 'Back nine', rows: Array.from({ length: HOLE_ROWS - 9 }, (_, i) => i + 9) },
+];
+const cols = [
+  { key: 'par', label: 'Par', short: 'Par', max: 6 },
+  { key: 'yardage', label: 'Yards', short: 'Yards', max: 1000 },
+  { key: 'strokeIndex', label: 'Stroke index', short: 'SI', max: 18 },
+] as const;
+---
+
+<div class="tee-fields">
+  <input type="hidden" name={`${prefix}id`} value={values.id} />
+  {
+    identity && (
+      <div class="row">
+        <Field name={`${prefix}name`} id={id('name')} label="Tee name" hint="For example Blue, White or Red." maxlength={100} autofocus={autofocus} value={values.name} problem={problem} />
+        <div class="field">
+          <label for={id('gender')}>Rated for</label>
+          <p class="hint" id={id('gender-hint')}>
+            Who the rating and slope are for.
+          </p>
+          <select id={id('gender')} name={`${prefix}gender`} aria-describedby={id('gender-hint')}>
+            {GENDERS.map((g) => (
+              <option value={g} selected={values.gender === g}>
+                {g === 'Unspecified' ? 'Not specified' : g === 'Male' ? 'Men' : 'Women'}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    )
+  }
+  {
+    effectiveFrom && (
+      <Field
+        name={`${prefix}effectiveFrom`}
+        id={id('effectiveFrom')}
+        label="Effective from"
+        type="date"
+        hint="The first day the new numbers applied. Rounds before it keep the old version."
+        value={values.effectiveFrom}
+        problem={problem}
+      />
+    )
+  }
+  <div class="row numbers">
+    <Field name={`${prefix}rating`} id={id('rating')} label="Course rating" inputmode="decimal" class="num" value={values.rating} problem={problem} />
+    <Field name={`${prefix}slope`} id={id('slope')} label="Slope" inputmode="numeric" class="num" value={values.slope} problem={problem} />
+  </div>
+  <details class="split" open={hasSplit || splitErrors}>
+    <summary>Front and back nine ratings</summary>
+    <p class="caption">Optional. Leave blank if the scorecard only lists 18-hole numbers.</p>
+    <div class="row numbers four">
+      <Field name={`${prefix}frontRating`} id={id('frontRating')} label="Front rating" inputmode="decimal" class="num" value={values.frontRating} problem={problem} />
+      <Field name={`${prefix}frontSlope`} id={id('frontSlope')} label="Front slope" inputmode="numeric" class="num" value={values.frontSlope} problem={problem} />
+      <Field name={`${prefix}backRating`} id={id('backRating')} label="Back rating" inputmode="decimal" class="num" value={values.backRating} problem={problem} />
+      <Field name={`${prefix}backSlope`} id={id('backSlope')} label="Back slope" inputmode="numeric" class="num" value={values.backSlope} problem={problem} />
+    </div>
+  </details>
+
+  <fieldset class="holes" aria-describedby={holesErrors.length > 0 ? id('holes-error') : undefined}>
+    <legend class="heading">Holes</legend>
+    <p class="caption">Fill a row for each hole. Leave the back nine blank for a 9-hole tee.</p>
+    {holesErrors.length > 0 && (
+      <div class="field-error" id={id('holes-error')}>
+        {holesErrors.map((e) => <p>{e}</p>)}
+      </div>
+    )}
+    <div class="nines">
+      {
+        nines.map((nine) => (
+          <table class="table hole-table">
+            <caption class="visually-hidden">{nine.label}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Hole</th>
+                {cols.map((c) => (
+                  <th scope="col" class="num">
+                    {c.short === c.label ? c.label : <abbr title={c.label}>{c.short}</abbr>}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {nine.rows.map((row) => (
+                <tr>
+                  <th scope="row" class="num">{row + 1}</th>
+                  {cols.map((c) => {
+                    const name = `${prefix}holes[${row}].${c.key}`;
+                    const errors = fieldErrors(problem, name);
+                    const inputId = id(`holes-${row}-${c.key}`);
+                    return (
+                      <td class="num">
+                        <input
+                          id={inputId}
+                          name={name}
+                          class="num"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          aria-label={`Hole ${row + 1} ${c.label.toLowerCase()}`}
+                          aria-invalid={errors.length > 0 ? 'true' : undefined}
+                          aria-describedby={errors.length > 0 ? `${inputId}-error` : undefined}
+                          value={values.holes[row]?.[c.key] ?? ''}
+                        />
+                        {errors.length > 0 && (
+                          <span class="cell-error" id={`${inputId}-error`}>
+                            {errors.join(' ')}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))
+      }
+    </div>
+  </fieldset>
+</div>
+
+<style>
+  .tee-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .row.four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: var(--space-3);
+  }
+  .row :global(select) {
+    width: 100%;
+    min-height: var(--touch-target);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 400 16px/1.4 var(--font-body);
+  }
+  .numbers :global(input.num) {
+    font-family: var(--font-mono);
+  }
+  .split summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .holes {
+    display: grid;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .holes legend {
+    padding: 0;
+    margin-bottom: var(--space-1);
+  }
+  .nines {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-6);
+  }
+  .hole-table th,
+  .hole-table td {
+    padding: var(--space-1) var(--space-2);
+    vertical-align: top;
+  }
+  .hole-table tbody th {
+    padding-top: var(--space-3);
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+    width: 3.5em;
+  }
+  .hole-table input {
+    width: 100%;
+    min-width: 3.5em;
+    min-height: var(--touch-target);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: 500 16px/1.2 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .hole-table input:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+    border-color: var(--color-primary);
+  }
+  .hole-table input[aria-invalid='true'] {
+    border-color: var(--color-negative);
+  }
+  .hole-table abbr {
+    text-decoration: none;
+  }
+  .cell-error {
+    display: block;
+    margin-top: var(--space-1);
+    font: 500 13px/1.3 var(--font-body);
+    color: var(--color-negative);
+    text-align: left;
+  }
+  @media (max-width: 860px) {
+    .nines {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .row.four {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 420px) {
+    .row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
