@@ -32,6 +32,18 @@ public sealed class EntitlementsRepository(SQLiteAsyncConnection db, IClock cloc
         await db.InsertOrReplaceAsync(row);
     }
 
+    /// <summary>Gives back a trial round consumed by <see cref="TryConsumeTrialRoundAsync"/> when the round could not be created.</summary>
+    public Task RefundTrialRoundAsync() => db.RunInTransactionAsync(c =>
+    {
+        var row = c.Find<EntitlementsRow>(EntitlementsRow.SingletonId);
+        if (row is not { TrialShotRoundsRemaining: { } remaining })
+            return;
+        row.TrialShotRoundsRemaining = remaining + 1;
+        row.ShotByShotEntry = true;
+        row.UpdatedAt = clock.UtcNow;
+        c.Update(row);
+    });
+
     /// <summary>
     /// Offline start of a shot-by-shot round: true when allowed. Paid (or unlimited) consumes nothing; a free golfer's cached
     /// remaining count is decremented (never below zero) and the feature closes at zero. Nothing cached means no.

@@ -247,11 +247,12 @@ public class SyncEnginePullTests
         using var release = new SemaphoreSlim(0);
         rig.Changes = _ =>
         {
-            release.Wait(TimeSpan.FromSeconds(10));
+            if (rig.Server.To("GET", "/sync/changes").Count() == 1)
+                release.Wait(TimeSpan.FromSeconds(10)); // only the first run is held
             return StubHandler.Json(HttpStatusCode.OK, Payloads.Changes(SyncRig.Cursor1));
         };
 
-        var first = rig.SyncAsync();
+        var first = Task.Run(() => rig.SyncAsync());
         while (!rig.Server.Requests.Any(r => r.Path == "/sync/changes"))
             await Task.Delay(10, TestContext.Current.CancellationToken);
         var second = rig.SyncAsync();

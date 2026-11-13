@@ -105,6 +105,31 @@ public static class ApiMapper
         return new CourseRecord(course, tees);
     }
 
+    /// <summary>A course returned by import/create/read as a not-pending local record.</summary>
+    public static CourseRecord ToRecord(ApiClient.CourseDetailDto dto)
+    {
+        var course = new CourseRow
+        {
+            Id = dto.Id, Name = dto.Name ?? "", ClubName = dto.ClubName, Address = dto.Address, City = dto.City, Region = dto.Region,
+            Country = dto.Country, Phone = dto.Phone, Website = dto.Website, Latitude = dto.Latitude, Longitude = dto.Longitude,
+            Status = dto.Status, Source = dto.Source, MergedIntoCourseId = dto.MergedIntoCourseId, PendingSync = false,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        var tees = (dto.Tees ?? []).Select(t => new TeeRecord(
+            new TeeRow { Id = t.Id, CourseId = dto.Id, Name = t.Name ?? "", Gender = t.Gender },
+            (t.Versions ?? []).Select(v => new TeeVersionRecord(
+                new TeeVersionRow
+                {
+                    Id = v.Id, TeeId = t.Id, EffectiveFrom = v.EffectiveFrom.DateTime.Date, Par = v.Par, Rating = v.Rating, Slope = v.Slope,
+                    FrontPar = v.FrontPar, FrontRating = v.FrontRating, FrontSlope = v.FrontSlope,
+                    BackPar = v.BackPar, BackRating = v.BackRating, BackSlope = v.BackSlope,
+                },
+                (v.Holes ?? []).OrderBy(h => h.Number)
+                    .Select(h => new TeeHoleRow { TeeVersionId = v.Id, Number = h.Number, Par = h.Par, Yardage = h.Yardage, StrokeIndex = h.StrokeIndex })
+                    .ToList())).ToList())).ToList();
+        return new CourseRecord(course, tees);
+    }
+
     /// <summary>The body for <c>POST /courses</c> of a course created on this device: client ids, each tee's latest version.</summary>
     public static ApiClient.CreateCourseRequest ToCreateRequest(CourseRecord record)
     {
