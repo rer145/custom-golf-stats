@@ -1,0 +1,51 @@
+{
+  "career": {
+    "years": [
+      {
+        "year": 2025,
+        "nine": { "rounds": 1, "average": { "value": 39, "total": 39, "count": 1 }, "low": 39, "high": 39 },
+        "eighteen": { "rounds": 1, "average": { "value": 79, "total": 79, "count": 1 }, "low": 79, "high": 79 },
+        "holes": 37,
+        "toPar": 16,
+        "puttsPerHole": { "value": 1.945946, "total": 72, "count": 37 },
+        "gir": { "value": 32.432432, "numerator": 12, "denominator": 37 },
+        "drivingAccuracy": { "value": 65.517241, "numerator": 19, "denominator": 29 },
+        "earliest": "2025-04-12",
+        "latest": "2025-06-14"
+      },
+      {
+        "year": 2024,
+        "nine": { "rounds": 3, "average": { "value": 41.333333, "total": 124, "count": 3 }, "low": 38, "high": 45 },
+        "eighteen": { "rounds": 8, "average": { "value": 86.25, "total": 690, "count": 8 }, "low": 81, "high": 93 },
+        "holes": 171,
+        "toPar": 130,
+        "puttsPerHole": { "value": 1.988304, "total": 340, "count": 171 },
+        "gir": { "value": 23.391813, "numerator": 40, "denominator": 171 },
+        "drivingAccuracy": { "value": 52.592593, "numerator": 71, "denominator": 135 },
+        "earliest": "2024-03-30",
+        "latest": "2024-10-19"
+      },
+      {
+        "year": 2023,
+        "nine": { "rounds": 0, "average": { "value": null, "total": 0, "count": 0 }, "low": null, "high": null },
+        "eighteen": { "rounds": 5, "average": { "value": 90.4, "total": 452, "count": 5 }, "low": 85, "high": 97 },
+        "holes": 90,
+        "toPar": 92,
+        "puttsPerHole": { "value": 2.044444, "total": 184, "count": 90 },
+        "gir": { "value": 15.555556, "numerator": 14, "denominator": 90 },
+        "drivingAccuracy": { "value": 48.571429, "numerator": 34, "denominator": 70 },
+        "earliest": "2023-05-06",
+        "latest": "2023-09-23"
+      }
+    ]
+  },
+  "handicap": {
+    "entries": [
+      { "effectiveOn": "2023-04-01", "index": 14.2 },
+      { "effectiveOn": "2023-09-15", "index": 13.6 },
+      { "effectiveOn": "2024-05-01", "index": 12.9 },
+      { "effectiveOn": "2024-10-01", "index": 12.1 },
+      { "effectiveOn": "2025-06-01", "index": 11.8 }
+    ]
+  }
+}

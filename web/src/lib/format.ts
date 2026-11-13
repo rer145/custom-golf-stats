@@ -56,3 +56,9 @@ export function formatSigned(value: Numeric, digits = 1): string {
   if (Number(s.replace(MINUS, '-')) === 0) return (0).toFixed(digits);
   return n > 0 ? `+${s}` : s;
 }
+
+/** Plain decimals, sign only when negative (a real minus): handicap indexes `11.8`, `−1.2`. */
+export function formatDecimal(value: Numeric, digits = 1): string {
+  const n = toNumber(value);
+  return n === null ? DASH : fixed(n, digits);
+}

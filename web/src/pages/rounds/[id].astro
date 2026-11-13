@@ -1,0 +1,123 @@
+---
+import { call } from '../../api/client';
+import Problem from '../../components/Problem.astro';
+import Scorecard from '../../components/rounds/Scorecard.astro';
+import AppLayout from '../../layouts/AppLayout.astro';
+import { formatDecimal, formatInteger, formatToPar } from '../../lib/format';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { formatDate } from '../../lib/stats';
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const id = Astro.params.id ?? '';
+if (!GUID.test(id)) return Astro.rewrite('/404');
+
+const r = await call(Astro.locals.api.GET('/rounds/{id}/scorecard', { params: { path: { id } } }));
+if (isSessionEnded(r)) return endSession(Astro);
+if (!r.ok && r.problem.status === 404) return Astro.rewrite('/404');
+if (!r.ok) Astro.response.status = r.problem.status;
+const card = r.ok ? r.data : null;
+const year = card ? card.playedOn.slice(0, 4) : null;
+---
+
+<AppLayout title={card ? `${card.courseName}, ${formatDate(card.playedOn)}` : 'Scorecard'}>
+  {
+    card && (
+      <section class="band round-header" aria-labelledby="round-title">
+        <div class="container round-band">
+          <div class="round-id">
+            <p class="caption">
+              <a href={`/rounds?year=${year}`}>Rounds</a> / {formatDate(card.playedOn)}
+            </p>
+            <h1 id="round-title" class="display">{card.courseName}</h1>
+            <p class="round-meta">
+              {card.teeName} tees, par <span class="num">{formatInteger(card.par)}</span>, rating{' '}
+              <span class="num">{formatDecimal(card.rating)}</span> / slope <span class="num">{formatInteger(card.slope)}</span>
+            </p>
+          </div>
+          <dl class="round-numbers">
+            <div class="score-block">
+              <dt class="band-label">Score</dt>
+              <dd class="stat stat-xl">{formatInteger(card.score)}</dd>
+            </div>
+            <div class="score-block">
+              <dt class="band-label">To par</dt>
+              <dd class="stat stat-xl to-par">{formatToPar(card.toPar)}</dd>
+            </div>
+            <div>
+              <dt class="band-label">Holes</dt>
+              <dd class="stat stat-m">{formatInteger(card.holesPlayed)}</dd>
+            </div>
+            <div>
+              <dt class="band-label">Putts</dt>
+              <dd class="stat stat-m">{formatInteger(card.putts)}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    )
+  }
+  <div class="container page">
+    {
+      card ? (
+        <div class="stack">
+          <Scorecard card={card} />
+          <div class="caption legend">
+            <p class="keys">
+              <span class="key"><span class="mark mark-circle" aria-hidden="true" /> Circled: under par</span>
+              <span class="key"><span class="mark mark-square" aria-hidden="true" /> Boxed: over par</span>
+            </p>
+            <p>SI is the hole’s stroke index. Sand counts greenside and fairway bunker shots.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div class="page-header">
+            <h1 class="display">Scorecard</h1>
+          </div>
+          <Problem problem={r.ok ? null : r.problem} heading="Couldn’t load this scorecard" />
+        </>
+      )
+    }
+  </div>
+</AppLayout>
+
+<style>
+  .round-header { border-bottom: 1px solid var(--color-border); }
+  .round-band {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-8);
+    padding-block: var(--space-10);
+  }
+  .round-id { display: grid; gap: var(--space-2); min-width: 0; }
+  .round-id a { color: var(--color-text-secondary); }
+  .round-meta { color: var(--color-text-secondary); }
+  .round-numbers { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-6) var(--space-8); margin: 0; }
+  .round-numbers div { display: grid; gap: var(--space-2); }
+  .round-numbers dd { margin: 0; font-weight: 700; }
+  .band-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  /* The number that matters, in Pin Orange: fine on Fairway Ink at this size (BRAND §3). */
+  .to-par { color: var(--cgs-orange); }
+  .page { padding-top: var(--space-8); }
+
+  .legend { display: grid; gap: var(--space-2); }
+  .keys { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+  .key { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .mark { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--color-text); }
+  .mark-circle { border-radius: 50%; }
+  .mark-square { border-color: var(--color-text-secondary); border-radius: 2px; }
+
+  @media (max-width: 600px) {
+    .round-band { padding-block: var(--space-8); gap: var(--space-6); }
+    .round-numbers .stat-xl { font-size: 48px; }
+  }
+</style>

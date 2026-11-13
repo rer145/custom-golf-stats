@@ -1,0 +1,73 @@
+---
+import { call } from '../../api/client';
+import Chart from '../../components/stats/Chart.astro';
+import StatTile from '../../components/stats/StatTile.astro';
+import StatTiles from '../../components/stats/StatTiles.astro';
+import StatsShell from '../../components/stats/StatsShell.astro';
+import { chartValue } from '../../lib/chart-spec';
+import { formatDecimal, formatInteger } from '../../lib/format';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { firstProblem, formatDate, pickYear, yearsFrom } from '../../lib/stats';
+
+const api = Astro.locals.api;
+const [yearsR, r] = await Promise.all([call(api.GET('/stats/years')), call(api.GET('/stats/handicap'))]);
+if (isSessionEnded(yearsR) || isSessionEnded(r)) return endSession(Astro);
+const problem = firstProblem(yearsR, r);
+if (problem) Astro.response.status = problem.status;
+const years = yearsFrom(yearsR);
+const year = pickYear(years, Astro.url.searchParams.get('year'));
+const entries = r.ok ? r.data.entries : null;
+const latest = entries?.at(-1);
+---
+
+<StatsShell section="handicap" year={year} years={years} lede="Your handicap index as it has moved." problem={problem}>
+  {entries && entries.length === 0 && <p class="lede">No handicap index recorded yet.</p>}
+  {
+    entries && latest && (
+      <>
+        <StatTiles columns={2}>
+          <StatTile label="Current index" value={formatDecimal(latest.index)} caption={`As of ${formatDate(latest.effectiveOn)}`} accent size="l" />
+          <StatTile label="Entries" value={formatInteger(entries.length)} caption={`Since ${formatDate(entries[0]!.effectiveOn)}`} size="l" />
+        </StatTiles>
+        <Chart
+          title="Handicap history"
+          labelHeader="Effective"
+          summary="Handicap index over time, oldest first."
+          spec={{
+            kind: 'line',
+            format: 'decimal',
+            highlight: entries.length - 1,
+            labels: entries.map((e) => formatDate(e.effectiveOn)),
+            series: [{ name: 'Index', values: entries.map((e) => chartValue(e.index)) }],
+          }}
+        />
+        <section class="card history" aria-labelledby="history-title">
+          <h2 id="history-title" class="title">History</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Effective</th>
+                  <th scope="col" class="num">Index</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...entries].reverse().map((e) => (
+                  <tr>
+                    <th scope="row" class="num">{formatDate(e.effectiveOn)}</th>
+                    <td class="num">{formatDecimal(e.index)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    )
+  }
+</StatsShell>
+
+<style>
+  .history { display: grid; gap: var(--space-4); }
+  .history th[scope='row'] { text-align: left; font-weight: 500; }
+</style>

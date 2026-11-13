@@ -1,13 +1,37 @@
 ---
-// Placeholder until Task 2 (stats pages) replaces it with a redirect to the latest year.
+// /stats sends the golfer to a section for a year: the latest by default; the season picker posts ?year=&section= here.
+import { call } from '../../api/client';
+import Problem from '../../components/Problem.astro';
 import AppLayout from '../../layouts/AppLayout.astro';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { isSectionSlug, pickYear, sectionHref, yearsFrom } from '../../lib/stats';
+
+const r = await call(Astro.locals.api.GET('/stats/years'));
+if (isSessionEnded(r)) return endSession(Astro);
+const years = yearsFrom(r);
+const query = Astro.url.searchParams;
+const sectionParam = query.get('section');
+const section = isSectionSlug(sectionParam) ? sectionParam : 'overall';
+
+if (r.ok && years.length > 0) {
+  const year = pickYear(years, query.get('year'));
+  return Astro.redirect(sectionHref(section, year), 303);
+}
+if (!r.ok) Astro.response.status = r.problem.status;
 ---
 
 <AppLayout title="Stats">
   <div class="container page">
     <div class="page-header">
       <h1 class="display">Stats</h1>
-      <p class="lede">Your season and career stats will show here.</p>
+      {
+        r.ok ? (
+          <p class="lede">No rounds yet. Your season and career stats show here once you’ve played one.</p>
+        ) : (
+          <p class="lede">Your season and career stats.</p>
+        )
+      }
     </div>
+    {r.ok ? <p><a class="btn btn-primary" href="/rounds">Go to your rounds</a></p> : <Problem problem={r.problem} heading="Couldn’t load your stats" />}
   </div>
 </AppLayout>

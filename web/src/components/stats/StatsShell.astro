@@ -1,0 +1,76 @@
+---
+import type { ApiProblem } from '../../api/client';
+import AppLayout from '../../layouts/AppLayout.astro';
+import { STATS_SECTIONS, sectionHref, type SectionSlug } from '../../lib/stats';
+import Problem from '../Problem.astro';
+import YearPicker from './YearPicker.astro';
+
+/**
+ * Frame for every stats page: heading, the season picker (year sections only), the section tabs, and either the
+ * API's problem or the section's content.
+ */
+interface Props {
+  section: SectionSlug;
+  /** The year being shown, or the year the tabs lead back to on all-years sections (null when there are no rounds). */
+  year: number | null;
+  years: number[];
+  lede: string;
+  problem?: ApiProblem | null;
+}
+
+const { section, year, years, lede, problem } = Astro.props;
+const current = STATS_SECTIONS.find((s) => s.slug === section)!;
+const heading = current.perYear ? `${current.label}, ${year}` : current.label;
+const tabs = STATS_SECTIONS.filter((s) => !s.perYear || year !== null);
+---
+
+<AppLayout title={current.perYear ? `${current.label} ${year}` : current.label}>
+  <div class="container page">
+    <div class="page-header stats-header">
+      <div class="stats-heading">
+        <h1 class="display">{heading}</h1>
+        <p class="lede">{lede}</p>
+      </div>
+      {current.perYear && year !== null && <YearPicker year={year} years={years} section={section} />}
+    </div>
+
+    <nav class="tabs" aria-label="Stats sections">
+      <ul>
+        {
+          tabs.map((s) => (
+            <li>
+              <a href={sectionHref(s.slug, year)} aria-current={s.slug === section ? 'page' : undefined}>
+                {s.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    {problem ? <Problem problem={problem} heading="Couldn’t load these stats" /> : <div class="stats-body"><slot /></div>}
+  </div>
+</AppLayout>
+
+<style>
+  .stats-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-6); margin-bottom: var(--space-6); }
+  .stats-heading { display: grid; gap: var(--space-2); }
+
+  .tabs { margin-bottom: var(--space-8); border-bottom: 1px solid var(--color-border); }
+  .tabs ul { display: flex; flex-wrap: wrap; gap: 0 var(--space-1); margin: 0 calc(-1 * var(--space-3)); padding: 0; list-style: none; }
+  .tabs a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    padding: 0 var(--space-3);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    font-size: 15px;
+    text-decoration: none;
+    box-shadow: inset 0 -2px 0 transparent;
+  }
+  .tabs a:hover { color: var(--color-text); }
+  .tabs a[aria-current='page'] { color: var(--color-text); box-shadow: inset 0 -2px 0 var(--color-primary); }
+
+  .stats-body { display: grid; gap: var(--space-10); }
+</style>

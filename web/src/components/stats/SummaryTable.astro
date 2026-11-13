@@ -1,0 +1,132 @@
+---
+import type { Schemas } from '../../api/client';
+import { formatAverage, formatInteger, formatPercent, formatToPar } from '../../lib/format';
+import { formatDate } from '../../lib/stats';
+
+/** The career-style table: one row per year (career) or per course and tee (courses), 9 and 18 holes side by side. */
+export interface SummaryRow {
+  key: string;
+  header: string;
+  sub?: string;
+  href?: string;
+  nine: Schemas['LengthSummaryDto'];
+  eighteen: Schemas['LengthSummaryDto'];
+  holes: number | string;
+  toPar: number | string;
+  puttsPerHole: Schemas['AverageDto'];
+  gir: Schemas['RatioDto'];
+  drivingAccuracy: Schemas['RatioDto'];
+  /** Par 3, 4 and 5 average to par (courses only). */
+  byPar?: [Schemas['AverageDto'], Schemas['AverageDto'], Schemas['AverageDto']];
+  earliest: string;
+  latest: string;
+}
+
+interface Props {
+  caption: string;
+  rowHeader: string;
+  rows: SummaryRow[];
+  byPar?: boolean;
+}
+
+const { caption, rowHeader, rows, byPar = false } = Astro.props;
+const lengths = [
+  { key: 'eighteen', label: '18 holes' },
+  { key: 'nine', label: '9 holes' },
+] as const;
+---
+
+<div class="table-wrap summary-wrap">
+  <table class="table summary">
+    <caption class="visually-hidden">{caption}</caption>
+    <thead>
+      <tr>
+        <th scope="col" rowspan="2" class="corner">{rowHeader}</th>
+        {lengths.map((l) => <th scope="colgroup" colspan="4" class="group">{l.label}</th>)}
+        <th scope="colgroup" colspan={byPar ? 8 : 5} class="group">All holes</th>
+        <th scope="colgroup" colspan="2" class="group">Played</th>
+      </tr>
+      <tr>
+        {
+          lengths.map(() => (
+            <>
+              <th scope="col" class="num">Rounds</th>
+              <th scope="col" class="num">Avg</th>
+              <th scope="col" class="num">Low</th>
+              <th scope="col" class="num">High</th>
+            </>
+          ))
+        }
+        <th scope="col" class="num">Holes</th>
+        <th scope="col" class="num">To par</th>
+        <th scope="col" class="num">Putts/hole</th>
+        <th scope="col" class="num">GIR</th>
+        <th scope="col" class="num">Fairways</th>
+        {
+          byPar && (
+            <>
+              <th scope="col" class="num">Par 3</th>
+              <th scope="col" class="num">Par 4</th>
+              <th scope="col" class="num">Par 5</th>
+            </>
+          )
+        }
+        <th scope="col" class="num">First</th>
+        <th scope="col" class="num">Last</th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <tr data-row={row.key}>
+            <th scope="row">
+              {row.href ? <a href={row.href}>{row.header}</a> : row.header}
+              {row.sub && <span class="caption sub">{row.sub}</span>}
+            </th>
+            {lengths.map((l) => (
+              <>
+                <td class="num">{formatInteger(row[l.key].rounds)}</td>
+                <td class="num strong">{formatAverage(row[l.key].average.value)}</td>
+                <td class="num">{formatInteger(row[l.key].low)}</td>
+                <td class="num">{formatInteger(row[l.key].high)}</td>
+              </>
+            ))}
+            <td class="num">{formatInteger(row.holes)}</td>
+            <td class="num">{formatToPar(row.toPar)}</td>
+            <td class="num">{formatAverage(row.puttsPerHole.value)}</td>
+            <td class="num">{formatPercent(row.gir.value)}</td>
+            <td class="num">{formatPercent(row.drivingAccuracy.value)}</td>
+            {byPar && row.byPar && row.byPar.map((a) => <td class="num">{formatToPar(a.value)}</td>)}
+            <td class="num">{formatDate(row.earliest)}</td>
+            <td class="num">{formatDate(row.latest)}</td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .summary-wrap { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .summary-wrap { border-color: transparent; }
+  }
+  :root[data-theme='dark'] .summary-wrap { border-color: transparent; }
+  .summary { white-space: nowrap; font-size: 14px; }
+  .summary th, .summary td { padding: var(--space-2) var(--space-3); }
+  .summary tbody tr:last-child th, .summary tbody tr:last-child td { border-bottom: 0; }
+  .summary .group { text-align: center; border-bottom: 1px solid var(--color-border); }
+  .summary .corner { vertical-align: bottom; }
+  .summary .group + .group, .summary thead tr:last-child th:nth-child(5), .summary thead tr:last-child th:nth-child(9) { border-left: 1px solid var(--color-border); }
+  .summary tbody td:nth-child(6), .summary tbody td:nth-child(10) { border-left: 1px solid var(--color-border); }
+  .summary th[scope='row'] { min-width: 12em; white-space: normal; font-weight: 600; }
+  /* The course or year stays in view while the wide table scrolls sideways. */
+  .summary th[scope='row'], .summary .corner { position: sticky; left: 0; z-index: 1; background: var(--color-surface); box-shadow: inset -1px 0 0 var(--color-border); }
+  @media (max-width: 600px) {
+    .summary th[scope='row'] { min-width: 9em; }
+  }
+  .summary th[scope='row'] a { display: inline-flex; align-items: center; min-height: var(--touch-target); }
+  .summary .sub { display: block; font-weight: 400; }
+  .summary .strong { font-weight: 700; }
+  .summary td.num:last-child, .summary td.num:nth-last-child(2) { color: var(--color-text-secondary); }
+</style>

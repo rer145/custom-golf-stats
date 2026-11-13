@@ -11,7 +11,7 @@ test('landing page shows the tagline and the way in', async ({ page }) => {
 
 test('signing in lands on stats with the main navigation', async ({ page }) => {
   await signIn(page, USER);
-  await expect(page).toHaveURL('/stats');
+  await expect(page).toHaveURL(/\/stats\/2025$/); // /stats opens the latest season
   const nav = page.getByRole('navigation', { name: 'Main' });
   await expect(nav.getByRole('link')).toHaveText(['Stats', 'Rounds', 'Courses', 'Profile']);
   await expect(nav.getByRole('link', { name: 'Stats' })).toHaveAttribute('aria-current', 'page');
@@ -72,7 +72,7 @@ test('signing in returns to the page that was asked for', async ({ page }) => {
 
 test('next cannot send the user off-site', async ({ page }) => {
   await signIn(page, USER, PASSWORD, 'https://evil.example/');
-  await expect(page).toHaveURL('/stats');
+  await expect(page).toHaveURL(/\/stats\/2025$/); // /stats opens the latest season
 });
 
 test('sign-up shows API validation next to the fields', async ({ page }) => {
@@ -110,7 +110,7 @@ test('sign-out clears the session', async ({ page, context }) => {
 test('a signed-in user opening sign-in goes straight to stats', async ({ page }) => {
   await signIn(page, USER);
   await page.goto('/sign-in');
-  await expect(page).toHaveURL('/stats');
+  await expect(page).toHaveURL(/\/stats\/2025$/); // /stats opens the latest season
 });
 
 test('unknown pages are guarded, then 404 once signed in', async ({ page }) => {
