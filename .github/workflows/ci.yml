@@ -36,7 +36,7 @@ jobs:
       - run: npm test
       # The committed API types must match the committed OpenAPI document.
       - run: npm run gen:api
-      - run: git diff --exit-code -- web/src/api/schema.d.ts
+      - run: git diff --exit-code -- src/api/schema.d.ts
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
         env:
