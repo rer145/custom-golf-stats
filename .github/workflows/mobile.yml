@@ -42,9 +42,9 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           # .NET for iOS requires the exact Xcode major.minor it was built for, and actool needs a matching
-          # simulator runtime. Workload set 10.0.112 ships iOS 26.5; the runner has Xcode 26.5 with its runtime.
+          # simulator runtime. Workload set 10.0.112 ships iOS 26.5, which requires Xcode 26.6.
           # Bump both together when moving to a newer workload set.
-          xcode-version: '26.5'
+          xcode-version: '26.6'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.1xx
