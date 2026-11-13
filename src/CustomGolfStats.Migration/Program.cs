@@ -1,3 +1,10 @@
-// The import and parity commands are added in phase 3, tasks 3 and 4.
-Console.Error.WriteLine("Usage: CustomGolfStats.Migration <import|parity> [options]");
-return 1;
+using CustomGolfStats.Migration.Cli;
+
+using var cancellation = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) =>
+{
+    e.Cancel = true;
+    cancellation.Cancel();
+};
+
+return await MigrationCli.RunAsync(args, Console.Out, Console.Error, Environment.GetEnvironmentVariable, cancellation.Token);

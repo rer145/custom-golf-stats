@@ -119,6 +119,20 @@ public sealed class GolftrackReader(string connectionString)
             await LookupAsync(connection, "Temperature", cancellationToken));
     }
 
+    /// <summary>
+    /// Every Course, Round and HandicapHistory id in the source, whatever the golfer or IsActive: the ids an import could
+    /// ever have created, so a re-run clears exactly those (including rounds deactivated since the previous run).
+    /// </summary>
+    public async Task<LegacyIdSet> ReadAllIdsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return new LegacyIdSet(
+            await QueryAsync(connection, null, "SELECT Id FROM dbo.Course", r => r.GetInt32(0), cancellationToken),
+            await QueryAsync(connection, null, "SELECT Id FROM dbo.Round", r => r.GetInt32(0), cancellationToken),
+            await QueryAsync(connection, null, "SELECT Id FROM dbo.HandicapHistory", r => r.GetInt32(0), cancellationToken));
+    }
+
     private static async Task<IReadOnlyDictionary<int, string>> LookupAsync(
         SqlConnection connection, string table, CancellationToken cancellationToken)
     {
