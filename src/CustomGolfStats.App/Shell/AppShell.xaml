@@ -1,0 +1,38 @@
+<UserControl x:Class="CustomGolfStats.App.Shell.AppShell"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The window content: the navigation frame plus a banner for failures that reached the global handler. -->
+  <Grid x:Name="Root" Background="{ThemeResource BrandBackgroundBrush}">
+    <Frame x:Name="RootFrame" />
+
+    <!-- Shown while the database opens and services start. -->
+    <Grid x:Name="StartupPanel" Background="{ThemeResource BrandBackgroundBrush}">
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
+        <Image Source="{ThemeResource BrandMarkImage}" Width="96" Height="96" />
+        <TextBlock x:Name="StartupError"
+                   Visibility="Collapsed"
+                   MaxWidth="320"
+                   TextAlignment="Center"
+                   Style="{StaticResource BrandTextErrorStyle}" />
+      </StackPanel>
+    </Grid>
+
+    <Border x:Name="Banner"
+            Visibility="Collapsed"
+            VerticalAlignment="Bottom"
+            Style="{StaticResource BrandBannerStyle}">
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="BannerText" VerticalAlignment="Center" Style="{StaticResource BrandBannerTextStyle}" />
+        <Button Grid.Column="1"
+                Content="Dismiss"
+                Click="OnDismissBanner"
+                Style="{StaticResource BrandLinkButtonStyle}"
+                Foreground="{ThemeResource BrandTextInverseBrush}" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

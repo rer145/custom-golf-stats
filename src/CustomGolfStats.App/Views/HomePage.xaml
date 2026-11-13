@@ -1,0 +1,22 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.HomePage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views">
+  <!-- Placeholder for Route.Home (Task 4). The real screen arrives in Task 5; the bindings show the view model wiring. -->
+  <ScrollViewer>
+    <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace4}">
+      <TextBlock Text="Home" Style="{StaticResource BrandTextTitleStyle}" />
+      <TextBlock Text="{x:Bind local:Ui.Label('Placeholder screen')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+      <StackPanel Spacing="{StaticResource BrandSpace3}">
+        <TextBlock Text="{x:Bind ViewModel.SyncStatus, Mode=OneWay}" Style="{StaticResource BrandTextSecondaryStyle}" />
+        <Button Content="Start a round" Command="{x:Bind ViewModel.StartRoundCommand}" Style="{StaticResource BrandHeroButtonStyle}" />
+        <Button Content="Sync now" Command="{x:Bind ViewModel.SyncCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
+        <Button Content="Stats" Command="{x:Bind ViewModel.OpenStatsCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
+        <Button Content="Profile" Command="{x:Bind ViewModel.OpenProfileCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" />
+      </StackPanel>
+      <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                 Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                 Style="{StaticResource BrandTextErrorStyle}" />
+    </StackPanel>
+  </ScrollViewer>
+</local:RoutePage>

@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/CustomGolfStats.Api/CustomGolfStats.Api.csproj" />
     <Project Path="src/CustomGolfStats.Api.Client/CustomGolfStats.Api.Client.csproj" />
+    <Project Path="src/CustomGolfStats.App/CustomGolfStats.App.csproj" />
     <Project Path="src/CustomGolfStats.App.Core/CustomGolfStats.App.Core.csproj" />
     <Project Path="src/CustomGolfStats.Domain/CustomGolfStats.Domain.csproj" />
     <Project Path="src/CustomGolfStats.Migration/CustomGolfStats.Migration.csproj" />

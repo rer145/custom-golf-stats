@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 # Database backups (never commit real data)
 *.bak
 *.bacpac
+
+# The Uno app project folder ends in ".App", which the macOS bundle rule above (*.app) would otherwise hide.
+!/src/CustomGolfStats.App/

@@ -1,0 +1,78 @@
+<Project Sdk="Uno.Sdk">
+  <PropertyGroup>
+    <!--
+      Mobile heads build on macOS (Xcode and the iOS/Android workloads). Everywhere else (CI on ubuntu) only the desktop head
+      builds, so the solution test run stays green without mobile workloads.
+    -->
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">net10.0-ios;net10.0-android;net10.0-desktop</TargetFrameworks>
+    <TargetFrameworks Condition="!$([MSBuild]::IsOSPlatform('OSX'))">net10.0-desktop</TargetFrameworks>
+
+    <OutputType>Exe</OutputType>
+    <UnoSingleProject>true</UnoSingleProject>
+    <!-- Uno Hot Design (a paid designer tool) is not used; Hot Reload through the dev server still works. -->
+    <UnoDisableHotDesign>true</UnoDisableHotDesign>
+    <RootNamespace>CustomGolfStats.App</RootNamespace>
+
+    <ApplicationTitle>Custom Golf Stats</ApplicationTitle>
+    <ApplicationId>com.customgolfstats.app</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationPublisher>Custom Golf Stats</ApplicationPublisher>
+    <Description>Custom Golf Stats: golf rounds, shot by shot.</Description>
+
+    <!-- https://aka.platform.uno/singleproject-features -->
+    <UnoFeatures>
+      Mvvm;
+      Skia;
+    </UnoFeatures>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios'">
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <!-- The installed iOS workload (26.1) asks for Xcode 26.1; this machine has Xcode 26.0, which builds and runs simulator apps
+         fine. Remove once Xcode is updated. -->
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+    <!-- Trim only the platform SDK assemblies (the iOS 26.1 bindings are not linked against the 26.0 SDK's headers, and the app's
+         own and third-party assemblies stay whole for sqlite-net and JSON reflection). Trim analysis of assemblies that are not
+         trimmed is then noise, so it is suppressed. -->
+    <MtouchLink>SdkOnly</MtouchLink>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- UHR001: Hot Reload prefers MTouchLink=None, which needs Xcode 26.1 (see above). MT0079: the same Xcode 26.0/26.1 note. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);UHR001;MT0079</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- Simulator builds are signed ad hoc so the Keychain entitlement (Platforms/iOS/Entitlements.plist) applies without a
+       developer certificate. Device builds use a real signing identity (CodesignKey / provisioning profile). -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug' and !$(RuntimeIdentifier.StartsWith('ios-'))">
+    <CodesignKey>-</CodesignKey>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CustomGolfStats.App.Core\CustomGolfStats.App.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <!-- sqlite-net maps the row types and the API client serializes its DTOs by reflection: keep them whole when trimming. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="CustomGolfStats.App.Core" />
+    <TrimmerRootAssembly Include="CustomGolfStats.Api.Client" />
+  </ItemGroup>
+
+  <!-- API base URL for this build: dotnet build -p:ApiBaseUrl=https://api.example.com/ (see Composition/AppConfig.cs). -->
+  <ItemGroup Condition="'$(ApiBaseUrl)' != ''">
+    <AssemblyMetadata Include="ApiBaseUrl" Value="$(ApiBaseUrl)" />
+  </ItemGroup>
+
+  <!-- Brand kit (brand/BRAND.md). Icons and splash go through Uno.Resizetizer; fonts are bundled as content. -->
+  <ItemGroup>
+    <UnoIcon Include="Assets\Icons\icon.svg" ForegroundFile="Assets\Icons\icon_foreground.svg" ForegroundScale="0.7" Color="#0E2A21" />
+    <UnoSplashScreen Include="Assets\Splash\splash_screen.svg" BaseSize="120,120" BackgroundColor="#0E2A21" />
+    <Content Include="..\..\brand\fonts\*.ttf" Link="Assets\Fonts\%(Filename)%(Extension)" />
+    <Content Include="..\..\brand\fonts\licenses\*" Link="Assets\Fonts\licenses\%(Filename)%(Extension)" />
+    <Content Include="..\..\brand\logo\png\mark-color-256.png;..\..\brand\logo\png\mark-reversed-256.png;..\..\brand\logo\png\lockup-stacked-on-light@2x.png;..\..\brand\logo\png\lockup-stacked-on-dark@2x.png"
+             Link="Assets\Brand\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

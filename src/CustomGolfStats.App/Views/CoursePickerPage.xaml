@@ -1,0 +1,23 @@
+<local:RoutePage x:Class="CustomGolfStats.App.Views.CoursePickerPage"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:local="using:CustomGolfStats.App.Views">
+  <!-- Placeholder for Route.CoursePicker (Task 4). The real screen arrives in Task 5; the bindings show the view model wiring. -->
+  <ScrollViewer>
+    <StackPanel Padding="{StaticResource BrandScreenPadding}" Spacing="{StaticResource BrandSpace4}">
+      <Button Content="Back" Click="OnBack" HorizontalAlignment="Left" Style="{StaticResource BrandLinkButtonStyle}" Padding="0" />
+      <TextBlock Text="Choose a course" Style="{StaticResource BrandTextTitleStyle}" />
+      <TextBlock Text="{x:Bind local:Ui.Label('Placeholder screen')}" Style="{StaticResource BrandTextLabelStyle}" Foreground="{ThemeResource BrandTextSecondaryBrush}" />
+      <StackPanel Spacing="{StaticResource BrandSpace3}">
+        <TextBox Header="Course" PlaceholderText="Name, club or city" Text="{x:Bind ViewModel.Query, Mode=TwoWay}" />
+        <TextBlock Text="{x:Bind ViewModel.Message, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.Message), Mode=OneWay}" Style="{StaticResource BrandTextSecondaryStyle}" />
+        <ListView ItemsSource="{x:Bind ViewModel.LocalResults}" DisplayMemberPath="Name" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnLocalCourseClick" />
+        <Button Content="Search" Command="{x:Bind ViewModel.SearchCommand}" Style="{StaticResource BrandPrimaryButtonStyle}" />
+        <Button Content="+ Add a course by hand" Command="{x:Bind ViewModel.AddManualCourseCommand}" Style="{StaticResource BrandAccentButtonStyle}" />
+      </StackPanel>
+      <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                 Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.ErrorMessage), Mode=OneWay}"
+                 Style="{StaticResource BrandTextErrorStyle}" />
+    </StackPanel>
+  </ScrollViewer>
+</local:RoutePage>
