@@ -48,6 +48,8 @@
 		<string>Steps and walking distance for a round are read from Motion and Fitness when you finish it.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>One approximate location is used to look up the weather when a course has no map position.</string>
+		<!-- Export compliance: the only encryption is HTTPS through Apple's own APIs (exempt), so App Store Connect asks no
+		     export questions for each TestFlight build. Revisit if the app ever ships its own cryptography. -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
 	</dict>
