@@ -1,0 +1,101 @@
+name: Images
+
+# Builds the API, migrator and web images for linux/amd64 and linux/arm64. On master (and manual runs) they are pushed
+# to GHCR, tagged with the commit SHA (and `latest` from master); on pull requests they are only built.
+#   ghcr.io/rer145/custom-golf-stats-api:<sha> / :latest
+#   ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator / :latest-migrator   (the EF Core migrations bundle)
+#   ghcr.io/rer145/custom-golf-stats-web:<sha> / :latest
+# The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/rer145/custom-golf-stats
+  PUSH: ${{ github.event_name != 'pull_request' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            file: src/CustomGolfStats.Api/Dockerfile
+            target: api
+            repository: api
+            suffix: ""
+          - name: migrator
+            context: .
+            file: src/CustomGolfStats.Api/Dockerfile
+            target: migrator
+            repository: api
+            suffix: "-migrator"
+          - name: web
+            context: web
+            file: web/Dockerfile
+            target: runtime
+            repository: web
+            suffix: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SDK and npm stages run natively on amd64; only the small runtime-stage steps of the arm64 image run under QEMU.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: tags
+        env:
+          IMAGE: ${{ env.IMAGE_PREFIX }}-${{ matrix.repository }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          {
+            echo "tags<<EOF"
+            echo "$IMAGE:$GITHUB_SHA$SUFFIX"
+            # Only master moves `latest`; a manual run on another branch pushes just its SHA tag.
+            if [ "$GITHUB_REF" = "refs/heads/master" ]; then echo "$IMAGE:latest$SUFFIX"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: ${{ matrix.name == 'web' && format('ALLOWED_HOSTS={0}', vars.WEB_ALLOWED_HOSTS) || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

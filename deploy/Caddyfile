@@ -1,0 +1,33 @@
+# Two sites: the web site and the API. Caddy gets and renews their certificates automatically (Let's Encrypt for public
+# names; its own internal CA for *.localhost, which the smoke test uses). HTTP redirects to HTTPS.
+{
+	# Inside a container there is no system trust store worth touching.
+	skip_install_trust
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+		-X-Powered-By
+	}
+}
+
+{$API_DOMAIN} {
+	import common
+	header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+	reverse_proxy api:8080
+}
+
+{$WEB_DOMAIN} {
+	import common
+	# Astro emits small inline scripts and styles; everything else is same-origin.
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	reverse_proxy web:4321
+}

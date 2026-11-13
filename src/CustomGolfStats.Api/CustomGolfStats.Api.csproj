@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <RootNamespace>CustomGolfStats.Api</RootNamespace>
-    <!-- Every build writes the OpenAPI document into the client project, which generates the C# client from it. -->
-    <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+    <!-- Every build writes the OpenAPI document into the client project, which generates the C# client from it.
+         The container build (Dockerfile) turns it off with the OpenApiGenerateDocuments=false environment variable. -->
+    <OpenApiGenerateDocuments Condition="'$(OpenApiGenerateDocuments)' == ''">true</OpenApiGenerateDocuments>
     <OpenApiDocumentsDirectory>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), ..\CustomGolfStats.Api.Client, openapi))</OpenApiDocumentsDirectory>
   </PropertyGroup>
 
