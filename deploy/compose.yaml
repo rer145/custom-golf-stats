@@ -1,0 +1,106 @@
+# Custom Golf Stats production stack, with a filled-in .env next to it (see .env.example).
+# Deploy (and roll back) only with deploy.sh, which migrates before it touches the running services:
+#   ./deploy.sh <image tag>
+# A plain `docker compose up` does not run migrations: `migrate` is in its own profile, run on its own by deploy.sh.
+# Caddy is the only service with published ports. Postgres sits on an internal network with no route out.
+# Every image tag of ours comes from IMAGE_TAG.
+name: custom-golf-stats
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17.11}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: applies pending EF Core migrations with the bundle built alongside the API image, then exits.
+  # deploy.sh runs it (`docker compose run --rm migrate`) before `up`, so if it fails the running api, web and caddy
+  # are never recreated and keep serving the old images. The profile keeps `docker compose up` from starting it.
+  migrate:
+    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}-migrator
+    profiles: [migrate]
+    restart: "no"
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      # Forwarded headers are trusted from the proxy network only (Caddy).
+      ReverseProxy__KnownNetworks: ${PROXY_SUBNET:-172.30.0.0/24}
+      GolfCourseApi__ApiKey: ${GOLF_COURSE_API_KEY:-}
+      Weather__OpenMeteo__ForecastUrl: ${OPEN_METEO_FORECAST_URL:-https://api.open-meteo.com/v1/forecast}
+      Weather__OpenMeteo__ArchiveUrl: ${OPEN_METEO_ARCHIVE_URL:-https://archive-api.open-meteo.com/v1/archive}
+      Weather__OpenMeteo__ApiKey: ${OPEN_METEO_API_KEY:-}
+      # Comma-separated audiences accepted for Sign in with Apple / Google.
+      Auth__Apple__ClientIds: ${AUTH_APPLE_CLIENT_IDS:-}
+      Auth__Google__ClientIds: ${AUTH_GOOGLE_CLIENT_IDS:-}
+    # Not depends_on migrate: deploy.sh has already migrated by the time `up` reaches the api.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # backend reaches Postgres; proxy is reachable from Caddy and has the route out (course and weather providers).
+    networks: [backend, proxy]
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/rer145/custom-golf-stats-web}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: http://api:8080
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [proxy]
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.11.9}
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    networks: [proxy]
+
+networks:
+  backend:
+    internal: true
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.30.0.0/24}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
