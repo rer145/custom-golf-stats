@@ -43,7 +43,9 @@ One Docker Compose stack runs on the server (`deploy/compose.yaml`):
 4. checks `https://api.example.com/health` and `https://example.com/sign-in`. If either is not answering 200 within two minutes, it rolls back to the previous tag and the job fails;
 5. logs the server out of GHCR.
 
-Deploys never overlap. Rerunning a deploy of the tag that is already running changes nothing; it only re-runs the migrations, which have nothing to apply.
+Deploys never overlap. Rerunning a deploy of the tag that is already running changes nothing; it only re-runs the migrations, which have nothing to apply. Such a rerun is never rolled back either, since it was already running.
+
+The server-side steps run detached from the SSH session (`remote-deploy.sh start`, then `wait`). If the connection drops, the deploy or rollback carries on on the server, and the job reconnects and keeps waiting.
 
 ## 1. One-time server setup
 
@@ -125,9 +127,14 @@ docker version && docker compose version
 
 Docker starts on boot. Containers restart by themselves (`restart: unless-stopped`).
 
-### The `deploy` user and its SSH key
+### The `deploy` user and its SSH keys
 
-GitHub Actions logs in as a dedicated `deploy` user, with a key used only for deploys:
+Everything runs as a dedicated `deploy` user. Two keys log in as `deploy`:
+
+- **your own personal key**, for everything you do by hand in this runbook (`ssh deploy@SERVER`);
+- **a deploy key** used only by GitHub Actions.
+
+Create the user:
 
 ```bash
 adduser --disabled-password --gecos "" deploy
@@ -139,15 +146,24 @@ install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
 > only in the GitHub secret `DEPLOY_SSH_KEY`, and you can revoke it at any time by removing its line from
 > `/home/deploy/.ssh/authorized_keys`.
 
-On **your own machine**, create the key pair. It has no passphrase, because a workflow can't type one. Then install the public half on the server:
+From **your own machine**, add your personal public key (use the `.pub` file you log in to servers with) and check that you can log in as `deploy`:
+
+```bash
+ssh root@SERVER 'cat >> /home/deploy/.ssh/authorized_keys && chown deploy:deploy /home/deploy/.ssh/authorized_keys && chmod 600 /home/deploy/.ssh/authorized_keys' < ~/.ssh/id_ed25519.pub
+ssh deploy@SERVER 'docker ps'   # must work without sudo
+```
+
+Every later command in this runbook that says `ssh deploy@SERVER`, or runs "as `deploy` on the server", uses this login.
+
+Then, still on your machine, create the deploy key pair. It has no passphrase, because a workflow can't type one. Install its public half the same way:
 
 ```bash
 ssh-keygen -t ed25519 -N '' -C 'custom-golf-stats deploy' -f ./cgs_deploy
-ssh root@SERVER 'cat >> /home/deploy/.ssh/authorized_keys && chown deploy:deploy /home/deploy/.ssh/authorized_keys && chmod 600 /home/deploy/.ssh/authorized_keys' < ./cgs_deploy.pub
-ssh -i ./cgs_deploy deploy@SERVER 'docker ps'   # must work without sudo
+ssh deploy@SERVER 'cat >> ~/.ssh/authorized_keys' < ./cgs_deploy.pub
+ssh -i ./cgs_deploy -o IdentitiesOnly=yes deploy@SERVER 'docker ps'   # the deploy key works too
 ```
 
-The private key `./cgs_deploy` goes into the `DEPLOY_SSH_KEY` secret (section 2). Delete your local copy afterwards; if you ever need a new one, generate a new pair and replace the line in `authorized_keys`.
+The private key `./cgs_deploy` goes into the `DEPLOY_SSH_KEY` secret (section 2). Delete your local copy afterwards. If you ever need a new one, generate a new pair and replace its line (the one ending in `custom-golf-stats deploy`) in `/home/deploy/.ssh/authorized_keys`.
 
 ### The pinned host key
 
@@ -173,12 +189,12 @@ The stack's settings and secrets live in one file, `~/custom-golf-stats/deploy/.
 From your checkout, copy the template up and lock it down:
 
 ```bash
-ssh -i ./cgs_deploy deploy@SERVER 'mkdir -p ~/custom-golf-stats/deploy'
-scp -i ./cgs_deploy deploy/.env.example deploy@SERVER:custom-golf-stats/deploy/.env
-ssh -i ./cgs_deploy deploy@SERVER 'chmod 600 ~/custom-golf-stats/deploy/.env'
+ssh deploy@SERVER 'mkdir -p ~/custom-golf-stats/deploy'
+scp deploy/.env.example deploy@SERVER:custom-golf-stats/deploy/.env
+ssh deploy@SERVER 'chmod 600 ~/custom-golf-stats/deploy/.env'
 ```
 
-Then edit it on the server (`nano ~/custom-golf-stats/deploy/.env`). Generate secrets on the server, never in a chat or a shared document.
+Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/deploy/.env`). Generate secrets on the server, never in a chat or a shared document.
 
 | Variable | What to put there |
 | --- | --- |
@@ -186,7 +202,7 @@ Then edit it on the server (`nano ~/custom-golf-stats/deploy/.env`). Generate se
 | `API_DOMAIN` | The API's host name, e.g. `api.example.com`. |
 | `ACME_EMAIL` | Your email address. Let's Encrypt sends certificate expiry warnings there. |
 | `HTTP_PORT`, `HTTPS_PORT` | Leave `80` and `443`. |
-| `IMAGE_TAG` | Leave the placeholder. Each deploy passes its own tag, so this value is not used for deploys. For manual `docker compose` commands, use `remote-deploy.sh compose ...`, which sets the deployed tag for you. |
+| `IMAGE_TAG` | Leave the placeholder. `deploy.sh` (run by `remote-deploy.sh`) sets the tag for each deploy, so this value is never used for deploys. For manual `docker compose` commands, use `remote-deploy.sh compose ...`, which sets the deployed tag for you. |
 | `API_IMAGE`, `WEB_IMAGE` | Leave as they are (`ghcr.io/rer145/custom-golf-stats-api` / `-web`). |
 | `POSTGRES_IMAGE`, `CADDY_IMAGE` | Leave as they are. They are pinned versions, bumped deliberately in the repository. |
 | `POSTGRES_DB`, `POSTGRES_USER` | Leave `custom_golf_stats`. |
@@ -197,7 +213,7 @@ Then edit it on the server (`nano ~/custom-golf-stats/deploy/.env`). Generate se
 | `AUTH_GOOGLE_CLIENT_IDS` | The OAuth client ids accepted for Google sign-in, comma-separated (`…apps.googleusercontent.com`). Leave it empty until Google sign-in exists. |
 | `PROXY_SUBNET` | Leave `172.30.0.0/24`. Change it only if it collides with a network that already exists on the server. The API trusts forwarded headers only from this subnet. |
 | `SESSION_SECRET` | Run `openssl rand -base64 48` and paste the result. It must be at least 32 characters. It encrypts the web session cookie, so changing it signs everyone out of the web site. |
-| Backup settings (`WALG_*` and the storage keys) | See the backup and restore runbook for `deploy/backup/` in `docs/deploy/`. |
+| Backup settings (`WALG_*` and the storage keys) | See the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md). |
 
 Check that the file is private:
 
@@ -258,7 +274,7 @@ If any of the deploy secrets, `PUBLIC_API_URL` or `PUBLIC_WEB_URL` is missing, t
 
 The server pulls the images with the **deploy job's own `GITHUB_TOKEN`**:
 
-- it has `packages: read`;
+- its scope is what `deploy.yml` grants: `contents: read`, `actions: read` and `packages: read`. It can read this repository and its packages, and write nothing;
 - it is sent to the server over SSH on stdin, so it never appears on a command line;
 - it expires when the job ends, and the job logs out again at the end.
 
@@ -273,7 +289,8 @@ The other options were considered and rejected:
 The trade-off: outside a workflow run, the server holds no registry credentials. It can't pull new images by hand unless the packages are public. It doesn't need to:
 
 - running containers and server restarts use images already on disk;
-- every deploy, including a rollback, goes through the workflow or uses images already pulled.
+- rollbacks, and `remote-deploy.sh deploy --no-pull`, use the images on disk. They contact the registry only for an image that is missing;
+- every other deploy goes through the workflow.
 
 If a deploy fails with `denied` while pulling, open each package's settings on GitHub. Under "Manage Actions access", give this repository **Read** access.
 
@@ -295,7 +312,7 @@ If a deploy fails with `denied` while pulling, open each package's settings on G
 
 ## 4. Everyday operations
 
-All of these run as `deploy` on the server:
+All of these run as `deploy` on the server (`ssh deploy@SERVER`):
 
 ```bash
 cd ~/custom-golf-stats/deploy
@@ -318,12 +335,24 @@ docker image prune -a --filter "until=720h"   # removes images that no container
 
 This can also remove the previous tag's images, if they are that old. A rollback through the workflow pulls them again. A rollback run on the server can't pull them (see "Registry access").
 
+Long commands by hand: a deploy run from your SSH session stops if the connection drops. Run it detached instead, and follow it (you can run `wait` again after reconnecting):
+
+```bash
+./remote-deploy.sh wait "$(./remote-deploy.sh start deploy --no-pull <sha>)"
+```
+
+The workflow copies the new `deploy/` files **before** it takes the server's deploy lock. Don't run `remote-deploy.sh` by hand while a Deploy workflow is running: it could pick up the new `compose.yaml` halfway through.
+
 ## 5. Rollback
 
 **Automatic.** A deploy goes back on its own when:
 
 - `deploy.sh` fails (a migration fails, an image is missing, or a container never becomes healthy): `remote-deploy.sh` deploys the tag that was running before;
-- the public health check fails after the deploy: the workflow runs `remote-deploy.sh rollback <sha>`, which deploys the previous tag again.
+- the public health check fails after the deploy: the workflow runs `remote-deploy.sh rollback <sha>`, which deploys the previous tag again. This doesn't happen when the deployed tag was already running before the deploy (a rerun): rolling back would replace a version that was already live.
+
+Rollbacks and these restores use the images already on disk, and pull only an image that is missing.
+
+The **first deploy** has nothing to roll back to. If it fails, the job fails and the stack stays as the failed deploy left it. Fix the problem and deploy again.
 
 Either way, the job fails, so you see it.
 
@@ -333,8 +362,8 @@ Either way, the job fails, so you see it.
 
 ```bash
 cd ~/custom-golf-stats/deploy
-./remote-deploy.sh rollback               # back to the previous tag (its images are still on disk)
-./remote-deploy.sh deploy <older sha>     # or any tag whose images are on disk (docker images | grep custom-golf-stats)
+./remote-deploy.sh rollback                      # back to the previous tag, from the images on disk
+./remote-deploy.sh deploy --no-pull <older sha>  # or any tag whose images are on disk (docker images | grep custom-golf-stats)
 ```
 
 What a rollback does **not** undo:
@@ -346,7 +375,8 @@ What a rollback does **not** undo:
 
 ## 6. Backups and restore
 
-Backups (WAL-G archiving, nightly base backups and retention) and the scripted restore, with its drill, are documented in the backup and restore runbook in `docs/deploy/`, next to the scripts in `deploy/backup/`.
+<!-- TODO(controller): replace BACKUP_RUNBOOK_LINK_TODO.md with the backup and restore runbook's real file name. -->
+Backups (WAL-G archiving, nightly base backups and retention) and the scripted restore, with its drill, are documented in the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md), next to the scripts in `deploy/backup/`.
 
 To restore production after a bad release:
 
@@ -360,10 +390,10 @@ The phase 3 import tool (`src/CustomGolfStats.Migration`, runbook [docs/migratio
 
 Do it **before any device signs in and syncs the account**. Re-running the import hard-deletes and recreates the imported rounds, and synced devices would not hear about any that disappear.
 
-1. **Take a backup first.** Follow the backup runbook to run an on-demand base backup.
+1. **Take a backup first.** Follow the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md) to run an on-demand base backup.
 2. **Create your account** on the production web site (or in the app), with the email you'll pass as `--account-email`. The deploy has already applied every migration; the tool checks that.
 3. **Restore the golftrack backup locally** (sections 1–2 of the migration runbook).
-4. **Open the tunnel.** On the server, as `deploy`, start a small proxy. It sits on the default bridge, published on the server's loopback only, and joined to the stack's internal network:
+4. **Open the tunnel.** On the server (`ssh deploy@SERVER`), start a small proxy. It sits on the default bridge, published on the server's loopback only, and joined to the stack's internal network:
 
    ```bash
    docker run -d --rm --name cgs-pg-tunnel -p 127.0.0.1:15432:5432 alpine:3.22 \
