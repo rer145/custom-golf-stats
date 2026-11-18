@@ -16,3 +16,15 @@ services:
       context: ../web
       args:
         ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+  postgres:
+    build:
+      context: postgres
+      target: runtime
+  pg-backup:
+    build:
+      context: postgres
+      target: runtime
+  restore:
+    build:
+      context: postgres
+      target: runtime

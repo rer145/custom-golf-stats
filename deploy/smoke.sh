@@ -38,6 +38,15 @@ POSTGRES_USER=custom_golf_stats
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 SESSION_SECRET=$(openssl rand -hex 32)
 PROXY_SUBNET=${SMOKE_PROXY_SUBNET:-172.30.250.0/24}
+POSTGRES_IMAGE=cgs-smoke-postgres:smoke
+# Backups are not part of the smoke test (deploy/backup/drill.sh covers them): WALG_S3_PREFIX=none turns WAL archiving
+# and pg-backup off for this throwaway stack. The AWS_* values are unused placeholders.
+WALG_S3_PREFIX=none
+AWS_ACCESS_KEY_ID=unused
+AWS_SECRET_ACCESS_KEY=unused
+AWS_ENDPOINT=http://unused.invalid
+AWS_REGION=us-east-1
+AWS_S3_FORCE_PATH_STYLE=true
 EOF
 
 compose() {

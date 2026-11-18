@@ -1,11 +1,12 @@
 name: Images
 
-# Builds the API, migrator and web images for linux/amd64 and linux/arm64.
+# Builds the API, migrator, web and Postgres (+ WAL-G) images for linux/amd64 and linux/arm64.
 # Pull requests only build them (`build` job, read-only token). Pushes to master and manual runs build and push them to
 # GHCR (`publish` job, the only one with `packages: write`), tagged with the commit SHA, plus `latest` from master:
 #   ghcr.io/rer145/custom-golf-stats-api:<sha> / :latest
 #   ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator / :latest-migrator   (the EF Core migrations bundle)
 #   ghcr.io/rer145/custom-golf-stats-web:<sha> / :latest
+#   ghcr.io/rer145/custom-golf-stats-postgres:<sha> / :latest   (deploy/postgres; deployed via POSTGRES_IMAGE, not IMAGE_TAG)
 # The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name);
 # publishing fails if it is not set.
 # The .NET SDK and npm build stages run natively on the amd64 runner and cross-build; only the small target-platform
@@ -53,6 +54,12 @@ jobs:
             file: web/Dockerfile
             target: runtime
             repository: web
+            suffix: ""
+          - name: postgres
+            context: deploy/postgres
+            file: deploy/postgres/Dockerfile
+            target: runtime
+            repository: postgres
             suffix: ""
     steps:
       - uses: actions/checkout@v4
