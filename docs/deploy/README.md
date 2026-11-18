@@ -213,7 +213,7 @@ Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/
 | `AUTH_GOOGLE_CLIENT_IDS` | The OAuth client ids accepted for Google sign-in, comma-separated (`…apps.googleusercontent.com`). Leave it empty until Google sign-in exists. |
 | `PROXY_SUBNET` | Leave `172.30.0.0/24`. Change it only if it collides with a network that already exists on the server. The API trusts forwarded headers only from this subnet. |
 | `SESSION_SECRET` | Run `openssl rand -base64 48` and paste the result. It must be at least 32 characters. It encrypts the web session cookie, so changing it signs everyone out of the web site. |
-| Backup settings (`WALG_*` and the storage keys) | See the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md). |
+| Backup settings (`WALG_*` and the storage keys) | See the [backup and restore runbook](backups.md). |
 
 Check that the file is private:
 
@@ -375,8 +375,7 @@ What a rollback does **not** undo:
 
 ## 6. Backups and restore
 
-<!-- TODO(controller): replace BACKUP_RUNBOOK_LINK_TODO.md with the backup and restore runbook's real file name. -->
-Backups (WAL-G archiving, nightly base backups and retention) and the scripted restore, with its drill, are documented in the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md), next to the scripts in `deploy/backup/`.
+Backups (WAL-G archiving, nightly base backups and retention) and the scripted restore, with its drill, are documented in the [backup and restore runbook](backups.md), next to the scripts in `deploy/backup/`.
 
 To restore production after a bad release:
 
@@ -390,7 +389,7 @@ The phase 3 import tool (`src/CustomGolfStats.Migration`, runbook [docs/migratio
 
 Do it **before any device signs in and syncs the account**. Re-running the import hard-deletes and recreates the imported rounds, and synced devices would not hear about any that disappear.
 
-1. **Take a backup first.** Follow the [backup and restore runbook](BACKUP_RUNBOOK_LINK_TODO.md) to run an on-demand base backup.
+1. **Take a backup first.** Follow the [backup and restore runbook](backups.md) to run an on-demand base backup.
 2. **Create your account** on the production web site (or in the app), with the email you'll pass as `--account-email`. The deploy has already applied every migration; the tool checks that.
 3. **Restore the golftrack backup locally** (sections 1–2 of the migration runbook).
 4. **Open the tunnel.** On the server (`ssh deploy@SERVER`), start a small proxy. It sits on the default bridge, published on the server's loopback only, and joined to the stack's internal network:
