@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Local smoke test of the production stack (deploy/compose.yaml) built from this checkout.
+# Smoke test of the production stack (deploy/compose.yaml) built from this checkout. CI runs it on every change to the
+# deploy tooling or the images (.github/workflows/deploy-test.yml); it runs the same on a developer machine.
 #  1. Builds the images and deploys them with deploy.sh under its own project name, with Caddy's internal CA serving
 #     https://localhost (web) and https://api.localhost (API) on unprivileged ports. deploy.sh migrates first and
 #     waits until every service is healthy.
