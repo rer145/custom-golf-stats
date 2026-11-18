@@ -50,6 +50,8 @@ Deploys never overlap. Rerunning a deploy of the tag that is already running cha
 
 The server-side steps run detached from the SSH session (`remote-deploy.sh start`, then `wait`). If the connection drops, the deploy or rollback carries on on the server, and the job reconnects and keeps waiting.
 
+`.github/workflows/deploy-test.yml` tests this tooling on every change to `deploy/` or to what goes into the images: `deploy/remote-deploy.test.sh` (the bookkeeping above, with a fake Docker) and `deploy/smoke.sh` (builds the images, deploys the whole stack with `deploy.sh` behind Caddy's internal CA, signs in through it, and checks that a failing migration leaves the running site untouched).
+
 ## 1. One-time server setup
 
 ### Create the server
@@ -212,7 +214,7 @@ Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/
 | `POSTGRES_PASSWORD` | Run `openssl rand -hex 32` and paste the result. It must not contain `;` or quote characters, because it is placed inside the API's connection string. Hex output never does. It is only used inside the Compose network. Set it before the first start: Postgres only reads it when it creates the database. To change it later, run `ALTER USER` in the database as well. |
 | `GOLF_COURSE_API_KEY` | Your golfcourseapi.com key, used for course search and import. Leave it empty to turn those calls off. |
 | `OPEN_METEO_FORECAST_URL`, `OPEN_METEO_ARCHIVE_URL`, `OPEN_METEO_API_KEY` | Keep the free endpoints and an empty key, until a commercial Open-Meteo plan (needed before a paid launch) gives you its own URLs and key. |
-| `AUTH_APPLE_CLIENT_IDS` | The audiences accepted for Sign in with Apple, comma-separated. That is the app's bundle id `com.customgolfstats.app`, plus the web Services ID if you add Apple sign-in to the web site. |
+| `AUTH_APPLE_CLIENT_IDS` | The audiences accepted for Sign in with Apple, comma-separated. That is the app's bundle id `xyz.rsquaredsolutions.customgolfstats`, plus the web Services ID if you add Apple sign-in to the web site. |
 | `AUTH_GOOGLE_CLIENT_IDS` | The OAuth client ids accepted for Google sign-in, comma-separated (`…apps.googleusercontent.com`). Leave it empty until Google sign-in exists. |
 | `PROXY_SUBNET` | Leave `172.30.0.0/24`. Change it only if it collides with a network that already exists on the server. The API trusts forwarded headers only from this subnet. |
 | `SESSION_SECRET` | Run `openssl rand -base64 48` and paste the result. It must be at least 32 characters. It encrypts the web session cookie, so changing it signs everyone out of the web site. |
@@ -286,13 +288,13 @@ The server pulls the images with the **deploy job's own `GITHUB_TOKEN`**:
 - it is sent to the server over SSH on stdin, so it never appears on a command line;
 - it expires when the job ends, and the job logs out again at the end.
 
-Nothing long-lived is stored on the server, and the packages can stay private. This works because `images.yml` publishes the packages from this repository, which gives this repository's workflows read access.
+Nothing long-lived is stored on the server, and the packages can stay private even though the repository is public. Its workflow logs are public too, so the workflows print no secrets (GitHub masks them as well). This works because `images.yml` publishes the packages from this repository, which gives this repository's workflows read access.
 
 The other options were considered and rejected:
 
 - **A fine-grained personal access token:** not usable. GHCR does not accept fine-grained tokens.
 - **A classic PAT with `read:packages`:** it works, but it is a long-lived credential sitting on the server, and it can read every package your account can see. Avoid it.
-- **Making the packages public** (package settings > Change visibility): this removes the need for any login. It is safe, because the images contain no secrets, but it publishes the compiled API and web site. Do it only if you are happy for them to be public. The workflow's login is harmless either way.
+- **Making the packages public** (package settings > Change visibility): this removes the need for any login. It is safe, because the images contain no secrets. The repository is public, so the source is public already; this would add the compiled API and web site. Do it only if you are happy for those to be public too. The workflow's login is harmless either way.
 
 The trade-off: outside a workflow run, the server holds no registry credentials. It can't pull new images by hand unless the packages are public. It doesn't need to:
 
@@ -317,7 +319,7 @@ There are three packages: `custom-golf-stats-api` (also holds the `-migrator` ta
 
 4. The first start takes a little longer, because Caddy requests the certificates. If the health check fails, look at Caddy's log (section 4). The usual causes are DNS not resolving yet, or a wrong `AAAA` record.
 5. Open `https://example.com` and register your account.
-6. Check the backups: `./remote-deploy.sh compose logs pg-backup` on the server shows `base backup finished` within a
+6. Check the backups. On the server, `cd ~/custom-golf-stats/deploy`; then `./remote-deploy.sh compose logs pg-backup` shows `base backup finished` within a
    few minutes, and `./remote-deploy.sh compose exec pg-backup wal-g backup-list` lists it ([backup runbook](backups.md)
    section 2).
 7. When you are happy, set `DEPLOY_ON_MERGE=true`. From then on, every merge to `master` deploys itself once its images are built.
