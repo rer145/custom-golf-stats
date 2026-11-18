@@ -20,11 +20,8 @@ services:
     build:
       context: postgres
       target: runtime
+  # pg-backup and restore run the image built for postgres (same name); never pull it.
   pg-backup:
-    build:
-      context: postgres
-      target: runtime
+    pull_policy: never
   restore:
-    build:
-      context: postgres
-      target: runtime
+    pull_policy: never

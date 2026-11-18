@@ -20,7 +20,9 @@ One Docker Compose stack runs on the server (`deploy/compose.yaml`):
 - **caddy**: HTTPS for both names, with Let's Encrypt certificates. It is the only service with published ports (80 and 443).
 - **api**: the ASP.NET Core API.
 - **web**: the Astro site.
-- **postgres**: the database. It sits on an internal network and is never exposed.
+- **postgres**: the database, Postgres 17 with WAL-G. It sits on an internal network and is never exposed. Its only
+  other network carries WAL-G's uploads to the backup storage (Backblaze B2 or S3) and publishes nothing.
+- **pg-backup**: takes the nightly base backup and applies retention (see the [backup runbook](backups.md)).
 - **migrate**: a one-off job that applies EF Core migrations before each deploy.
 
 `.github/workflows/images.yml` builds the images on every push to `master` and pushes them to GHCR. Each image is tagged with the commit SHA:
@@ -28,6 +30,7 @@ One Docker Compose stack runs on the server (`deploy/compose.yaml`):
 - `ghcr.io/rer145/custom-golf-stats-api:<sha>`
 - `ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator`
 - `ghcr.io/rer145/custom-golf-stats-web:<sha>`
+- `ghcr.io/rer145/custom-golf-stats-postgres:<sha>` (Postgres + WAL-G, from `deploy/postgres`)
 
 `.github/workflows/deploy.yml` deploys one of those SHAs over SSH. Each run:
 
@@ -203,8 +206,8 @@ Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/
 | `ACME_EMAIL` | Your email address. Let's Encrypt sends certificate expiry warnings there. |
 | `HTTP_PORT`, `HTTPS_PORT` | Leave `80` and `443`. |
 | `IMAGE_TAG` | Leave the placeholder. `deploy.sh` (run by `remote-deploy.sh`) sets the tag for each deploy, so this value is never used for deploys. For manual `docker compose` commands, use `remote-deploy.sh compose ...`, which sets the deployed tag for you. |
-| `API_IMAGE`, `WEB_IMAGE` | Leave as they are (`ghcr.io/rer145/custom-golf-stats-api` / `-web`). |
-| `POSTGRES_IMAGE`, `CADDY_IMAGE` | Leave as they are. They are pinned versions, bumped deliberately in the repository. |
+| `API_IMAGE`, `WEB_IMAGE`, `POSTGRES_IMAGE` | Leave as they are (`ghcr.io/rer145/custom-golf-stats-api` / `-web` / `-postgres`). They are repositories without a tag: every deploy uses the deployed `IMAGE_TAG` for all three, so the database image moves with the rest of the stack. |
+| `CADDY_IMAGE` | Leave as it is. It is a pinned version, bumped deliberately in the repository. |
 | `POSTGRES_DB`, `POSTGRES_USER` | Leave `custom_golf_stats`. |
 | `POSTGRES_PASSWORD` | Run `openssl rand -hex 32` and paste the result. It must not contain `;` or quote characters, because it is placed inside the API's connection string. Hex output never does. It is only used inside the Compose network. Set it before the first start: Postgres only reads it when it creates the database. To change it later, run `ALTER USER` in the database as well. |
 | `GOLF_COURSE_API_KEY` | Your golfcourseapi.com key, used for course search and import. Leave it empty to turn those calls off. |
@@ -213,7 +216,12 @@ Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/
 | `AUTH_GOOGLE_CLIENT_IDS` | The OAuth client ids accepted for Google sign-in, comma-separated (`…apps.googleusercontent.com`). Leave it empty until Google sign-in exists. |
 | `PROXY_SUBNET` | Leave `172.30.0.0/24`. Change it only if it collides with a network that already exists on the server. The API trusts forwarded headers only from this subnet. |
 | `SESSION_SECRET` | Run `openssl rand -base64 48` and paste the result. It must be at least 32 characters. It encrypts the web session cookie, so changing it signs everyone out of the web site. |
-| Backup settings (`WALG_*` and the storage keys) | See the [backup and restore runbook](backups.md). |
+| `WALG_S3_PREFIX` | Required. Where the backups go, `s3://<bucket>/<path>`, e.g. `s3://cgs-db-backups/custom-golf-stats`. Use a prefix for this database alone. Create the bucket first: [backup runbook](backups.md), section 1. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Required. The storage key limited to that bucket: a B2 application key, or an S3 IAM user's access key. |
+| `AWS_ENDPOINT`, `AWS_REGION` | Required. The storage's S3 endpoint and region, e.g. `https://s3.us-west-004.backblazeb2.com` and `us-west-004` for B2, or `https://s3.eu-west-1.amazonaws.com` and `eu-west-1` for AWS. |
+| `AWS_S3_FORCE_PATH_STYLE` | Leave `false` for B2 and AWS. |
+| `BACKUP_TIME` | Optional. The nightly base backup time, `HH:MM` in UTC (default `03:00`). |
+| `WALG_RETAIN_FULL` | Optional. How many nightly full backups to keep (default `7`, about a week of point-in-time restore). |
 
 Check that the file is private:
 
@@ -284,7 +292,7 @@ The other options were considered and rejected:
 
 - **A fine-grained personal access token:** not usable. GHCR does not accept fine-grained tokens.
 - **A classic PAT with `read:packages`:** it works, but it is a long-lived credential sitting on the server, and it can read every package your account can see. Avoid it.
-- **Making the two packages public** (package settings > Change visibility): this removes the need for any login. It is safe, because the images contain no secrets, but it publishes the compiled API and web site. Do it only if you are happy for them to be public. The workflow's login is harmless either way.
+- **Making the packages public** (package settings > Change visibility): this removes the need for any login. It is safe, because the images contain no secrets, but it publishes the compiled API and web site. Do it only if you are happy for them to be public. The workflow's login is harmless either way.
 
 The trade-off: outside a workflow run, the server holds no registry credentials. It can't pull new images by hand unless the packages are public. It doesn't need to:
 
@@ -292,11 +300,12 @@ The trade-off: outside a workflow run, the server holds no registry credentials.
 - rollbacks, and `remote-deploy.sh deploy --no-pull`, use the images on disk. They contact the registry only for an image that is missing;
 - every other deploy goes through the workflow.
 
-If a deploy fails with `denied` while pulling, open each package's settings on GitHub. Under "Manage Actions access", give this repository **Read** access.
+There are three packages: `custom-golf-stats-api` (also holds the `-migrator` tags), `custom-golf-stats-web` and `custom-golf-stats-postgres`. The postgres one appears with the first Images run that includes it. If a deploy fails with `denied` while pulling, open each package's settings on GitHub (your profile > Packages). Check that it is connected to this repository ("Connect repository" if not). Then, under "Manage Actions access", give this repository **Read** access. A deploy that pulls the postgres image for the first time needs this as much as the other two.
 
 ## 3. First deploy
 
-1. Check that DNS resolves (section 1), that `.env` is filled in, and that the secrets and variables are set.
+1. Check that DNS resolves (section 1), that `.env` is filled in (the backup storage included: create the bucket and
+   key first, [backup runbook](backups.md) section 1), and that the secrets and variables are set.
 2. Make sure a successful Images run on `master` was built *after* `WEB_ALLOWED_HOSTS` was set. If not, start one with `gh workflow run images.yml --ref master` and wait for it to finish.
 3. Run the deploy, either from Actions > Deploy > Run workflow (leave the tag empty for the latest successful Images run) or with the CLI:
 
@@ -308,7 +317,10 @@ If a deploy fails with `denied` while pulling, open each package's settings on G
 
 4. The first start takes a little longer, because Caddy requests the certificates. If the health check fails, look at Caddy's log (section 4). The usual causes are DNS not resolving yet, or a wrong `AAAA` record.
 5. Open `https://example.com` and register your account.
-6. When you are happy, set `DEPLOY_ON_MERGE=true`. From then on, every merge to `master` deploys itself once its images are built.
+6. Check the backups: `./remote-deploy.sh compose logs pg-backup` on the server shows `base backup finished` within a
+   few minutes, and `./remote-deploy.sh compose exec pg-backup wal-g backup-list` lists it ([backup runbook](backups.md)
+   section 2).
+7. When you are happy, set `DEPLOY_ON_MERGE=true`. From then on, every merge to `master` deploys itself once its images are built.
 
 ## 4. Everyday operations
 
@@ -379,9 +391,10 @@ Backups (WAL-G archiving, nightly base backups and retention) and the scripted r
 
 To restore production after a bad release:
 
-1. stop the app containers (`./remote-deploy.sh compose stop api web`);
-2. restore to a point in time before the deploy, following that runbook;
-3. deploy the last good tag (section 5).
+1. restore to a point in time before the deploy and put it into service, following "Restoring production" in that runbook;
+2. deploy the last good tag (section 5).
+
+Restores use the Postgres image of the deployed tag. They run alongside the live site until the swap.
 
 ## 7. Importing the golftrack history into production
 

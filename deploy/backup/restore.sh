@@ -10,8 +10,9 @@
 # volume are not touched, and the restore never writes to the backup storage, so it is safe to run at any time, e.g.
 # to check a backup. Putting the restored volume into service is a separate, deliberate step: docs/deploy/backups.md.
 # Compose settings come from the usual environment variables when set (COMPOSE_PROJECT_NAME, COMPOSE_FILE,
-# COMPOSE_ENV_FILES); otherwise compose.yaml and .env in deploy/ are used, as with deploy.sh. IMAGE_TAG only needs a
-# value for Compose to read the file; a placeholder is used when it is not set.
+# COMPOSE_ENV_FILES); otherwise compose.yaml and .env in deploy/ are used, as with deploy.sh. The Postgres image is the
+# one of the deployed tag: IMAGE_TAG when set, otherwise `remote-deploy.sh current`.
+# A failed restore leaves a partly written volume behind: remove it (docker volume rm <volume>) before trying again.
 set -euo pipefail
 
 usage() {
@@ -38,7 +39,14 @@ if ! [[ "$volume" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]+$ ]]; then
 fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-export IMAGE_TAG="${IMAGE_TAG:-restore}"
+if [[ -z "${IMAGE_TAG:-}" ]]; then
+  IMAGE_TAG="$(./remote-deploy.sh current 2>/dev/null || true)"
+fi
+if [[ -z "$IMAGE_TAG" ]]; then
+  echo "restore.sh: no deployed tag recorded; set IMAGE_TAG to the tag whose Postgres image should restore" >&2
+  exit 2
+fi
+export IMAGE_TAG
 
 # A volume that already holds anything (the live pgdata volume included) is refused by restore-pgdata before it
 # writes a byte.
@@ -55,5 +63,5 @@ docker compose --profile restore run --rm --no-deps \
   restore
 
 echo "==> Restored into volume $volume"
-echo "    Inspect it:  docker run --rm -d --name pg-restored --network none -v $volume:/var/lib/postgresql/data <POSTGRES_IMAGE> postgres -c archive_mode=off"
+echo "    Inspect it: docs/deploy/backups.md (\"Look inside a restored volume\")"
 echo "    Put it into service: docs/deploy/backups.md (\"Restoring production\"), then take a new base backup."

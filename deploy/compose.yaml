@@ -4,8 +4,8 @@
 # A plain `docker compose up` does not run migrations: `migrate` is in its own profile, run on its own by deploy.sh.
 # Caddy is the only service with published ports. Postgres serves the app on an internal network with no route out;
 # its only other network, `backup`, carries WAL-G's outbound traffic to the backup storage and publishes nothing.
-# Every image tag of ours for the app comes from IMAGE_TAG; the Postgres image (deploy/postgres) is pinned separately in
-# POSTGRES_IMAGE so app deploys never restart the database. Backups and restores: docs/deploy/backups.md.
+# Every image tag of ours comes from IMAGE_TAG, the Postgres + WAL-G image (deploy/postgres) included, so a deploy or a
+# rollback always moves the whole stack together. Backups and restores: docs/deploy/backups.md.
 name: custom-golf-stats
 
 # WAL-G storage settings, shared by the server (archive_command), the backup sidecar and the restore service.
@@ -20,7 +20,7 @@ x-walg-env: &walg-env
 services:
   # Postgres 17 + WAL-G: every WAL segment is archived to WALG_S3_PREFIX as it completes (or every 5 minutes at most).
   postgres:
-    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in .env}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped
     environment:
       <<: *walg-env
@@ -42,7 +42,7 @@ services:
   # after the oldest of them are kept. Takes the first backup at once when the storage has none. Same image as postgres;
   # reads the data directory read-only. Back up now: `docker compose exec pg-backup backup-now`.
   pg-backup:
-    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in .env}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped
     user: postgres
     entrypoint: ["backup-scheduler"]
@@ -64,7 +64,7 @@ services:
   # One-off: restores a base backup plus archived WAL into an empty volume. Run it with deploy/backup/restore.sh, which
   # mounts the target volume; it never touches pgdata.
   restore:
-    image: ${POSTGRES_IMAGE:?set POSTGRES_IMAGE in .env}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     profiles: [restore]
     restart: "no"
     user: root

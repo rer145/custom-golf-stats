@@ -38,7 +38,10 @@ COPY --chmod=0755 restore-pgdata.sh /usr/local/bin/restore-pgdata
 RUN wal-g --version
 
 # lz4 keeps archiving cheap on a small VPS; WAL segments of a quiet database compress to almost nothing.
-ENV WALG_COMPRESSION_METHOD=lz4
+# WALG_PREVENT_WAL_OVERWRITE: wal-push refuses to replace an archived file with different content (a second cluster, or
+# a fresh one, pointed at the same WALG_S3_PREFIX), so a mistake fails archiving loudly instead of destroying backups.
+ENV WALG_COMPRESSION_METHOD=lz4 \
+    WALG_PREVENT_WAL_OVERWRITE=true
 
 # Archiving is part of the server command line rather than an initdb script, so it also applies to an existing data
 # volume. archive_timeout bounds how much committed work can be lost (5 minutes) on a quiet database; a forced switch

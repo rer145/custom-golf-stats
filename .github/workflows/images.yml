@@ -6,7 +6,7 @@ name: Images
 #   ghcr.io/rer145/custom-golf-stats-api:<sha> / :latest
 #   ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator / :latest-migrator   (the EF Core migrations bundle)
 #   ghcr.io/rer145/custom-golf-stats-web:<sha> / :latest
-#   ghcr.io/rer145/custom-golf-stats-postgres:<sha> / :latest   (deploy/postgres; deployed via POSTGRES_IMAGE, not IMAGE_TAG)
+#   ghcr.io/rer145/custom-golf-stats-postgres:<sha> / :latest   (deploy/postgres)
 # The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name);
 # publishing fails if it is not set.
 # The .NET SDK and npm build stages run natively on the amd64 runner and cross-build; only the small target-platform

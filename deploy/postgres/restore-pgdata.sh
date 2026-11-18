@@ -6,8 +6,9 @@
 #      RESTORE_TARGET_TIME when set (a Postgres timestamp, e.g. "2026-11-18 14:30:00+00");
 #   3. promotion, then a clean shutdown. The volume is then an ordinary data directory, ready to be started.
 # The temporary server listens on no TCP address and runs with archive_mode=off, so a restore (or a drill) never
-# writes into the storage it reads from. After putting a restored volume into service, take a new base backup
-# (`docker compose exec pg-backup backup-now`): the new timeline is archived from that backup on.
+# writes into the storage it reads from. The new timeline's history file is queued (archive_status/*.ready) and is
+# archived once the volume runs with archiving on. After putting a restored volume into service, take a new base backup
+# (`remote-deploy.sh compose exec pg-backup backup-now`): restores of the new timeline start from it.
 # Runs as root only to take ownership of the volume; everything else runs as postgres. Prints no secrets.
 set -euo pipefail
 
@@ -78,6 +79,16 @@ done
 summary="$(as_pg psql -X -q -At -U "$db_user" -d postgres -F ' ' -c \
   "select 'timeline ' || timeline_id || ', redo ' || redo_lsn from pg_control_checkpoint()")"
 log "recovery complete and promoted ($summary)"
+
+# Promotion started a new timeline and wrote its history file to pg_wal. With archiving off here, Postgres did not queue
+# it for the archive; queue it now, so the server archives it as soon as this volume runs with archiving on. Without it
+# in storage, a later restore could pick the same timeline number again and overwrite this timeline's archived WAL.
+tli="$(as_pg psql -X -q -At -U "$db_user" -d postgres -c "select timeline_id from pg_control_checkpoint()")"
+history_file="$(printf '%08X.history' "$tli")"
+if [[ -f "$pgdata/pg_wal/$history_file" ]]; then
+  as_pg touch "$pgdata/pg_wal/archive_status/$history_file.ready"
+  log "queued $history_file for archiving (pushed when this volume runs with archiving on)"
+fi
 as_pg pg_ctl -D "$pgdata" -m fast -w stop >/dev/null
 wait "$server" || true
 log "restored data directory is ready"
