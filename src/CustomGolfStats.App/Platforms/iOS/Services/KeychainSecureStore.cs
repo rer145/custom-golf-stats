@@ -6,7 +6,7 @@ namespace CustomGolfStats.App.Platforms.iOS.Services;
 /// <summary>Generic-password Keychain items, readable only on this device after its first unlock (never in backups to other devices).</summary>
 public sealed class KeychainSecureStore : ISecureStore
 {
-    private const string Service = "com.customgolfstats.app.secure";
+    private const string Service = "xyz.rsquaredsolutions.customgolfstats.secure";
     private readonly object _lock = new();
 
     public Task<string?> GetAsync(string key)

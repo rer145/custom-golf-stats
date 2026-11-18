@@ -2,10 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<!-- The auth tokens live in the Keychain (KeychainSecureStore); the app needs its own access group to use it. -->
+		<!-- The auth tokens live in the Keychain (KeychainSecureStore); the app needs its own access group to use it.
+		     The group is the team prefix plus the bundle id (ApplicationId in the csproj), both filled in at signing time.
+		     Uno.Sdk picks this file up as CodesignEntitlements for every iOS build, simulator and device alike. -->
 		<key>keychain-access-groups</key>
 		<array>
-			<string>$(AppIdentifierPrefix)com.customgolfstats.app</string>
+			<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
 		</array>
 	</dict>
 </plist>

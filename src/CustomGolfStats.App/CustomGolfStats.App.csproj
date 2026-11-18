@@ -15,9 +15,15 @@
     <RootNamespace>CustomGolfStats.App</RootNamespace>
 
     <ApplicationTitle>Custom Golf Stats</ApplicationTitle>
-    <ApplicationId>com.customgolfstats.app</ApplicationId>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationId>xyz.rsquaredsolutions.customgolfstats</ApplicationId>
+    <!--
+      ApplicationDisplayVersion is the version testers and the store show (CFBundleShortVersionString / versionName): bump it
+      here for a release. ApplicationVersion is the build number (CFBundleVersion / versionCode) and must grow with every
+      upload: the TestFlight job passes -p:ApplicationVersion=<run number>.<run attempt> (.github/workflows/mobile.yml);
+      local builds use 1.
+    -->
+    <ApplicationDisplayVersion Condition="'$(ApplicationDisplayVersion)' == ''">1.0</ApplicationDisplayVersion>
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
     <ApplicationPublisher>Custom Golf Stats</ApplicationPublisher>
     <Description>Custom Golf Stats: golf rounds, shot by shot.</Description>
 
@@ -60,7 +66,9 @@
   </PropertyGroup>
 
   <!-- Simulator builds are signed ad hoc so the Keychain entitlement (Platforms/iOS/Entitlements.plist) applies without a
-       developer certificate. Device builds use a real signing identity (CodesignKey / provisioning profile). -->
+       developer certificate. Device builds use a real signing identity: the ios-testflight job passes CodesignKey,
+       CodesignProvision (the App Store profile's UUID) and CodesignKeychain on the command line, so nothing about signing
+       lives in this file; the unsigned ios job passes EnableCodeSigning=false instead. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-ios' and '$(Configuration)' == 'Debug' and !$(RuntimeIdentifier.StartsWith('ios-'))">
     <CodesignKey>-</CodesignKey>
   </PropertyGroup>
