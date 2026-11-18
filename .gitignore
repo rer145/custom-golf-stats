@@ -262,6 +262,8 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# ...but not the database backup scripts (Backup*/ matches backup/ where git ignores case, e.g. on macOS).
+!/deploy/backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/

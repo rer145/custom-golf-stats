@@ -2,26 +2,77 @@
 # Deploy (and roll back) only with deploy.sh, which migrates before it touches the running services:
 #   ./deploy.sh <image tag>
 # A plain `docker compose up` does not run migrations: `migrate` is in its own profile, run on its own by deploy.sh.
-# Caddy is the only service with published ports. Postgres sits on an internal network with no route out.
-# Every image tag of ours comes from IMAGE_TAG.
+# Caddy is the only service with published ports. Postgres serves the app on an internal network with no route out;
+# its only other network, `backup`, carries WAL-G's outbound traffic to the backup storage and publishes nothing.
+# Every image tag of ours comes from IMAGE_TAG, the Postgres + WAL-G image (deploy/postgres) included, so a deploy or a
+# rollback always moves the whole stack together. Backups and restores: docs/deploy/backups.md.
 name: custom-golf-stats
 
+# WAL-G storage settings, shared by the server (archive_command), the backup sidecar and the restore service.
+x-walg-env: &walg-env
+  WALG_S3_PREFIX: ${WALG_S3_PREFIX:?set WALG_S3_PREFIX in .env}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?set AWS_ACCESS_KEY_ID in .env}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?set AWS_SECRET_ACCESS_KEY in .env}
+  AWS_ENDPOINT: ${AWS_ENDPOINT:?set AWS_ENDPOINT in .env}
+  AWS_REGION: ${AWS_REGION:?set AWS_REGION in .env}
+  AWS_S3_FORCE_PATH_STYLE: ${AWS_S3_FORCE_PATH_STYLE:-false}
+
 services:
+  # Postgres 17 + WAL-G: every WAL segment is archived to WALG_S3_PREFIX as it completes (or every 5 minutes at most).
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17.11}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped
     environment:
+      <<: *walg-env
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks: [backend]
+    networks: [backend, backup]
+    # Room for the shutdown checkpoint and the archiver's last push before Docker resorts to SIGKILL.
+    stop_grace_period: 1m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Nightly full base backup at BACKUP_TIME (UTC), then retention: the newest WALG_RETAIN_FULL full backups and the WAL
+  # after the oldest of them are kept. Takes the first backup at once when the storage has none. Same image as postgres;
+  # reads the data directory read-only. Back up now: `docker compose exec pg-backup backup-now`.
+  pg-backup:
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    restart: unless-stopped
+    user: postgres
+    entrypoint: ["backup-scheduler"]
+    environment:
+      <<: *walg-env
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_TIME: ${BACKUP_TIME:-03:00}
+      WALG_RETAIN_FULL: ${WALG_RETAIN_FULL:-7}
+    volumes:
+      - pgdata:/var/lib/postgresql/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backup]
+
+  # One-off: restores a base backup plus archived WAL into an empty volume. Run it with deploy/backup/restore.sh, which
+  # mounts the target volume; it never touches pgdata.
+  restore:
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    profiles: [restore]
+    restart: "no"
+    user: root
+    entrypoint: ["restore-pgdata"]
+    environment:
+      <<: *walg-env
+      POSTGRES_USER: ${POSTGRES_USER}
+    networks: [backup]
 
   # One-shot: applies pending EF Core migrations with the bundle built alongside the API image, then exits.
   # deploy.sh runs it (`docker compose run --rm migrate`) before `up`, so if it fails the running api, web and caddy
@@ -95,6 +146,8 @@ services:
 networks:
   backend:
     internal: true
+  # Outbound only (no published ports): WAL-G to the backup storage.
+  backup:
   proxy:
     ipam:
       config:

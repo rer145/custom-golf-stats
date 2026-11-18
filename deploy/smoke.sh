@@ -38,6 +38,15 @@ POSTGRES_USER=custom_golf_stats
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 SESSION_SECRET=$(openssl rand -hex 32)
 PROXY_SUBNET=${SMOKE_PROXY_SUBNET:-172.30.250.0/24}
+POSTGRES_IMAGE=cgs-smoke-postgres
+# Backups are not part of the smoke test (deploy/backup/drill.sh covers them): WALG_S3_PREFIX=none turns WAL archiving
+# and pg-backup off for this throwaway stack. The AWS_* values are unused placeholders.
+WALG_S3_PREFIX=none
+AWS_ACCESS_KEY_ID=unused
+AWS_SECRET_ACCESS_KEY=unused
+AWS_ENDPOINT=http://unused.invalid
+AWS_REGION=us-east-1
+AWS_S3_FORCE_PATH_STYLE=true
 EOF
 
 compose() {
@@ -58,7 +67,7 @@ teardown() {
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     rm -rf "$work"
   fi
-  docker image rm cgs-smoke-api:smoke-broken cgs-smoke-web:smoke-broken cgs-smoke-api:smoke-broken-migrator >/dev/null 2>&1 || true
+  docker image rm cgs-smoke-api:smoke-broken cgs-smoke-web:smoke-broken cgs-smoke-postgres:smoke-broken cgs-smoke-api:smoke-broken-migrator >/dev/null 2>&1 || true
   exit $status
 }
 trap teardown EXIT
@@ -164,6 +173,7 @@ step "Deploying a tag whose migration fails"
 # The new tag has the same api/web images but a migrator that fails, as a broken migration would.
 docker tag cgs-smoke-api:smoke cgs-smoke-api:smoke-broken
 docker tag cgs-smoke-web:smoke cgs-smoke-web:smoke-broken
+docker tag cgs-smoke-postgres:smoke cgs-smoke-postgres:smoke-broken
 printf 'FROM cgs-smoke-api:smoke-migrator\nENTRYPOINT ["sh", "-c", "echo simulated migration failure >&2; exit 1"]\n' \
   | docker build --quiet -t cgs-smoke-api:smoke-broken-migrator - >/dev/null
 before="$(compose ps -q api web caddy | sort)"

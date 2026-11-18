@@ -16,3 +16,12 @@ services:
       context: ../web
       args:
         ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+  postgres:
+    build:
+      context: postgres
+      target: runtime
+  # pg-backup and restore run the image built for postgres (same name); never pull it.
+  pg-backup:
+    pull_policy: never
+  restore:
+    pull_policy: never
