@@ -13,7 +13,7 @@ The pieces:
 
 | What | Where |
 | --- | --- |
-| Postgres 17.11 + WAL-G image (WAL-G v3.0.9, checksum-verified) | `deploy/postgres/Dockerfile`, published as `ghcr.io/rer145/custom-golf-stats-postgres:<sha>` |
+| Postgres 17.11 + WAL-G image (WAL-G v3.0.9, checksum-verified) | `deploy/postgres/Dockerfile`, published as `ghcr.io/rer145/custom-golf-stats-postgres:pg-<hash>` |
 | Services `postgres`, `pg-backup`, `restore` (profile) | `deploy/compose.yaml` |
 | Settings | the "Backups" section of `deploy/.env` (see `deploy/.env.example`) |
 | Restore into a new volume | `deploy/backup/restore.sh` |
@@ -23,12 +23,17 @@ Postgres stays off the internet. It serves the app on the internal `backend` net
 exists only so WAL-G can reach the storage. It publishes no ports. No credentials are in the image. WAL-G and the
 scripts read them from the container environment and never print them.
 
-The Postgres image is deployed like the API and web images:
-- **Same tag as the rest.** It is `<POSTGRES_IMAGE>:<IMAGE_TAG>`, tagged with the same commit SHA. A deploy or a
-  rollback moves the whole stack together, and changes to `deploy/postgres` ship with ordinary deploys.
-- **Brief restarts.** Every commit rebuilds the image, so a deploy usually recreates `postgres` and `pg-backup`.
-  `deploy.sh` does that first, before the migrations, so the database is unavailable for a few seconds. The running
-  API reconnects.
+The Postgres image ships with ordinary deploys, but has its own tag:
+- **A content tag.** It is `<POSTGRES_IMAGE>:pg-<hash>`, where the hash covers the files in `deploy/postgres`
+  (`deploy/postgres-tag.sh` computes it, from the `deploy/` files on the server). Images publishes that tag for every
+  commit on `master`, building it only when it doesn't exist yet, so the image behind a tag never changes.
+- **Restarts only when it changed.** A deploy whose `deploy/postgres` is unchanged leaves `postgres` and `pg-backup`
+  running. When it did change, `deploy.sh` recreates them first, before the migrations, so the database is unavailable
+  for a few seconds and the running API reconnects.
+- **Rollbacks keep it.** `remote-deploy.sh rollback` (and the automatic one after a failed deploy) keeps the `deploy/`
+  files on the server, so Postgres stays on its image. Running the Deploy workflow with an older SHA copies that
+  commit's `deploy/postgres` and so goes back to its Postgres image too.
+- **Pinning.** `POSTGRES_TAG` in `deploy/.env` (normally unset) pins another tag, e.g. an older `pg-<hash>`.
 
 Run the server commands below as `deploy` from `~/custom-golf-stats/deploy`. `./remote-deploy.sh compose` runs
 `docker compose` with the deployed tag set.
@@ -114,7 +119,8 @@ below do that. A stolen key, or a bug, can then only hide backups, and you have 
 
 ### Image and schedule
 
-- Leave `POSTGRES_IMAGE` as `ghcr.io/rer145/custom-golf-stats-postgres`. Its tag comes from `IMAGE_TAG`.
+- Leave `POSTGRES_IMAGE` as `ghcr.io/rer145/custom-golf-stats-postgres`. Its tag is the content tag of
+  `deploy/postgres` (see above); leave `POSTGRES_TAG` unset.
 - The GHCR package needs the same access as the API and web packages. See "Registry access (GHCR)" in
   [README.md](README.md).
 - `BACKUP_TIME` (default `03:00` UTC) and `WALG_RETAIN_FULL` (default `7`) are optional.
@@ -185,7 +191,8 @@ the archiver pushes the backlog and Postgres frees the space by itself.
 It doesn't touch the running stack or its `pgdata` volume. It refuses a volume that isn't empty. It never writes to
 the storage. So it's safe to run at any time, for example to check a backup.
 
-It uses the Postgres image of the deployed tag (`remote-deploy.sh current`). Set `IMAGE_TAG` to use another tag.
+It uses the Postgres image the stack runs: the content tag of `deploy/postgres`, or `POSTGRES_TAG` when set. Set
+`POSTGRES_TAG=<tag>` in the environment to restore with another image.
 
 ```sh
 backup/restore.sh custom-golf-stats_pgdata_restored                                         # latest point

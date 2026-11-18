@@ -1,5 +1,6 @@
 # Postgres 17 with WAL-G for continuous WAL archiving and base backups to S3-compatible storage (Backblaze B2, AWS S3,
-# MinIO). Published by .github/workflows/images.yml as ghcr.io/rer145/custom-golf-stats-postgres:<sha>.
+# MinIO). Published by .github/workflows/images.yml as ghcr.io/rer145/custom-golf-stats-postgres:pg-<hash>, a content
+# tag over this directory (deploy/postgres-tag.sh): any change here gives a new tag, and deploys recreate Postgres.
 # The image holds no credentials: WAL-G reads WALG_S3_PREFIX and the AWS_* variables from the container environment
 # (deploy/compose.yaml passes them from deploy/.env). See docs/deploy/backups.md.
 #

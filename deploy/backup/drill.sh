@@ -40,6 +40,8 @@ WEB_DOMAIN=drill.invalid
 API_DOMAIN=api.drill.invalid
 ACME_EMAIL=drill@example.com
 IMAGE_TAG=$image_tag
+# The Postgres image is pinned to its own tag here (POSTGRES_TAG overrides the content tag from postgres-tag.sh).
+POSTGRES_TAG=$image_tag
 SESSION_SECRET=$(openssl rand -hex 32)
 PROXY_SUBNET=172.30.251.0/24
 POSTGRES_IMAGE=$image_repo
@@ -62,6 +64,8 @@ export COMPOSE_PROJECT_NAME="$project"
 export COMPOSE_FILE="$deploy_dir/compose.yaml:$backup_dir/drill.compose.yaml"
 export COMPOSE_ENV_FILES="$work/.env"
 export IMAGE_TAG="$image_tag"
+POSTGRES_CONTENT_TAG="$("$deploy_dir/postgres-tag.sh")"
+export POSTGRES_CONTENT_TAG
 compose() { docker compose "$@"; }
 
 step() { printf '\n==> %s\n' "$*"; }

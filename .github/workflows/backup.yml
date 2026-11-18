@@ -8,6 +8,7 @@ on:
   push:
     paths: &paths
       - deploy/postgres/**
+      - deploy/postgres-tag.sh
       - deploy/backup/**
       - deploy/compose.yaml
       - .github/workflows/backup.yml

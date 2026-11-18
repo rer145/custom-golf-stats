@@ -11,7 +11,8 @@
 # to check a backup. Putting the restored volume into service is a separate, deliberate step: docs/deploy/backups.md.
 # Compose settings come from the usual environment variables when set (COMPOSE_PROJECT_NAME, COMPOSE_FILE,
 # COMPOSE_ENV_FILES); otherwise compose.yaml and .env in deploy/ are used, as with deploy.sh. The Postgres image is the
-# one of the deployed tag: IMAGE_TAG when set, otherwise `remote-deploy.sh current`.
+# one the deployed stack runs: the content tag of deploy/postgres (postgres-tag.sh), or POSTGRES_TAG when that pins one.
+# IMAGE_TAG (default `remote-deploy.sh current`) is only needed because compose.yaml requires it for the other services.
 # A failed restore leaves a partly written volume behind: remove it (docker volume rm <volume>) before trying again.
 set -euo pipefail
 
@@ -43,10 +44,12 @@ if [[ -z "${IMAGE_TAG:-}" ]]; then
   IMAGE_TAG="$(./remote-deploy.sh current 2>/dev/null || true)"
 fi
 if [[ -z "$IMAGE_TAG" ]]; then
-  echo "restore.sh: no deployed tag recorded; set IMAGE_TAG to the tag whose Postgres image should restore" >&2
+  echo "restore.sh: no deployed tag recorded; set IMAGE_TAG to the deployed tag" >&2
   exit 2
 fi
 export IMAGE_TAG
+POSTGRES_CONTENT_TAG="$(./postgres-tag.sh)"
+export POSTGRES_CONTENT_TAG
 
 # A volume that already holds anything (the live pgdata volume included) is refused by restore-pgdata before it
 # writes a byte.

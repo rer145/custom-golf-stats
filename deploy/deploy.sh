@@ -3,7 +3,9 @@
 #   deploy/deploy.sh <image tag>          # e.g. the git SHA pushed by .github/workflows/images.yml
 # Order matters, so a failed migration never takes the running site down:
 #   1. pull the images for <tag> (nothing running changes);
-#   2. make sure Postgres is up and healthy (only Postgres is touched);
+#   2. make sure Postgres is up and healthy (only Postgres is touched). Its image has a content tag (postgres-tag.sh,
+#      exported as POSTGRES_CONTENT_TAG) that changes only with deploy/postgres, so this recreates Postgres only when
+#      its image really changed, never just because <tag> is new; POSTGRES_TAG (environment or .env) pins another tag;
 #   3. run the migrations bundle for <tag> as a one-off container; on failure exit non-zero right here, leaving
 #      api, web and caddy running on their current images;
 #   4. only then `up -d --wait`, which recreates api, web and caddy on <tag> and waits until they are healthy.
@@ -22,6 +24,8 @@ fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 export IMAGE_TAG="$tag"
+POSTGRES_CONTENT_TAG="$(./postgres-tag.sh)"
+export POSTGRES_CONTENT_TAG
 
 pull=()
 if [[ "${SKIP_PULL:-}" == "1" ]]; then
@@ -34,7 +38,7 @@ else
   docker compose --profile migrate pull --quiet --ignore-buildable migrate
 fi
 
-echo "==> Starting Postgres"
+echo "==> Starting Postgres (content tag $POSTGRES_CONTENT_TAG unless POSTGRES_TAG pins one; recreated only if it changed)"
 docker compose up -d --wait ${pull[@]+"${pull[@]}"} postgres
 
 echo "==> Applying migrations ($IMAGE_TAG-migrator)"

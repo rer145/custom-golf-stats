@@ -25,12 +25,12 @@ One Docker Compose stack runs on the server (`deploy/compose.yaml`):
 - **pg-backup**: takes the nightly base backup and applies retention (see the [backup runbook](backups.md)).
 - **migrate**: a one-off job that applies EF Core migrations before each deploy.
 
-`.github/workflows/images.yml` builds the images on every push to `master` and pushes them to GHCR. Each image is tagged with the commit SHA:
+`.github/workflows/images.yml` builds the images on every push to `master` and pushes them to GHCR. Each image is tagged with the commit SHA, and the Postgres image also with a content tag:
 
 - `ghcr.io/rer145/custom-golf-stats-api:<sha>`
 - `ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator`
 - `ghcr.io/rer145/custom-golf-stats-web:<sha>`
-- `ghcr.io/rer145/custom-golf-stats-postgres:<sha>` (Postgres + WAL-G, from `deploy/postgres`)
+- `ghcr.io/rer145/custom-golf-stats-postgres:pg-<hash>` (Postgres + WAL-G, from `deploy/postgres`), plus `:<sha>`. Deploys use `pg-<hash>`, a hash of the `deploy/postgres` files (`deploy/postgres-tag.sh`), so a deploy restarts Postgres only when that directory changed. A `pg-<hash>` tag is built once and never rebuilt: later commits with the same files just add their `<sha>` tag to it.
 
 `.github/workflows/deploy.yml` deploys one of those SHAs over SSH. Each run:
 
@@ -38,7 +38,7 @@ One Docker Compose stack runs on the server (`deploy/compose.yaml`):
 2. logs the server in to GHCR with the job's own short-lived token;
 3. runs `deploy/remote-deploy.sh deploy <sha>`, which runs `deploy.sh <sha>`:
    1. pull the images;
-   2. start Postgres;
+   2. start Postgres (recreated only when `deploy/postgres` changed: its image has a content tag, not the SHA);
    3. run the migrations. If they fail, it stops here and the running site is untouched;
    4. `docker compose up -d --wait`, which swaps in the new containers and waits until they are healthy.
 
@@ -208,7 +208,8 @@ Then edit it on the server (`ssh deploy@SERVER`, then `nano ~/custom-golf-stats/
 | `ACME_EMAIL` | Your email address. Let's Encrypt sends certificate expiry warnings there. |
 | `HTTP_PORT`, `HTTPS_PORT` | Leave `80` and `443`. |
 | `IMAGE_TAG` | Leave the placeholder. `deploy.sh` (run by `remote-deploy.sh`) sets the tag for each deploy, so this value is never used for deploys. For manual `docker compose` commands, use `remote-deploy.sh compose ...`, which sets the deployed tag for you. |
-| `API_IMAGE`, `WEB_IMAGE`, `POSTGRES_IMAGE` | Leave as they are (`ghcr.io/rer145/custom-golf-stats-api` / `-web` / `-postgres`). They are repositories without a tag: every deploy uses the deployed `IMAGE_TAG` for all three, so the database image moves with the rest of the stack. |
+| `API_IMAGE`, `WEB_IMAGE`, `POSTGRES_IMAGE` | Leave as they are (`ghcr.io/rer145/custom-golf-stats-api` / `-web` / `-postgres`). They are repositories without a tag: every deploy uses the deployed `IMAGE_TAG` for the API and web images, and the content tag of `deploy/postgres` for the Postgres image. |
+| `POSTGRES_TAG` | Leave unset. It pins the Postgres image to another tag instead of the content tag. |
 | `CADDY_IMAGE` | Leave as it is. It is a pinned version, bumped deliberately in the repository. |
 | `POSTGRES_DB`, `POSTGRES_USER` | Leave `custom_golf_stats`. |
 | `POSTGRES_PASSWORD` | Run `openssl rand -hex 32` and paste the result. It must not contain `;` or quote characters, because it is placed inside the API's connection string. Hex output never does. It is only used inside the Compose network. Set it before the first start: Postgres only reads it when it creates the database. To change it later, run `ALTER USER` in the database as well. |
@@ -331,7 +332,7 @@ All of these run as `deploy` on the server (`ssh deploy@SERVER`):
 ```bash
 cd ~/custom-golf-stats/deploy
 ./remote-deploy.sh status                 # current and previous tag, and the deploy history
-./remote-deploy.sh compose ps             # docker compose with the deployed IMAGE_TAG set
+./remote-deploy.sh compose ps             # docker compose with the deployed IMAGE_TAG (and the Postgres content tag) set
 ./remote-deploy.sh compose logs -f --tail=100 api
 ./remote-deploy.sh compose logs caddy     # certificate problems show up here
 ./remote-deploy.sh compose restart web
@@ -385,7 +386,7 @@ What a rollback does **not** undo:
 - **Database migrations.** Migrations only move forward. A rollback runs the old images against the newer schema. That works as long as migrations are additive (new tables or columns, nothing dropped or renamed in the same release), and every migration should be written that way.
 
   If a release's migration destroyed or rewrote data, restore the database (section 6) to a time before the deploy, then deploy the older tag.
-- **The `deploy/` files on the server**, when the rollback is run on the server or done automatically. The workflow's own rollbacks keep the newer `compose.yaml` and `Caddyfile`. Run the Deploy workflow with the older SHA to restore those files too.
+- **The `deploy/` files on the server**, when the rollback is run on the server or done automatically. The workflow's own rollbacks keep the newer `compose.yaml` and `Caddyfile`, and Postgres stays on the image of the newer `deploy/postgres` (it isn't restarted). Run the Deploy workflow with the older SHA to restore those files, and that commit's Postgres image, too.
 
 ## 6. Backups and restore
 
@@ -396,7 +397,7 @@ To restore production after a bad release:
 1. restore to a point in time before the deploy and put it into service, following "Restoring production" in that runbook;
 2. deploy the last good tag (section 5).
 
-Restores use the Postgres image of the deployed tag. They run alongside the live site until the swap.
+Restores use the Postgres image the stack runs. They run alongside the live site until the swap.
 
 ## 7. Importing the golftrack history into production
 

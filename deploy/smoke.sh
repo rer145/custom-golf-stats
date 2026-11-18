@@ -6,8 +6,9 @@
 #     waits until every service is healthy.
 #  2. Through Caddy, verifying TLS against Caddy's root certificate: registers a user, logs in and calls /me; then signs
 #     in on the web site and loads the profile page with the session cookie.
-#  3. Deploys a new tag whose migration fails, and checks deploy.sh exits non-zero while the running api, web and caddy
-#     containers stay the same, on the old image, healthy and serving; then redeploys the good tag (a no-op).
+#  3. Deploys a new tag whose migration fails, and checks deploy.sh exits non-zero while the running postgres, api, web
+#     and caddy containers stay the same (Postgres keeps its content tag, postgres-tag.sh, so a new IMAGE_TAG alone must
+#     not recreate it), on the old image, healthy and serving; then redeploys the good tag (a no-op for all of them).
 #  4. Tears everything down, volumes included, whatever happened.
 # Needs Docker with Compose v2, curl, openssl and python3. Secrets are generated per run and never printed.
 #   deploy/smoke.sh                 # SMOKE_HTTP_PORT / SMOKE_HTTPS_PORT override the ports (default 18080 / 18443)
@@ -18,6 +19,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 http_port="${SMOKE_HTTP_PORT:-18080}"
 https_port="${SMOKE_HTTPS_PORT:-18443}"
 project="cgs-smoke"
+# The Postgres image's content tag, as deploy.sh computes it; the build below tags cgs-smoke-postgres with it.
+POSTGRES_CONTENT_TAG="$("$here/postgres-tag.sh")"
+export POSTGRES_CONTENT_TAG
 web="localhost"
 api="api.localhost"
 
@@ -68,7 +72,7 @@ teardown() {
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     rm -rf "$work"
   fi
-  docker image rm cgs-smoke-api:smoke-broken cgs-smoke-web:smoke-broken cgs-smoke-postgres:smoke-broken cgs-smoke-api:smoke-broken-migrator >/dev/null 2>&1 || true
+  docker image rm cgs-smoke-api:smoke-broken cgs-smoke-web:smoke-broken cgs-smoke-api:smoke-broken-migrator >/dev/null 2>&1 || true
   exit $status
 }
 trap teardown EXIT
@@ -171,19 +175,27 @@ grep -q "Signed in as $email" "$work/profile.html" || fail "/profile does not sh
 echo "    web sign-in 303 -> /profile, profile shows $email"
 
 step "Deploying a tag whose migration fails"
-# The new tag has the same api/web images but a migrator that fails, as a broken migration would.
+# The new tag has the same api/web images but a migrator that fails, as a broken migration would. deploy/postgres is
+# unchanged, so Postgres keeps its content tag and must not be recreated (it was, while it shared IMAGE_TAG, and the
+# API answered 503 while it restarted).
 docker tag cgs-smoke-api:smoke cgs-smoke-api:smoke-broken
 docker tag cgs-smoke-web:smoke cgs-smoke-web:smoke-broken
-docker tag cgs-smoke-postgres:smoke cgs-smoke-postgres:smoke-broken
 printf 'FROM cgs-smoke-api:smoke-migrator\nENTRYPOINT ["sh", "-c", "echo simulated migration failure >&2; exit 1"]\n' \
   | docker build --quiet -t cgs-smoke-api:smoke-broken-migrator - >/dev/null
-before="$(compose ps -q api web caddy | sort)"
+services=(postgres pg-backup api web caddy)
+before="$(compose ps -q "${services[@]}" | sort)"
+[[ "$(wc -l <<<"$before")" -eq ${#services[@]} ]] || fail "expected ${#services[@]} running containers, got: $(compose ps)"
+pg_started() { docker inspect --format '{{.RestartCount}} {{.State.StartedAt}}' "$(compose ps -q postgres)"; }
+pg_before="$(pg_started)"
 if deploy smoke-broken >"$work/broken.log" 2>&1; then
   fail "deploy.sh succeeded although the migration failed"
 fi
 grep -q "Migrations failed" "$work/broken.log" || fail "deploy.sh failed for another reason: $(tail -5 "$work/broken.log")"
-after="$(compose ps -q api web caddy | sort)"
-[[ "$before" == "$after" ]] || fail "api/web/caddy containers were replaced by the failed deploy"
+after="$(compose ps -q "${services[@]}" | sort)"
+[[ "$before" == "$after" ]] || fail "${services[*]} containers were replaced by the failed deploy"
+pg_image="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q postgres)")"
+[[ "$pg_image" == "cgs-smoke-postgres:$POSTGRES_CONTENT_TAG" ]] || fail "postgres runs $pg_image"
+[[ "$(pg_started)" == "$pg_before" ]] || fail "postgres restarted during the failed deploy"
 api_image="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q api)")"
 [[ "$api_image" == "cgs-smoke-api:smoke" ]] || fail "api now runs $api_image"
 api_health="$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -q api)")"
@@ -191,11 +203,12 @@ api_health="$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -
 c --fail -o /dev/null "$api_url/health" || fail "API stopped serving after the failed deploy"
 status="$(c -o /dev/null -w '%{http_code}' -H "@$work/auth-header" "$api_url/me")"
 [[ "$status" == "200" ]] || fail "/me returned $status after the failed deploy"
-echo "    deploy.sh exited non-zero; api/web/caddy untouched, api on $api_image and $api_health, /me 200 through Caddy"
+echo "    deploy.sh exited non-zero; ${services[*]} untouched (postgres on $pg_image, not restarted), api on $api_image and $api_health, /me 200 through Caddy"
 
 step "Redeploying the good tag is a no-op"
 deploy smoke >"$work/redeploy.log" 2>&1 || fail "redeploy failed: $(tail -5 "$work/redeploy.log")"
-[[ "$(compose ps -q api web caddy | sort)" == "$before" ]] || fail "redeploying the same tag replaced containers"
-echo "    same api/web/caddy containers after the redeploy"
+[[ "$(compose ps -q "${services[@]}" | sort)" == "$before" ]] || fail "redeploying the same tag replaced containers"
+[[ "$(pg_started)" == "$pg_before" ]] || fail "postgres restarted during the redeploy"
+echo "    same ${services[*]} containers after the redeploy; postgres not restarted"
 
 step "Smoke test passed"

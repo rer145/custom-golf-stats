@@ -20,6 +20,7 @@ services:
     build:
       context: postgres
       target: runtime
+  # Tagged with the content tag (POSTGRES_CONTENT_TAG, from postgres-tag.sh; deploy.sh and smoke.sh export it).
   # pg-backup and restore run the image built for postgres (same name); never pull it.
   pg-backup:
     pull_policy: never

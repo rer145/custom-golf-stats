@@ -17,8 +17,9 @@
 #                                       repeat after a dropped connection (the output is printed again from the start).
 #   remote-deploy.sh status             print the current and previous tags and the recent history.
 #   remote-deploy.sh current            print the current tag (empty when there is none).
-#   remote-deploy.sh compose <args...>  docker compose for this stack with IMAGE_TAG set to the current tag,
-#                                       e.g. `remote-deploy.sh compose ps` or `remote-deploy.sh compose logs api`.
+#   remote-deploy.sh compose <args...>  docker compose for this stack with IMAGE_TAG set to the current tag (and
+#                                       POSTGRES_CONTENT_TAG from postgres-tag.sh), e.g. `remote-deploy.sh compose ps`
+#                                       or `remote-deploy.sh compose logs api`.
 #   remote-deploy.sh login              docker login ghcr.io; reads the user name and then the token, one per line,
 #                                       from stdin (so the token never appears on a command line).
 #   remote-deploy.sh logout             docker logout ghcr.io.
@@ -26,8 +27,9 @@
 # to go back to); 2 usage; 3 the deploy failed AND putting the old tag back failed too: look at the server now.
 #
 # Rolling back puts the previous images back. It does not undo database migrations (EF Core migrations only ever
-# move forward here) and it keeps the deploy/ files currently on the server. To go back to an older commit's files as
-# well, run the Deploy workflow with that commit's SHA.
+# move forward here) and it keeps the deploy/ files currently on the server, so Postgres stays on the image those files
+# name (its content tag comes from deploy/postgres, see postgres-tag.sh) and is not restarted. To go back to an older
+# commit's files (and its Postgres image) as well, run the Deploy workflow with that commit's SHA.
 #
 # State lives outside deploy/ (which the workflow overwrites), in $CGS_STATE_DIR (default ../state next to deploy/):
 #   current-tag, previous-tag, caddyfile.sha256, history.log
@@ -41,7 +43,7 @@ project="${COMPOSE_PROJECT_NAME:-custom-golf-stats}"
 registry="ghcr.io"
 
 usage() {
-  sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -72,6 +74,9 @@ current_tag() {
   if [[ -n "$tag" ]] && valid_tag "$tag"; then printf '%s\n' "$tag"; fi
 }
 
+# The Postgres image's content tag for the deploy/ files on the server; deploy.sh sets it itself.
+postgres_content_tag() { "$here/postgres-tag.sh"; }
+
 lock() {
   mkdir -p "$state"
   chmod 700 "$state"
@@ -95,7 +100,7 @@ refresh_caddy() {
   old="$(read_state caddyfile.sha256)"
   if [[ -n "$old" && "$sum" != "$old" ]]; then
     log "Caddyfile changed; recreating caddy"
-    (cd "$here" && IMAGE_TAG="$tag" docker compose up -d --wait --force-recreate --no-deps caddy) || return 1
+    (cd "$here" && IMAGE_TAG="$tag" POSTGRES_CONTENT_TAG="$(postgres_content_tag)" docker compose up -d --wait --force-recreate --no-deps caddy) || return 1
   fi
   write_state caddyfile.sha256 "$sum"
 }
@@ -233,11 +238,12 @@ cmd_wait() {
 }
 
 cmd_compose() {
-  local tag
+  local tag pg_tag
   tag="$(current_tag)"
   [[ -n "$tag" ]] || { err "no current tag recorded"; exit 1; }
+  pg_tag="$(postgres_content_tag)"
   cd "$here"
-  IMAGE_TAG="$tag" exec docker compose "$@"
+  IMAGE_TAG="$tag" POSTGRES_CONTENT_TAG="$pg_tag" exec docker compose "$@"
 }
 
 cmd_login() {

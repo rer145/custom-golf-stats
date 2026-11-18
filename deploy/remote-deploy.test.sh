@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests remote-deploy.sh's bookkeeping (current/previous tag, going back after a failed deploy, rollback guards, GHCR
-# login over stdin, detached runs) with a fake deploy.sh and a fake docker, and deploy.sh's SKIP_PULL mode with the fake
-# docker, so no Docker daemon or server is needed.
+# login over stdin, detached runs) with a fake deploy.sh and a fake docker, deploy.sh's SKIP_PULL mode with the fake
+# docker, and the Postgres content tag (postgres-tag.sh) every compose call gets, so no Docker daemon or server is needed.
 # Needs bash and GNU coreutils/util-linux (flock, setsid, sha256sum, tail --pid): any Linux; on macOS run it in a container:
 #   deploy/remote-deploy.test.sh
 #   docker run --rm -v "$PWD/deploy:/d:ro" ubuntu:24.04 /d/remote-deploy.test.sh
@@ -12,9 +12,12 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 mkdir -p "$work/deploy" "$work/bin"
-cp "$here/remote-deploy.sh" "$work/deploy/"
+cp "$here/remote-deploy.sh" "$here/postgres-tag.sh" "$work/deploy/"
 mkdir -p "$work/real"
-cp "$here/deploy.sh" "$work/real/"
+cp "$here/deploy.sh" "$here/postgres-tag.sh" "$work/real/"
+# A stand-in for deploy/postgres (the real directory is hashed by its own test below).
+mkdir -p "$work/deploy/postgres" "$work/real/postgres"
+printf 'FROM postgres:17\n' | tee "$work/deploy/postgres/Dockerfile" >"$work/real/postgres/Dockerfile"
 printf 'site {}\n' >"$work/deploy/Caddyfile"
 calls="$work/calls"
 
@@ -29,7 +32,7 @@ EOF
 # Fake docker: logs its arguments; `ps` answers $RUNNING_IMAGE; `login` records what came on stdin.
 cat >"$work/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-echo "docker $* IMAGE_TAG=${IMAGE_TAG:-}" >>"$CALLS"
+echo "docker $* IMAGE_TAG=${IMAGE_TAG:-} PG=${POSTGRES_CONTENT_TAG:-}" >>"$CALLS"
 case "$1" in
   ps) [[ -n "${RUNNING_IMAGE:-}" ]] && echo "$RUNNING_IMAGE"; exit 0 ;;
   login) cat >"$(dirname "$CALLS")/login-stdin" ;;
@@ -136,12 +139,12 @@ run 0 deploy new2
 grep -q "caddy" "$calls" && fail "caddy recreated with an unchanged Caddyfile"
 printf 'site { respond 200 }\n' >"$work/deploy/Caddyfile"
 run 0 deploy new3
-grep -q "^docker compose up -d --wait --force-recreate --no-deps caddy IMAGE_TAG=new3$" "$calls" \
+grep -q "^docker compose up -d --wait --force-recreate --no-deps caddy IMAGE_TAG=new3 PG=pg-[0-9a-f]\{12\}$" "$calls" \
   || fail "caddy not recreated after a Caddyfile change: $(cat "$calls")"
 
 t "compose runs with the current tag"
 run 0 compose ps
-grep -q "^docker compose ps IMAGE_TAG=new3$" "$calls" || fail "compose wrapper: $(cat "$calls")"
+grep -q "^docker compose ps IMAGE_TAG=new3 PG=$("$work/deploy/postgres-tag.sh")$" "$calls" || fail "compose wrapper: $(cat "$calls")"
 
 t "login takes the token on stdin, never in arguments"
 : >"$calls"
@@ -172,12 +175,32 @@ run 2 wait nosuchrun
 t "deploy.sh pulls by default, and with SKIP_PULL=1 only pulls missing images"
 : >"$calls"
 COMPOSE_FILE=/dev/null "$work/real/deploy.sh" t1 >/dev/null || fail "deploy.sh t1 failed"
-grep -q "^docker compose pull --quiet --ignore-buildable IMAGE_TAG=t1$" "$calls" || fail "default deploy did not pull: $(cat "$calls")"
+grep -q "^docker compose pull --quiet --ignore-buildable IMAGE_TAG=t1 PG=pg-[0-9a-f]\{12\}$" "$calls" || fail "default deploy did not pull: $(cat "$calls")"
 grep -q -- "--pull" "$calls" && fail "default deploy passed --pull: $(cat "$calls")"
 : >"$calls"
 SKIP_PULL=1 "$work/real/deploy.sh" t2 >/dev/null || fail "SKIP_PULL deploy.sh failed"
 grep -q "compose pull\|compose --profile migrate pull" "$calls" && fail "SKIP_PULL=1 still pulled: $(cat "$calls")"
 [[ "$(grep -c -- "--pull missing" "$calls")" == "3" ]] || fail "SKIP_PULL=1 calls: $(cat "$calls")"
+
+t "postgres-tag.sh: pg-<12 hex>, stable, and changed only by deploy/postgres"
+pg="$work/real/postgres-tag.sh"
+tag1="$("$pg")"
+[[ "$tag1" =~ ^pg-[0-9a-f]{12}$ ]] || fail "postgres-tag.sh printed '$tag1'"
+[[ "$("$pg")" == "$tag1" ]] || fail "postgres-tag.sh is not stable"
+[[ "$(cd / && "$pg")" == "$tag1" ]] || fail "postgres-tag.sh depends on the working directory"
+grep -q "PG=$tag1$" "$calls" || fail "deploy.sh did not export POSTGRES_CONTENT_TAG=$tag1: $(cat "$calls")"
+printf 'site {}\n' >"$work/real/Caddyfile"
+[[ "$("$pg")" == "$tag1" ]] || fail "a file outside deploy/postgres changed the tag"
+printf '#!/bin/sh\n' >"$work/real/postgres/new.sh"
+tag2="$("$pg")"
+[[ "$tag2" != "$tag1" ]] || fail "adding a file to deploy/postgres kept the tag"
+mv "$work/real/postgres/new.sh" "$work/real/postgres/renamed.sh"
+[[ "$("$pg")" != "$tag2" ]] || fail "renaming a file in deploy/postgres kept the tag"
+rm "$work/real/postgres/renamed.sh"
+[[ "$("$pg")" == "$tag1" ]] || fail "restoring deploy/postgres did not restore the tag"
+printf 'FROM postgres:18\n' >"$work/real/postgres/Dockerfile"
+[[ "$("$pg")" != "$tag1" ]] || fail "changing the Dockerfile kept the tag"
+[[ "$("$here/postgres-tag.sh")" =~ ^pg-[0-9a-f]{12}$ ]] || fail "postgres-tag.sh on the real deploy/postgres: $("$here/postgres-tag.sh")"
 
 t "the state directory is private"
 [[ "$(stat -c %a "$CGS_STATE_DIR")" == "700" ]] || fail "state directory mode $(stat -c %a "$CGS_STATE_DIR")"

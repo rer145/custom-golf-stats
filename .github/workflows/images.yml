@@ -6,7 +6,12 @@ name: Images
 #   ghcr.io/rer145/custom-golf-stats-api:<sha> / :latest
 #   ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator / :latest-migrator   (the EF Core migrations bundle)
 #   ghcr.io/rer145/custom-golf-stats-web:<sha> / :latest
-#   ghcr.io/rer145/custom-golf-stats-postgres:<sha> / :latest   (deploy/postgres)
+#   ghcr.io/rer145/custom-golf-stats-postgres:pg-<hash> + :<sha> / :latest   (deploy/postgres)
+# The Postgres image's deploys use its content tag pg-<hash> (deploy/postgres-tag.sh, a hash of deploy/postgres), so a
+# deploy restarts Postgres only when deploy/postgres changed. Every publish makes sure that tag exists. A content tag
+# is never rebuilt: when it is already on GHCR, the existing image just gets the <sha> (and latest) tags as well, so
+# the image a deploy pulls under pg-<hash> never changes. To pick up a new base image, change deploy/postgres (e.g. bump
+# the pinned postgres version).
 # The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name);
 # publishing fails if it is not set.
 # The .NET SDK and npm build stages run natively on the amd64 runner and cross-build; only the small target-platform
@@ -115,16 +120,43 @@ jobs:
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}-${{ matrix.repository }}
           SUFFIX: ${{ matrix.suffix }}
+          NAME: ${{ matrix.name }}
         run: |
+          tags=("$IMAGE:$GITHUB_SHA$SUFFIX")
+          # Only master moves `latest`; a manual run on another branch pushes just its SHA tag.
+          if [ "$GITHUB_REF" = "refs/heads/master" ]; then tags+=("$IMAGE:latest$SUFFIX"); fi
+          existing=""
+          if [ "$NAME" = "postgres" ]; then
+            content="$IMAGE:$(deploy/postgres-tag.sh)"
+            if out="$(docker buildx imagetools inspect "$content" 2>&1)"; then
+              existing="$content"
+              echo "$content is already published; tagging it instead of rebuilding."
+            elif grep -qi 'not found' <<<"$out"; then
+              tags+=("$content")
+            else
+              echo "::error::Could not check whether $content exists: $out"
+              exit 1
+            fi
+          fi
           {
+            echo "existing=$existing"
             echo "tags<<EOF"
-            echo "$IMAGE:$GITHUB_SHA$SUFFIX"
-            # Only master moves `latest`; a manual run on another branch pushes just its SHA tag.
-            if [ "$GITHUB_REF" = "refs/heads/master" ]; then echo "$IMAGE:latest$SUFFIX"; fi
+            printf '%s\n' "${tags[@]}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Tag the published content tag
+        if: steps.tags.outputs.existing != ''
+        env:
+          EXISTING: ${{ steps.tags.outputs.existing }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do [ -z "$tag" ] || args+=(--tag "$tag"); done <<<"$TAGS"
+          docker buildx imagetools create "${args[@]}" "$EXISTING"
+
       - uses: docker/build-push-action@v6
+        if: steps.tags.outputs.existing == ''
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}

@@ -4,8 +4,11 @@
 # A plain `docker compose up` does not run migrations: `migrate` is in its own profile, run on its own by deploy.sh.
 # Caddy is the only service with published ports. Postgres serves the app on an internal network with no route out;
 # its only other network, `backup`, carries WAL-G's outbound traffic to the backup storage and publishes nothing.
-# Every image tag of ours comes from IMAGE_TAG, the Postgres + WAL-G image (deploy/postgres) included, so a deploy or a
-# rollback always moves the whole stack together. Backups and restores: docs/deploy/backups.md.
+# The api, migrator and web images are tagged IMAGE_TAG (the commit SHA). The Postgres + WAL-G image (deploy/postgres,
+# used by postgres, pg-backup and restore) has a content tag instead, pg-<hash of deploy/postgres> from postgres-tag.sh,
+# exported by deploy.sh as POSTGRES_CONTENT_TAG: a deploy recreates Postgres only when deploy/postgres changed, never
+# just because the SHA did. POSTGRES_TAG (environment or .env) pins another tag. Backups and restores:
+# docs/deploy/backups.md.
 name: custom-golf-stats
 
 # WAL-G storage settings, shared by the server (archive_command), the backup sidecar and the restore service.
@@ -20,7 +23,7 @@ x-walg-env: &walg-env
 services:
   # Postgres 17 + WAL-G: every WAL segment is archived to WALG_S3_PREFIX as it completes (or every 5 minutes at most).
   postgres:
-    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${POSTGRES_TAG:-${POSTGRES_CONTENT_TAG:?set POSTGRES_CONTENT_TAG to the output of postgres-tag.sh (deploy.sh does)}}
     restart: unless-stopped
     environment:
       <<: *walg-env
@@ -43,7 +46,7 @@ services:
   # old, so a deploy that recreates it never skips a night. Same image as postgres; reads the data directory read-only.
   # Back up now: `docker compose exec pg-backup backup-now`.
   pg-backup:
-    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${POSTGRES_TAG:-${POSTGRES_CONTENT_TAG:?set POSTGRES_CONTENT_TAG to the output of postgres-tag.sh (deploy.sh does)}}
     restart: unless-stopped
     user: postgres
     entrypoint: ["backup-scheduler"]
@@ -65,7 +68,7 @@ services:
   # One-off: restores a base backup plus archived WAL into an empty volume. Run it with deploy/backup/restore.sh, which
   # mounts the target volume; it never touches pgdata.
   restore:
-    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
+    image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${POSTGRES_TAG:-${POSTGRES_CONTENT_TAG:?set POSTGRES_CONTENT_TAG to the output of postgres-tag.sh (deploy.sh does)}}
     profiles: [restore]
     restart: "no"
     user: root
