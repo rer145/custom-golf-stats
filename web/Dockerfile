@@ -5,13 +5,16 @@
 
 ARG NODE_VERSION=24
 
-# Production dependencies only, for the runtime image.
+# Production dependencies for the runtime image, installed on the target platform so native packages match it.
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+ # The image is glibc (Debian); drop the musl (Alpine) variants of native packages npm installs alongside.
+ && find node_modules -mindepth 1 -maxdepth 2 -type d -name '*musl*' -prune -exec rm -rf {} +
 
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+# The build output is plain JavaScript, so it is built once on the build machine's own platform (no emulation).
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -22,6 +25,9 @@ ENV ALLOWED_HOSTS=${ALLOWED_HOSTS} \
 RUN npm run build
 
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+# The server needs only node: remove npm, npx, corepack and yarn.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=4321

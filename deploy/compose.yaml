@@ -1,12 +1,14 @@
-# Custom Golf Stats production stack. Run from this directory with a filled-in .env next to it (see .env.example):
-#   docker compose pull && docker compose up -d --wait
+# Custom Golf Stats production stack, with a filled-in .env next to it (see .env.example).
+# Deploy (and roll back) only with deploy.sh, which migrates before it touches the running services:
+#   ./deploy.sh <image tag>
+# A plain `docker compose up` does not run migrations: `migrate` is in its own profile, run on its own by deploy.sh.
 # Caddy is the only service with published ports. Postgres sits on an internal network with no route out.
-# Every service's image tag comes from IMAGE_TAG, so a rollback is IMAGE_TAG=<previous sha> docker compose up -d --wait.
+# Every image tag of ours comes from IMAGE_TAG.
 name: custom-golf-stats
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17}
+    image: ${POSTGRES_IMAGE:-postgres:17.11}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
@@ -22,9 +24,11 @@ services:
       retries: 20
 
   # One-shot: applies pending EF Core migrations with the bundle built alongside the API image, then exits.
-  # The API starts only after it succeeds, so a failed migration leaves the running API on its old image untouched.
+  # deploy.sh runs it (`docker compose run --rm migrate`) before `up`, so if it fails the running api, web and caddy
+  # are never recreated and keep serving the old images. The profile keeps `docker compose up` from starting it.
   migrate:
-    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:-latest}-migrator
+    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}-migrator
+    profiles: [migrate]
     restart: "no"
     environment:
       ConnectionStrings__Postgres: Host=postgres;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
@@ -34,7 +38,7 @@ services:
     networks: [backend]
 
   api:
-    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:-latest}
+    image: ${API_IMAGE:-ghcr.io/rer145/custom-golf-stats-api}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -48,16 +52,15 @@ services:
       # Comma-separated audiences accepted for Sign in with Apple / Google.
       Auth__Apple__ClientIds: ${AUTH_APPLE_CLIENT_IDS:-}
       Auth__Google__ClientIds: ${AUTH_GOOGLE_CLIENT_IDS:-}
+    # Not depends_on migrate: deploy.sh has already migrated by the time `up` reaches the api.
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     # backend reaches Postgres; proxy is reachable from Caddy and has the route out (course and weather providers).
     networks: [backend, proxy]
 
   web:
-    image: ${WEB_IMAGE:-ghcr.io/rer145/custom-golf-stats-web}:${IMAGE_TAG:-latest}
+    image: ${WEB_IMAGE:-ghcr.io/rer145/custom-golf-stats-web}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped
     environment:
       API_BASE_URL: http://api:8080
@@ -68,7 +71,7 @@ services:
     networks: [proxy]
 
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2}
+    image: ${CADDY_IMAGE:-caddy:2.11.9}
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
@@ -77,6 +80,7 @@ services:
     environment:
       WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env}
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

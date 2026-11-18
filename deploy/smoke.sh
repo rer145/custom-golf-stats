@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Local smoke test of the production stack (deploy/compose.yaml) built from this checkout.
-#  1. Builds the images and starts the stack under its own project name, with Caddy's internal CA serving
-#     https://localhost (web) and https://api.localhost (API) on unprivileged ports.
-#  2. Waits until every service is healthy (migrations have run by then).
-#  3. Through Caddy, verifying TLS against Caddy's root certificate: registers a user, logs in and calls /me; then signs
+#  1. Builds the images and deploys them with deploy.sh under its own project name, with Caddy's internal CA serving
+#     https://localhost (web) and https://api.localhost (API) on unprivileged ports. deploy.sh migrates first and
+#     waits until every service is healthy.
+#  2. Through Caddy, verifying TLS against Caddy's root certificate: registers a user, logs in and calls /me; then signs
 #     in on the web site and loads the profile page with the session cookie.
+#  3. Deploys a new tag whose migration fails, and checks deploy.sh exits non-zero while the running api, web and caddy
+#     containers stay the same, on the old image, healthy and serving; then redeploys the good tag (a no-op).
 #  4. Tears everything down, volumes included, whatever happened.
 # Needs Docker with Compose v2, curl, openssl and python3. Secrets are generated per run and never printed.
 #   deploy/smoke.sh                 # SMOKE_HTTP_PORT / SMOKE_HTTPS_PORT override the ports (default 18080 / 18443)
@@ -24,6 +26,7 @@ chmod 700 "$work"
 cat >"$work/.env" <<EOF
 WEB_DOMAIN=$web
 API_DOMAIN=$api
+ACME_EMAIL=smoke@example.com
 HTTP_PORT=$http_port
 HTTPS_PORT=$https_port
 IMAGE_TAG=smoke
@@ -55,6 +58,7 @@ teardown() {
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     rm -rf "$work"
   fi
+  docker image rm cgs-smoke-api:smoke-broken cgs-smoke-web:smoke-broken cgs-smoke-api:smoke-broken-migrator >/dev/null 2>&1 || true
   exit $status
 }
 trap teardown EXIT
@@ -62,16 +66,23 @@ trap teardown EXIT
 step() { echo "==> $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-step "Building images and starting the stack ($project)"
-compose up -d --build --wait --wait-timeout 300
+# deploy.sh with this project's settings (it reads the standard Compose environment variables).
+deploy() {
+  COMPOSE_PROJECT_NAME="$project" COMPOSE_ENV_FILES="$work/.env" \
+    COMPOSE_FILE="$here/compose.yaml:$here/compose.build.yaml" "$here/deploy.sh" "$@"
+}
 
-step "Checking the migrate service exited cleanly and the API runs as non-root"
-migrate_exit="$(docker inspect --format '{{.State.ExitCode}}' "$(compose ps -a -q migrate)")"
-[[ "$migrate_exit" == "0" ]] || fail "migrate exited with $migrate_exit"
+step "Building images ($project)"
+compose --profile migrate build
+
+step "Deploying with deploy.sh"
+deploy smoke
+
+step "Checking the API and web run as non-root"
 api_uid="$(compose exec -T api id -u)"
 web_uid="$(compose exec -T web id -u)"
 [[ "$api_uid" != "0" && "$web_uid" != "0" ]] || fail "a service runs as root (api uid $api_uid, web uid $web_uid)"
-echo "    migrate exit 0; api uid $api_uid; web uid $web_uid"
+echo "    api uid $api_uid; web uid $web_uid"
 
 step "Fetching Caddy's internal root certificate"
 for _ in $(seq 1 30); do
@@ -148,5 +159,32 @@ status="$(c -o "$work/profile.html" -w '%{http_code}' -b "$work/cookies" "$web_u
 [[ "$status" == "200" ]] || fail "/profile returned $status"
 grep -q "Signed in as $email" "$work/profile.html" || fail "/profile does not show the signed-in user"
 echo "    web sign-in 303 -> /profile, profile shows $email"
+
+step "Deploying a tag whose migration fails"
+# The new tag has the same api/web images but a migrator that fails, as a broken migration would.
+docker tag cgs-smoke-api:smoke cgs-smoke-api:smoke-broken
+docker tag cgs-smoke-web:smoke cgs-smoke-web:smoke-broken
+printf 'FROM cgs-smoke-api:smoke-migrator\nENTRYPOINT ["sh", "-c", "echo simulated migration failure >&2; exit 1"]\n' \
+  | docker build --quiet -t cgs-smoke-api:smoke-broken-migrator - >/dev/null
+before="$(compose ps -q api web caddy | sort)"
+if deploy smoke-broken >"$work/broken.log" 2>&1; then
+  fail "deploy.sh succeeded although the migration failed"
+fi
+grep -q "Migrations failed" "$work/broken.log" || fail "deploy.sh failed for another reason: $(tail -5 "$work/broken.log")"
+after="$(compose ps -q api web caddy | sort)"
+[[ "$before" == "$after" ]] || fail "api/web/caddy containers were replaced by the failed deploy"
+api_image="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q api)")"
+[[ "$api_image" == "cgs-smoke-api:smoke" ]] || fail "api now runs $api_image"
+api_health="$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps -q api)")"
+[[ "$api_health" == "healthy" ]] || fail "api is $api_health after the failed deploy"
+c --fail -o /dev/null "$api_url/health" || fail "API stopped serving after the failed deploy"
+status="$(c -o /dev/null -w '%{http_code}' -H "@$work/auth-header" "$api_url/me")"
+[[ "$status" == "200" ]] || fail "/me returned $status after the failed deploy"
+echo "    deploy.sh exited non-zero; api/web/caddy untouched, api on $api_image and $api_health, /me 200 through Caddy"
+
+step "Redeploying the good tag is a no-op"
+deploy smoke >"$work/redeploy.log" 2>&1 || fail "redeploy failed: $(tail -5 "$work/redeploy.log")"
+[[ "$(compose ps -q api web caddy | sort)" == "$before" ]] || fail "redeploying the same tag replaced containers"
+echo "    same api/web/caddy containers after the redeploy"
 
 step "Smoke test passed"

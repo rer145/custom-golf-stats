@@ -1,11 +1,15 @@
 name: Images
 
-# Builds the API, migrator and web images for linux/amd64 and linux/arm64. On master (and manual runs) they are pushed
-# to GHCR, tagged with the commit SHA (and `latest` from master); on pull requests they are only built.
+# Builds the API, migrator and web images for linux/amd64 and linux/arm64.
+# Pull requests only build them (`build` job, read-only token). Pushes to master and manual runs build and push them to
+# GHCR (`publish` job, the only one with `packages: write`), tagged with the commit SHA, plus `latest` from master:
 #   ghcr.io/rer145/custom-golf-stats-api:<sha> / :latest
 #   ghcr.io/rer145/custom-golf-stats-api:<sha>-migrator / :latest-migrator   (the EF Core migrations bundle)
 #   ghcr.io/rer145/custom-golf-stats-web:<sha> / :latest
-# The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name).
+# The web image bakes in ALLOWED_HOSTS from the repository variable WEB_ALLOWED_HOSTS (the public web host name);
+# publishing fails if it is not set.
+# The .NET SDK and npm build stages run natively on the amd64 runner and cross-build; only the small target-platform
+# steps of the arm64 images (apt-get in the API runtime, npm ci of production dependencies) run under QEMU.
 
 on:
   push:
@@ -21,20 +25,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/rer145/custom-golf-stats
-  PUSH: ${{ github.event_name != 'pull_request' }}
 
 jobs:
   build:
-    name: ${{ matrix.name }}
+    name: build ${{ matrix.name }}
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     strategy:
       fail-fast: false
-      matrix:
+      matrix: &images
         include:
           - name: api
             context: .
@@ -56,18 +56,50 @@ jobs:
             suffix: ""
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: ${{ matrix.name == 'web' && 'ALLOWED_HOSTS=pr-build.invalid' || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
 
-      # The SDK and npm stages run natively on amd64; only the small runtime-stage steps of the arm64 image run under QEMU.
+  publish:
+    name: publish ${{ matrix.name }}
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: *images
+    steps:
+      - name: Require WEB_ALLOWED_HOSTS
+        if: matrix.name == 'web'
+        env:
+          ALLOWED_HOSTS: ${{ vars.WEB_ALLOWED_HOSTS }}
+        run: |
+          if [ -z "$ALLOWED_HOSTS" ]; then
+            echo "::error::Set the repository variable WEB_ALLOWED_HOSTS to the public web host name; without it every web sign-in is refused with 403."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        if: env.PUSH == 'true'
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -91,7 +123,7 @@ jobs:
           file: ${{ matrix.file }}
           target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
-          push: ${{ env.PUSH == 'true' }}
+          push: true
           tags: ${{ steps.tags.outputs.tags }}
           build-args: ${{ matrix.name == 'web' && format('ALLOWED_HOSTS={0}', vars.WEB_ALLOWED_HOSTS) || '' }}
           labels: |
