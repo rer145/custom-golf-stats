@@ -98,7 +98,7 @@ public class SessionChangeTests
     {
         await using var rig = await CreateAsync(putHonoursCancellation: true);
         var nav = new FakeNavigator();
-        var vm = new ProfileViewModel(rig.Temp.Db, rig.Stub.Client(), new TokenService(rig.Store, rig.Stub.Client()), rig.Engine,
+        var vm = new ProfileViewModel(rig.Temp.Db, rig.Stub.Client(), new TokenService(rig.Store, rig.Stub.Client()), rig.Engine, rig.Accounts,
             new FakeConnectivity(), rig.Temp.Clock, nav);
         var sync = rig.Engine.SyncAsync(TestContext.Current.CancellationToken);
         await rig.FirstPutStarted.Task;
