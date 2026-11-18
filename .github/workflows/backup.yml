@@ -1,0 +1,34 @@
+name: Backup drill
+
+# Runs deploy/backup/drill.sh: builds the Postgres + WAL-G image, archives to a MinIO server, takes base backups, then
+# destroys the source and restores it twice from storage alone (latest, and a point in time), checking every table's
+# row count and checksum. Runs when anything it exercises changes, and weekly so a vanished image or release is noticed.
+
+on:
+  push:
+    paths: &paths
+      - deploy/postgres/**
+      - deploy/postgres-tag.sh
+      - deploy/backup/**
+      - deploy/compose.yaml
+      - .github/workflows/backup.yml
+  pull_request:
+    paths: *paths
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-drill-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: deploy/backup/drill.sh

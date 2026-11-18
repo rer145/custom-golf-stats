@@ -88,7 +88,7 @@ public abstract partial class RoutePage : Page
     /// <summary>Asks before something that cannot be undone (deleting a round or a hole). True when the golfer confirmed.</summary>
     private static bool _dialogOpen;
 
-    protected async Task<bool> ConfirmAsync(string title, string message, string confirmText)
+    protected async Task<bool> ConfirmAsync(string title, object message, string confirmText)
     {
         // Only one dialog at a time (a second tap while one is open would throw from ShowAsync).
         if (_dialogOpen)
@@ -104,7 +104,7 @@ public abstract partial class RoutePage : Page
         }
     }
 
-    private async Task<bool> ShowConfirmAsync(string title, string message, string confirmText)
+    private async Task<bool> ShowConfirmAsync(string title, object message, string confirmText)
     {
         var dialog = new ContentDialog
         {

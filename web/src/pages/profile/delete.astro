@@ -1,0 +1,147 @@
+---
+// Delete account (DELETE /me). The API deletes the account with its rounds and handicap history once the password is
+// confirmed; courses the golfer added stay for everyone. Afterwards the session cookie is deleted (the bearer and refresh
+// tokens it held no longer work anyway) and a signed-out confirmation is shown in place, since there is no account to
+// redirect into.
+import AppLayout from '../../layouts/AppLayout.astro';
+import PublicLayout from '../../layouts/PublicLayout.astro';
+import Field from '../../components/Field.astro';
+import Problem from '../../components/Problem.astro';
+import { call, type ApiProblem, type Schemas } from '../../api/client';
+import { clearSessionCookie } from '../../lib/cookies';
+import { endSession, isSessionEnded } from '../../lib/guard';
+import { formText, notAForm, readForm } from '../../lib/forms';
+import { localProblem, pageStatus } from '../../lib/problems';
+
+let problem: ApiProblem | null = null;
+let deleted = false;
+
+if (Astro.request.method === 'POST') {
+  const form = await readForm(Astro.request);
+  if (!form) return notAForm();
+  const password = formText(form, 'password');
+  problem = localProblem(password ? {} : { password: ['Enter your password to confirm.'] });
+  if (!problem) {
+    const body: Schemas['DeleteAccountRequest'] = { password, externalProvider: null, externalIdToken: null };
+    const r = await call(Astro.locals.api.DELETE('/me', { body }));
+    // 404: the account was already deleted (another device); the outcome the golfer asked for.
+    if (r.ok || r.problem.status === 404) {
+      deleted = true;
+    } else {
+      if (isSessionEnded(r)) return endSession(Astro);
+      problem = r.problem;
+    }
+  }
+  if (deleted) {
+    clearSessionCookie(Astro.cookies);
+    Astro.locals.session = null;
+  } else if (problem) {
+    Astro.response.status = pageStatus(problem.status);
+  }
+}
+
+const email = Astro.locals.session?.email ?? '';
+---
+
+{
+  deleted ? (
+    <PublicLayout title="Account deleted">
+      <div class="container page narrow">
+        <div class="card done" role="status">
+          <h1 class="display">Your account is deleted</h1>
+          <p>Your rounds, shots and handicap history are gone, and you’ve been signed out everywhere.</p>
+          <p class="muted">The app keeps its own copy on your phone until you remove the app.</p>
+          <div>
+            <a class="btn btn-secondary" href="/">
+              Back to the home page
+            </a>
+          </div>
+        </div>
+      </div>
+    </PublicLayout>
+  ) : (
+    <AppLayout title="Delete account">
+      <div class="container page narrow">
+        <div class="page-header">
+          <p class="crumb">
+            <a class="back" href="/profile">Back to your profile</a>
+          </p>
+          <h1 class="display">Delete your account</h1>
+          <p class="lede">Signed in as {email}.</p>
+        </div>
+
+        <section class="card danger" aria-labelledby="delete-heading">
+          <h2 id="delete-heading" class="title">
+            This can’t be undone
+          </h2>
+          <ul class="consequences">
+            <li>Your account, every round you’ve recorded (with its holes and shots) and your handicap history are deleted permanently.</li>
+            <li>Course problems you reported are deleted too.</li>
+            <li>Courses you added stay available to other golfers, without your name on them.</li>
+            <li>You’re signed out on every device. Rounds on a phone that never synced are lost when the app is cleared.</li>
+          </ul>
+
+          <form class="form" method="post" action="/profile/delete" novalidate>
+            <Problem problem={problem && Object.keys(problem.fieldErrors).length === 0 ? problem : null} heading="Not deleted" />
+            <Field
+              name="password"
+              label="Password"
+              type="password"
+              autocomplete="current-password"
+              hint="Enter your password to confirm it’s you."
+              required
+              problem={problem}
+            />
+            <div class="actions">
+              <button class="btn btn-danger" type="submit">
+                Delete my account
+              </button>
+              <a class="btn btn-secondary" href="/profile">
+                Cancel
+              </a>
+            </div>
+          </form>
+        </section>
+      </div>
+    </AppLayout>
+  )
+}
+
+<style>
+  .narrow {
+    max-width: 640px;
+  }
+  .crumb {
+    margin: 0 0 var(--space-2);
+  }
+  .danger,
+  .done {
+    display: grid;
+    gap: var(--space-5);
+  }
+  .danger {
+    border-color: var(--color-negative);
+  }
+  .danger .title {
+    color: var(--color-negative);
+  }
+  .consequences {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding-left: var(--space-5);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .btn-danger {
+    background: var(--color-negative);
+    border-color: var(--color-negative);
+    color: var(--color-surface);
+  }
+  .btn-danger:hover {
+    filter: brightness(1.08);
+  }
+</style>

@@ -85,6 +85,13 @@
 
         <Button Content="Sign out" Command="{x:Bind ViewModel.SignOutCommand}" Style="{StaticResource BrandSecondaryButtonStyle}" Margin="0,24,0,0" />
         <TextBlock Text="Signing out keeps your rounds on this device." Style="{StaticResource BrandTextCaptionSecondaryStyle}" />
+
+        <!-- Account deletion: the dialog explains what is lost and asks for the password (OnDeleteAccount). -->
+        <Button Content="{x:Bind local:ProfilePage.DeleteAccountText}" Click="OnDeleteAccount" Style="{StaticResource BrandDangerLinkButtonStyle}"
+                IsEnabled="{x:Bind local:Ui.Not(ViewModel.IsBusy), Mode=OneWay}" Margin="0,24,0,0" />
+        <TextBlock Text="{x:Bind local:ProfilePage.DeleteAccountHint}" Style="{StaticResource BrandTextCaptionSecondaryStyle}" TextWrapping="Wrap" />
+        <TextBlock Text="{x:Bind ViewModel.DeleteError, Mode=OneWay}" Visibility="{x:Bind local:Ui.VisibleIfSet(ViewModel.DeleteError), Mode=OneWay}"
+                   Style="{StaticResource BrandTextErrorStyle}" TextWrapping="Wrap" />
       </StackPanel>
     </ScrollViewer>
   </Grid>

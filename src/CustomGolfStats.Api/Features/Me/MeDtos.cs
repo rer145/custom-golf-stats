@@ -34,3 +34,10 @@ public sealed record EntitlementsResponse(
     string Role,
     EntitlementFeatures Features,
     int? TrialShotRoundsRemaining);
+
+/// <summary>
+/// Body of <c>DELETE /me</c>: the golfer confirms who they are with exactly one of their current <c>Password</c>, or a fresh
+/// Apple / Google ID token (<c>ExternalIdToken</c>, with <c>ExternalProvider</c> <c>apple</c> or <c>google</c>) for an account
+/// that signs in that way.
+/// </summary>
+public sealed record DeleteAccountRequest(string? Password, string? ExternalProvider, string? ExternalIdToken);

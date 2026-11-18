@@ -48,12 +48,14 @@ public static class AdminUserEndpoints
     /// their own Admin role or disable themselves.
     /// <para>
     /// A tier change shows at once in <c>/me/entitlements</c> (read from the database). A role change reaches the
-    /// golfer's token at their next login or refresh. Disabling blocks login, refresh and external sign-in at once,
-    /// but access tokens already issued stay valid until they expire (up to 1 hour).
+    /// golfer's token at their next login or refresh. Disabling takes effect at once everywhere: login, refresh and external
+    /// sign-in are refused, and access tokens already issued are answered 401 (the active-account check every authorized request
+    /// passes; see <see cref="Auth.ActiveAccountRequirement"/>; its cache entry for the account is evicted here).
     /// </para>
     /// </summary>
     internal static async Task<Results<Ok<AdminUserDto>, ValidationProblem, NotFound>> UpdateAsync(
-        Guid id, UpdateUserRequest request, ClaimsPrincipal user, AppDbContext db, TimeProvider time, CancellationToken ct)
+        Guid id, UpdateUserRequest request, ClaimsPrincipal user, AppDbContext db, TimeProvider time, Auth.AccountStatusCache status,
+        CancellationToken ct)
     {
         var errors = new ValidationErrors();
         Tier? tier = null;
@@ -113,6 +115,7 @@ public static class AdminUserEndpoints
         }
 
         await db.SaveChangesAsync(ct);
+        status.Evict(account.Id);
         return TypedResults.Ok(new AdminUserDto(
             account.Id, account.Email ?? "", account.FirstName, account.LastName, account.Role, account.Tier,
             account.TrialShotRoundsUsed, account.DisabledAt, account.CreatedAt));

@@ -1,0 +1,28 @@
+# Builds the images from this checkout instead of pulling them from GHCR (local runs and deploy/smoke.sh):
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build --wait
+services:
+  migrate:
+    build:
+      context: ..
+      dockerfile: src/CustomGolfStats.Api/Dockerfile
+      target: migrator
+  api:
+    build:
+      context: ..
+      dockerfile: src/CustomGolfStats.Api/Dockerfile
+      target: api
+  web:
+    build:
+      context: ../web
+      args:
+        ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+  postgres:
+    build:
+      context: postgres
+      target: runtime
+  # Tagged with the content tag (POSTGRES_CONTENT_TAG, from postgres-tag.sh; deploy.sh and smoke.sh export it).
+  # pg-backup and restore run the image built for postgres (same name); never pull it.
+  pg-backup:
+    pull_policy: never
+  restore:
+    pull_policy: never

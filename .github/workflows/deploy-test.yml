@@ -1,0 +1,51 @@
+name: Deploy test
+
+# Exercises the deploy tooling end to end on a Linux runner:
+#   remote-deploy  deploy/remote-deploy.test.sh: remote-deploy.sh's bookkeeping and deploy.sh's SKIP_PULL mode, with a
+#                  fake docker (no daemon needed).
+#   smoke          deploy/smoke.sh: builds the API, migrator, web and Postgres images from this checkout, deploys the
+#                  whole production stack (deploy/compose.yaml) with deploy.sh behind Caddy's internal CA, registers,
+#                  logs in and signs in on the web site through Caddy, then checks a deploy whose migration fails leaves
+#                  the running services untouched. Backups are off in that stack (WALG_S3_PREFIX=none); backup.yml
+#                  covers them.
+# Runs when the deploy tooling or anything baked into the images changes.
+
+on:
+  push:
+    paths: &paths
+      - deploy/**
+      - src/CustomGolfStats.Api/**
+      - src/CustomGolfStats.Domain/**
+      - Directory.Build.props
+      - Directory.Packages.props
+      - .config/dotnet-tools.json
+      - web/**
+      - .github/workflows/deploy-test.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  remote-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: deploy/remote-deploy.test.sh
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # The runner's own Docker Engine with its default builder: smoke.sh builds a throwaway migrator FROM an image it
+      # just built, which only a builder sharing the local image store can see (so no docker/setup-buildx-action).
+      - run: docker version && docker compose version
+      - run: deploy/smoke.sh

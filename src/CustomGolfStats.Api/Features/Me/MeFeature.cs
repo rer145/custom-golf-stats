@@ -3,6 +3,7 @@ using CustomGolfStats.Api.Data;
 using CustomGolfStats.Api.Data.Entities;
 using CustomGolfStats.Api.Infrastructure;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace CustomGolfStats.Api.Features.Me;
@@ -17,6 +18,7 @@ public static class MeFeature
     public static IServiceCollection AddMeFeature(this IServiceCollection services)
     {
         services.AddScoped<EntitlementsReader>();
+        services.AddScoped<AccountDeleter>();
         return services;
     }
 
@@ -30,6 +32,9 @@ public static class MeFeature
         group.MapPost("/handicap", AddHandicapAsync).WithName("MeAddHandicap");
         group.MapDelete("/handicap/{id:guid}", DeleteHandicapAsync).WithName("MeDeleteHandicap");
         group.MapGet("/entitlements", GetEntitlementsAsync).WithName("MeGetEntitlements");
+        group.MapDelete("/", DeleteAccountAsync).WithName("MeDeleteAccount")
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
         return app;
     }
 
@@ -172,6 +177,40 @@ public static class MeFeature
         db.HandicapEntries.Remove(entry);
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
+    }
+
+    /// <summary>
+    /// Deletes the signed-in account and everything it owns (see <see cref="AccountDeleter"/>). 204 when deleted; 400 when the
+    /// confirmation is missing or wrong (the error names the field); 409 when the caller is the only active admin; 429 after too
+    /// many wrong passwords. A wrong confirmation is 400, never 401, so a client doesn't mistake it for an expired session.
+    /// </summary>
+    private static async Task<Results<NoContent, NotFound, ValidationProblem, ProblemHttpResult>> DeleteAccountAsync(
+        [FromBody] DeleteAccountRequest request, ClaimsPrincipal user, AccountDeleter deleter, CancellationToken ct)
+    {
+        var outcome = await deleter.DeleteAsync(
+            user.GetAccountId(), request.Password, request.ExternalProvider, request.ExternalIdToken, ct);
+        return outcome switch
+        {
+            AccountDeletionOutcome.Deleted => TypedResults.NoContent(),
+            AccountDeletionOutcome.NotFound => TypedResults.NotFound(),
+            AccountDeletionOutcome.ConfirmationMissing => TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["password"] = ["Enter your password to confirm."],
+            }),
+            AccountDeletionOutcome.PasswordRejected => TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["password"] = ["The password is incorrect."],
+            }),
+            AccountDeletionOutcome.ExternalTokenRejected => TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["externalIdToken"] = ["The sign-in could not be confirmed. Sign in with Apple or Google again, then retry."],
+            }),
+            AccountDeletionOutcome.LockedOut => TypedResults.Problem(
+                "Too many wrong passwords. Try again later.", statusCode: StatusCodes.Status429TooManyRequests),
+            AccountDeletionOutcome.LastAdmin => TypedResults.Problem(
+                "You are the only admin. Make another account an admin before deleting yours.", statusCode: StatusCodes.Status409Conflict),
+            _ => throw new InvalidOperationException($"Unexpected outcome {outcome}."),
+        };
     }
 
     private static async Task<Results<Ok<EntitlementsResponse>, NotFound>> GetEntitlementsAsync(

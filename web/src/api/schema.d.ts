@@ -174,7 +174,7 @@ export interface paths {
         get: operations["MeGetProfile"];
         put: operations["MeUpdateProfile"];
         post?: never;
-        delete?: never;
+        delete: operations["MeDeleteAccount"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1059,6 +1059,11 @@ export interface components {
             backSlope: null | number | string;
             holes: null | components["schemas"]["TeeHoleInput"][];
         };
+        DeleteAccountRequest: {
+            password: null | string;
+            externalProvider: null | string;
+            externalIdToken: null | string;
+        };
         /** @enum {string} */
         Direction: "OnTarget" | "Left" | "Right" | "Short" | "Long" | "ShortLeft" | "ShortRight" | "LongLeft" | "LongRight";
         EntitlementFeatures: {
@@ -1196,6 +1201,14 @@ export interface components {
             handicapIndex: null | number | string;
             /** Format: date */
             handicapEffectiveOn: null | string;
+        };
+        ProblemDetails: {
+            type?: null | string;
+            title?: null | string;
+            /** Format: int32 */
+            status?: null | number | string;
+            detail?: null | string;
+            instance?: null | string;
         };
         ProfileResponse: {
             /** Format: uuid */
@@ -2130,6 +2143,62 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    MeDeleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

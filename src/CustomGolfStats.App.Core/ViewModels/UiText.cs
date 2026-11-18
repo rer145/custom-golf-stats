@@ -55,7 +55,36 @@ public static class UiText
     public const string AccountCreatedSignInFailed = "Your account was created, but signing in did not work. Try signing in.";
     public const string VerifySessionOffline = "You're offline, so we can't confirm your account yet. Your rounds are safe on this device; syncing starts once you're back online.";
     public const string AccountUnknown = "We could not confirm which account this is. Please try again.";
-    public static string UnsyncedFromAnotherAccount(int rounds, int courses, int unsavedHoles = 0)
+    public static string UnsyncedFromAnotherAccount(int rounds, int courses, int unsavedHoles = 0) =>
+        $"This device has {Unsynced(rounds, courses, unsavedHoles) ?? "data"} that the previous account never synced. Signing in as someone else will remove it from this device.";
+
+    public const string SignInError = "Something went wrong signing in. Please try again.";
+
+    // ---- account deletion ----
+    public const string DeleteAccountButton = "Delete account";
+    public const string DeleteAccountHint = "Permanently deletes your account, rounds and handicap history.";
+    public const string DeleteAccountTitle = "Delete your account?";
+    public const string DeleteAccountConfirm = "Delete account";
+    public const string DeleteAccountPasswordLabel = "Enter your password to confirm";
+    public const string DeleteAccountPasswordMissing = "Enter your password to delete your account.";
+    public const string DeleteAccountWrongPassword = "That password is not right. Your account was not deleted.";
+    public const string DeleteAccountLockedOut = "Too many wrong passwords. Wait a few minutes, then try again.";
+    public const string DeleteAccountLastAdmin = "You are the only admin. Make another account an admin before deleting yours.";
+    public const string DeleteAccountSessionEnded = "Your session has ended. Sign in again, then delete your account.";
+    public const string DeleteAccountFailed = "Your account could not be deleted. Please try again.";
+    public const string DeleteAccountCleanupFailed = "Your account was deleted, but this device could not clear everything. Reinstall the app to remove what is left.";
+
+    /// <summary>The confirm dialog: what is deleted, that it cannot be undone, and what only this device holds and will be lost.</summary>
+    public static string DeleteAccountWarning(int unsyncedRounds, int pendingCourses, int unsavedHoles)
+    {
+        const string permanent = "This permanently deletes your account, your rounds, shots and handicap history from our servers and from this device. It cannot be undone. Courses you added stay available to other golfers.";
+        return Unsynced(unsyncedRounds, pendingCourses, unsavedHoles) is { } what
+            ? $"{permanent}\n\nThis device also has {what} that never synced. They will be lost too."
+            : permanent;
+    }
+
+    /// <summary>"2 rounds, 1 course and 3 holes being entered"; null when all are zero.</summary>
+    private static string? Unsynced(int rounds, int courses, int unsavedHoles)
     {
         var parts = new List<string>();
         if (rounds > 0)
@@ -64,17 +93,15 @@ public static class UiText
             parts.Add(Count(courses, "course"));
         if (unsavedHoles > 0)
             parts.Add(Count(unsavedHoles, "hole") + " being entered");
-        var what = parts.Count switch
+        return parts.Count switch
         {
-            0 => "data",
+            0 => null,
             1 => parts[0],
             _ => string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1],
         };
-        return $"This device has {what} that the previous account never synced. Signing in as someone else will remove it from this device.";
     }
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? "" : "s")}";
-    public const string SignInError = "Something went wrong signing in. Please try again.";
 
     // ---- courses ----
     public const string StartDistanceMissing = "Enter the distance the shot started from.";

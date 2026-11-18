@@ -46,7 +46,7 @@ public class FinalWaveTests
             ? StubHandler.Json(HttpStatusCode.Created, new Client.HandicapEntryResponse { Id = Guid.NewGuid(), EffectiveOn = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero), Index = -2.1 })
             : StubHandler.Status(HttpStatusCode.NotFound));
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, new FakeSecureStore(), stub);
-        var vm = new ProfileViewModel(rig.Db, session.Client, session.Tokens, new CustomGolfStats.App.Core.Sync.SyncEngine(rig.Db, session.Client), new FakeConnectivity(), rig.Temp.Clock, rig.Nav);
+        var vm = new ProfileViewModel(rig.Db, session.Client, session.Tokens, new CustomGolfStats.App.Core.Sync.SyncEngine(rig.Db, session.Client), TestAccounts.For(rig.Db), new FakeConnectivity(), rig.Temp.Clock, rig.Nav);
 
         vm.NewHandicapText = "+2.1";
         await vm.AddHandicapCommand.ExecuteAsync(null);
@@ -62,7 +62,7 @@ public class FinalWaveTests
         await using var rig = await VmRig.CreateAsync();
         var stub = new StubHandler(_ => StubHandler.Status(HttpStatusCode.NotFound));
         var session = ApiClientFactory.Create(StubHandler.BaseAddress, new FakeSecureStore(), stub);
-        var vm = new ProfileViewModel(rig.Db, session.Client, session.Tokens, new CustomGolfStats.App.Core.Sync.SyncEngine(rig.Db, session.Client), new FakeConnectivity(), rig.Temp.Clock, rig.Nav);
+        var vm = new ProfileViewModel(rig.Db, session.Client, session.Tokens, new CustomGolfStats.App.Core.Sync.SyncEngine(rig.Db, session.Client), TestAccounts.For(rig.Db), new FakeConnectivity(), rig.Temp.Clock, rig.Nav);
 
         vm.NewHandicapText = "-2.1";
         await vm.AddHandicapCommand.ExecuteAsync(null);
