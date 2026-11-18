@@ -7,8 +7,10 @@
 # Environment:
 #   ASC_KEY_ID, ASC_ISSUER_ID   App Store Connect API key id and issuer id
 #   ASC_KEY_PATH                path to the AuthKey_<id>.p8 private key
-#   BUNDLE_ID                   e.g. com.customgolfstats.app (must already be registered as an App ID)
-#   CERT_SERIAL                 hex serial number of the distribution certificate in the signing keychain
+#   BUNDLE_ID                   the csproj ApplicationId, e.g. xyz.rsquaredsolutions.customgolfstats (must already be
+#                               registered as an App ID)
+#   CERT_SHA1                   SHA-1 fingerprint of the distribution certificate in the signing keychain (hex)
+#   CERT_SERIAL                 optional; its serial number, only for messages
 #   GITHUB_OUTPUT               optional; receives profile-name=<name> and profile-uuid=<uuid>
 #
 # A profile is reused when it is an ACTIVE IOS_APP_STORE profile for the bundle id that includes the certificate.
@@ -69,7 +71,8 @@ end
 key_id = env!('ASC_KEY_ID')
 issuer_id = env!('ASC_ISSUER_ID')
 bundle_id = env!('BUNDLE_ID')
-serial = normalize_serial(env!('CERT_SERIAL'))
+sha1 = env!('CERT_SHA1').delete(':').upcase
+serial = normalize_serial(ENV['CERT_SERIAL'])
 jwt = token(key_id, issuer_id, env!('ASC_KEY_PATH'))
 
 # The App ID (bundle id) has to exist: it is registered once by hand, together with the App Store Connect app record.
@@ -77,10 +80,22 @@ bundles = request(:get, "/v1/bundleIds?filter%5Bidentifier%5D=#{URI.encode_www_f
 bundle = bundles.find { |b| b['attributes']['identifier'] == bundle_id && %w[IOS UNIVERSAL].include?(b['attributes']['platform']) }
 abort("asc_profile: no iOS App ID for #{bundle_id}. Register it first (docs/deploy/testflight.md, step 2).") unless bundle
 
-# The distribution certificate the runner signs with, matched by serial number.
+# The distribution certificate the runner signs with, matched by content: the SHA-1 of Apple's DER certificateContent
+# against the fingerprint of the certificate imported from the .p12 (serial-number formats differ between tools).
 certs = request(:get, '/v1/certificates?filter%5BcertificateType%5D=DISTRIBUTION,IOS_DISTRIBUTION&limit=200', jwt)['data']
-cert = certs.find { |c| normalize_serial(c['attributes']['serialNumber']) == serial }
-abort("asc_profile: no distribution certificate with serial #{serial} in this team. Is IOS_DIST_CERT_P12 current?") unless cert
+cert = certs.find do |c|
+  content = c['attributes']['certificateContent'].to_s
+  !content.empty? && OpenSSL::Digest::SHA1.hexdigest(Base64.decode64(content)).upcase == sha1
+end
+unless cert
+  # Certificates are public; their names, serials and expiry dates help tell which one the secret holds.
+  listed = certs.map do |c|
+    a = c['attributes']
+    "  #{a['name'] || a['displayName']} (#{a['certificateType']}), serial #{a['serialNumber']}, expires #{a['expirationDate']}"
+  end
+  warn "asc_profile: the team's distribution certificates:\n#{listed.empty? ? '  (none)' : listed.join("\n")}"
+  abort("asc_profile: none matches IOS_DIST_CERT_P12 (serial #{serial}, SHA-1 #{sha1}). Export the current Apple Distribution certificate again (docs/deploy/testflight.md).")
+end
 
 profiles = request(:get, "/v1/bundleIds/#{bundle['id']}/profiles?limit=200", jwt)['data']
 candidates = profiles.select do |p|

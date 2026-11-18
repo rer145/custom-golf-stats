@@ -15,11 +15,12 @@
     <RootNamespace>CustomGolfStats.App</RootNamespace>
 
     <ApplicationTitle>Custom Golf Stats</ApplicationTitle>
-    <ApplicationId>com.customgolfstats.app</ApplicationId>
+    <ApplicationId>xyz.rsquaredsolutions.customgolfstats</ApplicationId>
     <!--
       ApplicationDisplayVersion is the version testers and the store show (CFBundleShortVersionString / versionName): bump it
       here for a release. ApplicationVersion is the build number (CFBundleVersion / versionCode) and must grow with every
-      upload: CI passes -p:ApplicationVersion=<GitHub run number> (.github/workflows/mobile.yml); local builds use 1.
+      upload: the TestFlight job passes -p:ApplicationVersion=<run number>.<run attempt> (.github/workflows/mobile.yml);
+      local builds use 1.
     -->
     <ApplicationDisplayVersion Condition="'$(ApplicationDisplayVersion)' == ''">1.0</ApplicationDisplayVersion>
     <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>

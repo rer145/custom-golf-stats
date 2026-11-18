@@ -2,8 +2,8 @@ name: Mobile release builds
 
 # Builds the iOS and Android Release apps on GitHub's macOS runners, which carry a current Xcode.
 # The ios and android jobs build unsigned (Android debug-signed) on every change, pull requests included.
-# The ios-testflight job signs the iOS app and uploads it to TestFlight, on master and manual runs only, and only when the
-# signing secrets exist in the `production` environment (forks, pull requests and repos without an Apple account skip it).
+# The ios-testflight job signs the iOS app and uploads it to TestFlight, on master pushes and manual runs on master only, and
+# only when the signing secrets and variables exist (forks, pull requests and an unconfigured repo skip it, green).
 # Setup: docs/deploy/testflight.md.
 # The API address comes from the variable API_BASE_URL (Settings > Secrets and variables > Actions > Variables).
 
@@ -19,6 +19,7 @@ on:
       - 'Directory.*.props'
       - 'global.json'
       - '.github/workflows/mobile.yml'
+      - '.github/scripts/asc_profile.rb'
   pull_request:
     paths:
       - 'src/CustomGolfStats.App/**'
@@ -28,6 +29,7 @@ on:
       - 'Directory.*.props'
       - 'global.json'
       - '.github/workflows/mobile.yml'
+      - '.github/scripts/asc_profile.rb'
 
 permissions:
   contents: read
@@ -42,7 +44,7 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           # .NET for iOS requires the exact Xcode major.minor it was built for, and actool needs a matching
           # simulator runtime. Workload set 10.0.112 ships iOS 26.5, which requires Xcode 26.6.
@@ -91,57 +93,74 @@ jobs:
           path: src/CustomGolfStats.App/bin/Release/net10.0-android/publish/*.aab
           if-no-files-found: error
 
-  # Signed iOS build uploaded to TestFlight. Setup and the secret names: docs/deploy/testflight.md.
+  # Signed iOS build uploaded to TestFlight. Setup and the secret/variable names: docs/deploy/testflight.md.
   # GitHub can't test `secrets` in a job-level `if`, so the first step checks them and every later step is gated on its
-  # output: without an Apple account the job finishes green in seconds and uploads nothing.
+  # output: until everything is configured the job finishes green in seconds, names what is missing, and uploads nothing.
   ios-testflight:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: macos-26
-    environment: production
     timeout-minutes: 60
     # One upload at a time; a newer push waits rather than cancelling an upload in flight.
     concurrency:
       group: ios-testflight
       cancel-in-progress: false
     env:
-      BUNDLE_ID: com.customgolfstats.app
-      # CFBundleVersion: unique and increasing for every run of this workflow. A re-run of the same run reuses the number and
-      # App Store Connect rejects it, so start a new run instead (Actions > Mobile release builds > Run workflow).
-      BUILD_NUMBER: ${{ github.run_number }}
+      # CFBundleVersion "<run number>.<attempt>": unique and increasing for every run, and a re-run gets a higher attempt.
+      # run_number restarts at 1 if this workflow file is renamed or recreated: then bump ApplicationDisplayVersion first.
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      # Relative to $RUNNER_TEMP. A fixed path so the cleanup step can always remove the keychain, even when the import
+      # step fails halfway.
+      SIGNING_KEYCHAIN_NAME: signing.keychain-db
     steps:
-      - name: Check signing secrets
+      - name: Check signing configuration
         id: gate
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
           API_BASE_URL: ${{ vars.API_BASE_URL }}
+        # Names only: no value is ever printed.
         run: |
           missing=()
-          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 IOS_DIST_CERT_P12 IOS_DIST_CERT_PASSWORD; do
-            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          for name in APPLE_API_KEY IOS_DIST_CERT_P12 IOS_DIST_CERT_PASSWORD; do
+            if [ -z "${!name}" ]; then missing+=("secret $name"); fi
           done
-          if [ "${#missing[@]}" -eq 5 ]; then
-            echo "::notice title=TestFlight upload skipped::No App Store Connect secrets in the production environment. See docs/deploy/testflight.md."
+          for name in ASC_KEY_ID ASC_ISSUER_ID API_BASE_URL; do
+            if [ -z "${!name}" ]; then missing+=("variable $name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            list=$(printf '%s, ' "${missing[@]}")
+            echo "::notice title=TestFlight upload skipped::Not configured yet. Missing: ${list%, }. See docs/deploy/testflight.md."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
-          fi
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error title=TestFlight secrets incomplete::Missing in the production environment: ${missing[*]}"
-            exit 1
-          fi
-          if [ -z "$API_BASE_URL" ]; then
-            echo "::error title=API_BASE_URL not set::A TestFlight build needs the production API address in the API_BASE_URL variable."
-            exit 1
           fi
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@v4
+
+      # The csproj's ApplicationId is the bundle id. The optional APPLE_BUNDLE_ID secret is a cross-check only.
+      - name: Read the bundle id
+        id: bundle
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+        run: |
+          bundle_id=$(sed -nE 's:.*<ApplicationId>([^<]+)</ApplicationId>.*:\1:p' src/CustomGolfStats.App/CustomGolfStats.App.csproj | head -n 1)
+          if [ -z "$bundle_id" ]; then
+            echo "::error title=No ApplicationId::src/CustomGolfStats.App/CustomGolfStats.App.csproj has no <ApplicationId>."
+            exit 1
+          fi
+          if [ -n "$APPLE_BUNDLE_ID" ] && [ "$APPLE_BUNDLE_ID" != "$bundle_id" ]; then
+            echo "::error title=Bundle id mismatch::The APPLE_BUNDLE_ID secret differs from <ApplicationId> in CustomGolfStats.App.csproj. Fix one of them (the csproj is what ships)."
+            exit 1
+          fi
+          echo "id=$bundle_id" >> "$GITHUB_OUTPUT"
+
       - if: steps.gate.outputs.enabled == 'true'
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           # Same pairing as the ios job: workload set 10.0.112 needs Xcode 26.6. Bump both together.
           xcode-version: '26.6'
@@ -157,16 +176,24 @@ jobs:
         id: asc
         if: steps.gate.outputs.enabled == 'true'
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        # APPLE_API_KEY may hold the AuthKey_<id>.p8 text as is, or its base64.
         # altool finds AuthKey_<id>.p8 in ~/.appstoreconnect/private_keys by itself.
         run: |
           dir="$HOME/.appstoreconnect/private_keys"
           mkdir -p "$dir"
           key="$dir/AuthKey_${ASC_KEY_ID}.p8"
-          (umask 077; printf '%s' "$ASC_KEY_P8" | base64 --decode > "$key")
-          if ! grep -q -- '-----BEGIN PRIVATE KEY-----' "$key"; then
-            echo "::error title=ASC_KEY_P8 invalid::ASC_KEY_P8 must be the base64 of the AuthKey_<id>.p8 file (base64 -i AuthKey_<id>.p8)."
+          (
+            umask 077
+            if printf '%s' "$APPLE_API_KEY" | grep -q -e '-----BEGIN PRIVATE KEY-----'; then
+              printf '%s\n' "$APPLE_API_KEY" | tr -d '\r' > "$key"
+            else
+              printf '%s' "$APPLE_API_KEY" | tr -d ' \r\n' | base64 --decode > "$key" 2> /dev/null || true
+            fi
+          )
+          if ! grep -q -e '-----BEGIN PRIVATE KEY-----' "$key"; then
+            echo "::error title=APPLE_API_KEY invalid::APPLE_API_KEY must be the contents of AuthKey_<id>.p8, or its base64."
             exit 1
           fi
           echo "key-path=$key" >> "$GITHUB_OUTPUT"
@@ -178,14 +205,16 @@ jobs:
           IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
         run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain="$RUNNER_TEMP/$SIGNING_KEYCHAIN_NAME"
           keychain_password="$(openssl rand -base64 24)"
           echo "::add-mask::$keychain_password"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           p12="$RUNNER_TEMP/dist.p12"
-          (umask 077; printf '%s' "$IOS_DIST_CERT_P12" | base64 --decode > "$p12")
+          (umask 077; printf '%s' "$IOS_DIST_CERT_P12" | tr -d ' \r\n' | base64 --decode > "$p12")
+          # `security -p/-P` take passwords as arguments, so they show in the process list. Acceptable on a GitHub-hosted
+          # runner (a fresh single-tenant VM per job); don't copy this to a shared or self-hosted machine.
           security import "$p12" -k "$keychain" -f pkcs12 -P "$IOS_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           rm -f "$p12"
           # Let codesign use the key without a UI prompt, and put the keychain on the search list.
@@ -198,23 +227,27 @@ jobs:
             echo "::error title=No distribution identity::IOS_DIST_CERT_P12 holds no Apple Distribution certificate with its private key."
             exit 1
           fi
-          serial=$(security find-certificate -c "$identity" -p "$keychain" | openssl x509 -noout -serial | sed 's/^serial=//')
+          pem=$(security find-certificate -c "$identity" -p "$keychain")
+          serial=$(printf '%s\n' "$pem" | openssl x509 -noout -serial | sed 's/^serial=//')
+          sha1=$(printf '%s\n' "$pem" | openssl x509 -noout -fingerprint -sha1 | sed 's/^.*=//' | tr -d ':')
           echo "Signing with: $identity (serial $serial)"
           {
-            echo "keychain=$keychain"
             # The generic prefix ("Apple Distribution") lets the build pick the identity that matches the profile, and keeps
             # team names with commas or semicolons off the MSBuild command line.
             echo "codesign-key=${identity%%:*}"
             echo "serial=$serial"
+            echo "sha1=$sha1"
           } >> "$GITHUB_OUTPUT"
 
       - name: Fetch or create the App Store provisioning profile
         id: profile
         if: steps.gate.outputs.enabled == 'true'
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
           ASC_KEY_PATH: ${{ steps.asc.outputs.key-path }}
+          BUNDLE_ID: ${{ steps.bundle.outputs.id }}
+          CERT_SHA1: ${{ steps.cert.outputs.sha1 }}
           CERT_SERIAL: ${{ steps.cert.outputs.serial }}
         run: ruby .github/scripts/asc_profile.rb
 
@@ -224,7 +257,8 @@ jobs:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           CODESIGN_KEY: ${{ steps.cert.outputs.codesign-key }}
           CODESIGN_PROVISION: ${{ steps.profile.outputs.profile-uuid }}
-          CODESIGN_KEYCHAIN: ${{ steps.cert.outputs.keychain }}
+        # Platforms/iOS/Entitlements.plist (the Keychain access group) is applied through CodesignEntitlements, which
+        # Uno.Sdk sets for every iOS build; the App Store profile must allow it, and it does without extra capabilities.
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
           -f net10.0-ios -c Release -r ios-arm64
@@ -232,7 +266,7 @@ jobs:
           -p:ApplicationVersion="$BUILD_NUMBER"
           -p:CodesignKey="$CODESIGN_KEY"
           -p:CodesignProvision="$CODESIGN_PROVISION"
-          -p:CodesignKeychain="$CODESIGN_KEYCHAIN"
+          -p:CodesignKeychain="$RUNNER_TEMP/$SIGNING_KEYCHAIN_NAME"
           -p:ArchiveOnBuild=false
           -p:BuildIpa=true
 
@@ -247,29 +281,29 @@ jobs:
           fi
           echo "path=$ipa" >> "$GITHUB_OUTPUT"
 
-      # Kept for two weeks so a failed upload can be retried by hand (Transporter) without rebuilding.
+      # Kept for a week so a failed upload can be retried by hand (Transporter) without rebuilding. Anyone with read access
+      # to this repository can download it; it holds the signed app and the API address, no secrets.
       - if: steps.gate.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ios-testflight-${{ github.run_number }}
+          name: ios-testflight-${{ github.run_number }}.${{ github.run_attempt }}
           path: ${{ steps.ipa.outputs.path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Upload to TestFlight
         if: steps.gate.outputs.enabled == 'true'
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
           IPA: ${{ steps.ipa.outputs.path }}
         run: |
           xcrun altool --upload-app --type ios --file "$IPA" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
-          echo "::notice title=Uploaded to TestFlight::Build $BUILD_NUMBER is processing in App Store Connect (usually 5-30 minutes)."
+          echo "::notice title=Upload accepted::Build $BUILD_NUMBER was handed to App Store Connect. Apple processes it next and emails if it is rejected; check the TestFlight tab."
 
       - name: Remove the keychain and the API key
-        if: always() && steps.gate.outputs.enabled == 'true'
-        env:
-          KEYCHAIN: ${{ steps.cert.outputs.keychain }}
+        if: always()
         run: |
-          if [ -n "$KEYCHAIN" ]; then security delete-keychain "$KEYCHAIN" || true; fi
+          keychain="$RUNNER_TEMP/$SIGNING_KEYCHAIN_NAME"
+          if [ -e "$keychain" ]; then security delete-keychain "$keychain" || rm -f "$keychain"; fi
           rm -f "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8 "$RUNNER_TEMP/dist.p12"

@@ -1,105 +1,210 @@
 # TestFlight from GitHub Actions
 
 The `ios-testflight` job in `.github/workflows/mobile.yml` builds a signed Release IPA of the app on a GitHub macOS runner
-and uploads it to TestFlight. It runs on pushes to `master` that touch the app, and on a manual run. It does nothing (and
-stays green) until the secrets below exist, so pull requests and forks never try to sign.
+and uploads it to TestFlight. It runs on:
+- pushes to `master` that touch the app;
+- manual runs on `master`.
 
-This guide is the one-time setup. Do the steps in order; each one needs the one before.
+Until every secret and variable below exists, the job finishes green, uploads nothing, and lists the missing names in a
+notice. Pull requests and forks never try to sign.
+
+**Bundle id:** `xyz.rsquaredsolutions.customgolfstats`. It is `ApplicationId` in
+`src/CustomGolfStats.App/CustomGolfStats.App.csproj`, which is the source of truth; iOS and Android share it.
+
+## Where things stand
+
+Done:
+- Apple Developer Program enrollment.
+- An App Store Connect API key, stored as the repository secret `APPLE_API_KEY`.
+- The bundle id, also stored as the repository secret `APPLE_BUNDLE_ID`. This secret is optional (see "What the job uses").
+
+Left to do, in order:
 
 | Step | Where | Time |
 | --- | --- | --- |
-| 1. Enroll in the Apple Developer Program | developer.apple.com | 1–2 days (individual) or 1–3 weeks (organization) |
-| 2. Register the App ID | Certificates, Identifiers & Profiles | 2 min |
-| 3. Create the App Store Connect app record | App Store Connect | 5 min |
-| 4. Create the App Store Connect API key | App Store Connect, Users and Access | 2 min |
-| 5. Create the distribution certificate (.p12) | Terminal + Certificates portal | 10 min |
-| 6. Add the GitHub secrets and variable | GitHub repository settings | 5 min |
-| 7. Run the workflow | GitHub Actions | 25–40 min |
-| 8. Add internal testers | App Store Connect, TestFlight | 5 min |
+| 1. Set the `ASC_KEY_ID`, `ASC_ISSUER_ID` and `API_BASE_URL` variables | App Store Connect + GitHub | 5 min |
+| 2. Check the API key's role | App Store Connect | 1 min |
+| 3. Register the bundle id and create the App Store Connect app record, if not done yet | developer.apple.com + App Store Connect | 10 min |
+| 4. Create the Apple Distribution certificate and set its two secrets | Xcode + Keychain Access on your Mac | 10 min |
+| 5. Run the workflow | GitHub Actions | 25–40 min |
+| 6. Add internal testers | App Store Connect, TestFlight | 5 min |
 
-Nothing here needs the Xcode GUI. Every step works from a browser, plus `openssl` in a terminal (macOS, Linux or WSL).
+The commands below use the GitHub CLI (`gh`), run from the repository folder after `gh auth login`.
 
-## How the job signs
+## 1. Set the variables
 
-- **App Store Connect API key** (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`). The job uses it for two things:
-  - It finds or creates the App Store provisioning profile (`.github/scripts/asc_profile.rb`, Ruby standard library only).
-  - It uploads the IPA (`xcrun altool --upload-app --apiKey … --apiIssuer …`, with the key in `~/.appstoreconnect/private_keys`).
-- **Distribution certificate** (`IOS_DIST_CERT_P12`, `IOS_DIST_CERT_PASSWORD`). The job imports it into a temporary keychain
-  that it deletes at the end of the run.
-- **Provisioning profile.** No profile is stored anywhere. Each run asks the API for an active App Store profile for
-  `com.customgolfstats.app` that contains the certificate. If there is none, the run creates one. This covers the first
-  run, a renewed certificate, and a profile Apple invalidated after a capability change.
-- **Build number.** `CFBundleVersion` is the GitHub run number (`-p:ApplicationVersion=${{ github.run_number }}`), so every
-  upload is unique and increasing. The marketing version (`CFBundleShortVersionString`, 1.0) is
-  `ApplicationDisplayVersion` in `src/CustomGolfStats.App/CustomGolfStats.App.csproj`. Bump it there for a new release.
-- **API address.** It comes from the `API_BASE_URL` variable. A Release build fails without one (CGS0001).
-- **Export compliance.** `ITSAppUsesNonExemptEncryption` is `false` in `Platforms/iOS/Info.plist`, so App Store Connect
-  doesn't hold each build for the encryption questions.
+The Key ID and Issuer ID aren't secret; they only work together with the `.p8` key. They go in repository **variables**:
+**Settings > Secrets and variables > Actions > Variables**.
 
-### Why this approach and not fastlane match
+Find them in App Store Connect under **Users and Access > Integrations > App Store Connect API**
+(<https://appstoreconnect.apple.com/access/integrations/api>), on the **Team Keys** tab:
+- **Issuer ID:** the UUID above the key list. It is the same for every key in the team.
+- **Key ID:** the 10-character id in your key's row. It also appears in the downloaded file name, `AuthKey_<KEYID>.p8`.
 
-There are two common ways to sign on a CI runner:
+```sh
+gh variable set ASC_KEY_ID --body "ABCDE12345"
+gh variable set ASC_ISSUER_ID --body "00000000-0000-0000-0000-000000000000"
+gh variable set API_BASE_URL --body "https://api.example.com/"   # the production API, with the trailing slash
+```
 
-- **(a) Certificate as a secret (used here).** The `.p12` and its password are GitHub secrets. The runner imports them
-  into a throwaway keychain, and the API key fetches or creates the profile.
-  - Pros: nothing to install, no extra repository, five secrets in total.
-  - Con: when the certificate expires (yearly), you redo step 5 and replace two secrets.
-- **(b) fastlane match.** match keeps the certificate and profiles encrypted in a private git repository (or S3 / Google
-  Cloud Storage). `fastlane match appstore --readonly` installs them on the runner.
-  - Pro: it suits teams and several machines that share one identity.
-  - Cons: it needs a Gemfile and a Fastfile, a second private repository with its deploy key, and a `MATCH_PASSWORD`.
+The unsigned `ios` and `android` jobs read `API_BASE_URL` too, and fall back to a placeholder when it isn't set.
 
-For one developer and one app, (a) has fewer moving parts. To switch to (b) later:
-1. Run `fastlane match init` and `fastlane match appstore` once on a machine with the API key.
-2. In the job, replace the certificate and profile steps with `bundle exec fastlane match appstore --readonly` (with
-   `MATCH_PASSWORD` and the storage credentials as secrets).
-3. Pass the profile match installed as `-p:CodesignProvision`.
+## 2. Check the API key's role
 
-## 1. Enroll in the Apple Developer Program
+On the same page, the key's **Access** column must say **App Manager** or **Admin**:
+- **App Manager** is enough to upload builds and, as far as Apple documents it, to manage provisioning profiles.
+- **Admin** always works.
 
-Go to <https://developer.apple.com/programs/enroll/>. You can also enroll in the Apple Developer app on an iPhone, which is
-usually faster for individuals. Use an Apple Account with two-factor authentication on. The fee is US$99 a year.
+You can't change a key's role. If it is anything else (Developer, for example):
+1. Generate a new key with App Manager access.
+2. Replace the `APPLE_API_KEY` secret with it.
+3. Update `ASC_KEY_ID`.
+4. Revoke the old key.
 
-**Individual or organization?**
+`APPLE_API_KEY` can hold the `.p8` file's text exactly as downloaded (multi-line) or its base64. The job accepts both. To
+replace it:
 
-| | Individual | Organization |
-| --- | --- | --- |
-| Seller name on the App Store | Your legal name | The company's legal name |
-| Needs | Government ID | A legal entity, a D-U-N-S number (free, can take up to 2 weeks), a public website, and authority to sign for the company |
-| Approval | Usually 1–2 days | Often 1–3 weeks |
-| Team members (App Store Connect users, internal testers) | Yes | Yes |
-| Developer portal access for other people | No; only you sign | Yes, by role |
-| Later change | Apple Support can convert an individual account into an organization one; the apps move with it | — |
+```sh
+gh secret set APPLE_API_KEY < ~/Downloads/AuthKey_ABCDE12345.p8
+```
 
-For a solo project, individual is the quick route, and it doesn't stop you adding internal testers. Choose organization if
-the app should be sold under a company name, or if other people will need to manage certificates.
+## 3. Register the bundle id and create the app record (skip what's done)
 
-When enrollment finishes, note your **Team ID** (Membership details on developer.apple.com). You don't need it for any
-secret, but it appears in the certificate name and in error messages.
+**App ID.**
+1. Open <https://developer.apple.com/account/resources/identifiers/list> and click **+** > **App IDs** > **App** > Continue.
+2. Set **Description** to `Custom Golf Stats` and choose **Bundle ID: Explicit** `xyz.rsquaredsolutions.customgolfstats`.
+3. Leave every capability off. The Keychain access group the app uses needs no capability. Continue > Register.
 
-## 2. Register the App ID (bundle id)
+When Sign in with Apple arrives, turn that capability on here. Apple then invalidates the existing profile, and the next run
+creates a new one.
 
-1. Open <https://developer.apple.com/account/resources/identifiers/list> (Certificates, Identifiers & Profiles > Identifiers).
-2. Click **+** > **App IDs** > **App** > Continue.
-3. Set **Description** to `Custom Golf Stats` and choose **Bundle ID: Explicit** `com.customgolfstats.app`.
-4. Leave every capability off. The Keychain access group the app uses needs no capability. Continue > Register.
-
-When Sign in with Apple arrives (see the roadmap), turn that capability on here. Apple then invalidates the existing
-profile, and the next CI run creates a new one by itself.
-
-## 3. Create the App Store Connect app record
-
+**App Store Connect record.**
 1. Open <https://appstoreconnect.apple.com/apps> > **+** > **New App**.
 2. Fill in:
    - **Platforms:** iOS.
-   - **Name:** `Custom Golf Stats`. It must be unique on the store; if it's taken, add a word. You can change it later.
+   - **Name:** `Custom Golf Stats`. It must be unique on the store; you can change it later.
    - **Primary language:** English (U.S.).
-   - **Bundle ID:** `com.customgolfstats.app`, which appears once step 2 is done.
-   - **SKU:** `customgolfstats-ios`. It is private and can't be changed.
+   - **Bundle ID:** `xyz.rsquaredsolutions.customgolfstats`.
+   - **SKU:** `customgolfstats-ios`. It is private and permanent.
    - **User access:** Full Access.
-3. Click Create. TestFlight builds attach to this record.
+3. Click Create.
 
-Fill in **App Privacy** (the privacy labels) on the app's page now or before the first external test. It must agree with
+**Agreements.** The Account Holder must accept the latest agreements under **Business** in App Store Connect, and again
+whenever Apple updates them. Until then, uploads and API calls fail (see Troubleshooting).
+
+## 4. Create the Apple Distribution certificate and set its secrets
+
+The easiest way is on your Mac with Xcode:
+
+1. **Xcode > Settings > Accounts.** Add your Apple Account if it isn't listed, select your team, and click **Manage
+   Certificates…**.
+2. Click **+** > **Apple Distribution**. Xcode creates the certificate and keeps its private key in your login keychain.
+3. Open **Keychain Access**. Choose the **login** keychain, then **My Certificates**.
+4. Find **Apple Distribution: <your name> (<TEAMID>)**. Expand it to check that a private key sits under it.
+5. Right-click the certificate > **Export "Apple Distribution: …"**. Choose the format **Personal Information Exchange
+   (.p12)**, save it as `dist.p12`, and set a strong password. macOS may ask for your login password to allow the export.
+6. Store the `.p12` and its password in your password manager. Then set the secrets:
+
+```sh
+base64 -i ~/Desktop/dist.p12 | gh secret set IOS_DIST_CERT_P12
+gh secret set IOS_DIST_CERT_PASSWORD        # prompts for the .p12 password; nothing lands in shell history
+rm ~/Desktop/dist.p12                       # once it's safely in the password manager
+```
+
+The certificate is valid for one year, and a team can hold only a few Apple Distribution certificates. When it expires:
+1. Repeat this step.
+2. Replace the two secrets.
+3. Revoke the old certificate at <https://developer.apple.com/account/resources/certificates/list>.
+
+The next run creates a matching profile.
+
+No Xcode? See "Certificate with openssl" at the end.
+
+## 5. Run the workflow
+
+Either push a change under `src/CustomGolfStats.App/**` (or the other paths in the workflow's `on:` list) to `master`, or
+open **Actions > Mobile release builds > Run workflow** and choose `master`.
+
+Open the **ios-testflight** job:
+1. The first step either says "TestFlight upload skipped … Missing: …", or carries on.
+2. "Fetch or create the App Store provisioning profile" says either `Reusing App Store profile …` or
+   `Created App Store profile …`.
+3. "Upload to TestFlight" runs altool. If it succeeds, the build has been handed over to Apple. It hasn't been accepted yet:
+   App Store Connect then processes it for 5–30 minutes, and emails you if it rejects the build. When it's ready, it
+   appears under the app's **TestFlight** tab.
+4. The IPA is attached to the run as `ios-testflight-<run>.<attempt>` for 7 days. If the upload step failed, you can upload
+   this file by hand with Apple's Transporter app. Anyone with read access to the repository can download it. It holds
+   the signed app and the API address, but no secrets.
+
+**Build numbers.** The build number (`CFBundleVersion`) is `<run number>.<attempt>`, for example `57.1`, and a re-run
+becomes `57.2`, so **Re-run jobs** works. The run number starts again at 1 if the workflow file is renamed or recreated. If
+that happens, bump `ApplicationDisplayVersion` (the visible version, 1.0) in the csproj first; otherwise Apple rejects the
+lower build numbers.
+
+## 6. Add internal testers
+
+Internal testers are App Store Connect users on your team, up to 100 people. Builds reach them without Beta App Review.
+
+1. Each tester needs an App Store Connect user. Go to **Users and Access > +**, enter their name and email, and give them a
+   role such as **Customer Support** or **Marketing**; any role can test. They accept the email invitation. You, as the
+   Account Holder, are already a user.
+2. Open the app > **TestFlight > Internal Testing > +** to create a group, for example `Team`. Turn on **Enable automatic
+   distribution**.
+3. Add the testers to the group. If the group existed before the build, add the build to the group.
+4. Testers install **TestFlight** from the App Store and accept the invitation. Each build lasts 90 days.
+
+**External testers** (anyone, by email or a public link) need more first:
+- the **Test Information** page filled in: a feedback email, a description, and a sign-in account for the reviewer;
+- a privacy policy URL;
+- a Beta App Review of each version's first build, which usually takes about a day.
+
+## What the job uses
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `APPLE_API_KEY` | Repository secret | The `AuthKey_<KEYID>.p8` text, or its base64 |
+| `IOS_DIST_CERT_P12` | Repository secret | The base64 of the Apple Distribution `.p12` |
+| `IOS_DIST_CERT_PASSWORD` | Repository secret | The `.p12` password |
+| `APPLE_BUNDLE_ID` | Repository secret, **optional** | If set, the job checks that it equals the csproj `ApplicationId` and stops if it doesn't. |
+| `ASC_KEY_ID` | Repository variable | The API key's Key ID |
+| `ASC_ISSUER_ID` | Repository variable | The team's Issuer ID |
+| `API_BASE_URL` | Repository variable | The production API address, with a trailing slash |
+
+Because `APPLE_BUNDLE_ID` is a secret, GitHub shows the bundle id as `***` wherever it appears in the logs. This is
+harmless. If you'd rather read it in the logs, delete the secret.
+
+How it signs:
+- **The API key.** The job writes it to `~/.appstoreconnect/private_keys/AuthKey_<id>.p8` and uses it for two things:
+  - `.github/scripts/asc_profile.rb` (Ruby standard library only) finds or creates the App Store provisioning profile;
+  - `xcrun altool --upload-app --apiKey … --apiIssuer …` uploads the IPA.
+- **The certificate.** The `.p12` goes into a temporary keychain under `$RUNNER_TEMP`. The keychain is deleted at the end
+  of the run, even after a failure.
+- **The profile.** No profile is stored anywhere. Each run looks for an active App Store profile for the bundle id that
+  contains the certificate, and creates one if there is none.
+  - The certificate is matched by content: the SHA-1 of the certificate Apple holds against the one in the `.p12`.
+  - On a mismatch, the log lists the team's distribution certificates (names, serials and expiry dates, none secret).
+- **Entitlements.** `Platforms/iOS/Entitlements.plist` (the Keychain access group `$(AppIdentifierPrefix)$(CFBundleIdentifier)`)
+  is applied to every iOS build through `CodesignEntitlements`, which Uno.Sdk sets.
+- **Export compliance.** `ITSAppUsesNonExemptEncryption` is `false` in `Platforms/iOS/Info.plist`, so builds don't wait on
+  the encryption questions.
+
+### Why this approach and not fastlane match
+
+- **(a) Certificate as a secret (used here).** The `.p12` and its password are repository secrets, and the API key fetches
+  or creates the profile.
+  - Pros: nothing to install, no extra repository, four required secrets and variables beyond the API key.
+  - Con: you redo step 4 yearly.
+- **(b) fastlane match.** match keeps the certificate and profiles encrypted in a private git repository (or S3 / Google
+  Cloud Storage), and `fastlane match appstore --readonly` installs them on the runner.
+  - Pro: it suits teams and several machines.
+  - Cons: it needs a Gemfile and a Fastfile, a second private repository with a deploy key, and `MATCH_PASSWORD`.
+
+For one developer and one app, (a) has fewer moving parts. To switch to (b) later, replace the certificate and profile steps
+with `bundle exec fastlane match appstore --readonly`, and pass the profile it installs as `-p:CodesignProvision`.
+
+## App Privacy labels
+
+Under the app's **App Privacy** page in App Store Connect, declare the same data as
 `src/CustomGolfStats.App/Platforms/iOS/PrivacyInfo.xcprivacy`. Every item is **linked to the user**, **not used for
 tracking**, and has the purpose **App Functionality**.
 
@@ -113,153 +218,41 @@ tracking**, and has the purpose **App Functionality**.
 | Health & Fitness | Fitness | Steps and walking distance for a round |
 | Other Data | Other Data Types | Gender, used only to choose tee ratings |
 
-A **privacy policy URL** is required before external testing and the App Store. Internal TestFlight doesn't need one.
-
-## 4. Create the App Store Connect API key
-
-1. Open <https://appstoreconnect.apple.com/access/integrations/api> (Users and Access > Integrations > App Store Connect
-   API). The Account Holder may first need to click **Request Access** and accept the terms.
-2. Under **Team Keys**, click **+** (Generate API Key).
-3. Set **Name** to `GitHub Actions` and **Access** to **App Manager**. Click Generate.
-4. Copy the **Issuer ID**, the UUID above the key list. It is the same for every key in the team.
-5. Copy the key's **Key ID**, 10 characters.
-6. Click **Download** and keep `AuthKey_<KEYID>.p8` somewhere safe, such as your password manager. Apple lets you download it
-   only once. If you lose it, revoke the key and create a new one.
-
-App Manager is enough to upload builds and to manage profiles. If the profile step ever fails with HTTP 403, you have two
-fixes:
-- give the key **Admin** access; or
-- create one App Store profile by hand: Profiles > **+** > App Store Connect > `com.customgolfstats.app` > the certificate
-  from step 5. The job reuses an existing profile and doesn't need to create one.
-
-## 5. Create the distribution certificate (.p12) without Xcode
-
-Run these in an empty folder. Use `openssl version` to check your version: macOS's built-in `/usr/bin/openssl` is LibreSSL,
-while Homebrew and Linux usually have OpenSSL 3.
-
-```sh
-# 1. A private key and a certificate signing request (use your Apple Account email and name).
-openssl genrsa -out dist.key 2048
-openssl req -new -key dist.key -out dist.csr -subj "/emailAddress=you@example.com/CN=Your Name/C=US"
-```
-
-2. Open <https://developer.apple.com/account/resources/certificates/list> > **+** > **Apple Distribution** > Continue.
-3. Upload `dist.csr`, then Download. You get `distribution.cer`.
-
-```sh
-# 4. Turn the certificate into PEM, add Apple's intermediate certificate, and bundle everything with the key into a .p12.
-openssl x509 -inform DER -in distribution.cer -out dist.pem
-curl -fsSLo wwdr.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
-openssl x509 -inform DER -in wwdr.cer -out wwdr.pem
-
-# Choose a strong password. You will store it as IOS_DIST_CERT_PASSWORD.
-# OpenSSL 3.x: keep -legacy (macOS `security import` rejects OpenSSL 3's default .p12 encryption).
-# LibreSSL (macOS /usr/bin/openssl): remove -legacy, which LibreSSL doesn't know.
-openssl pkcs12 -export -legacy -inkey dist.key -in dist.pem -certfile wwdr.pem \
-  -name "Apple Distribution" -out dist.p12
-
-# 5. Check it: this should print "Apple Distribution: <Your Name> (<TEAMID>)".
-openssl pkcs12 -in dist.p12 -nokeys -legacy | openssl x509 -noout -subject   # LibreSSL: remove -legacy
-
-# 6. Base64 for the GitHub secret (one line).
-base64 -i dist.p12 | tr -d '\n' > dist.p12.b64   # macOS
-# base64 -w0 dist.p12 > dist.p12.b64             # Linux
-```
-
-Keep `dist.p12` and its password in your password manager, then delete `dist.key`, `dist.csr`, `dist.pem` and the `.b64`
-file. The certificate is valid for one year, and a team can hold only a few Apple Distribution certificates at a time.
-When it expires:
-1. Repeat this step.
-2. Replace the two `IOS_DIST_CERT_*` secrets.
-3. Revoke the old certificate in the portal.
-
-The next run creates a matching profile.
-
-## 6. Add the GitHub secrets and variable
-
-The job uses the `production` environment. The deploy tasks may already have created it; if not, create it:
-1. Open the repository's **Settings > Environments > New environment** and name it `production`.
-2. Under **Deployment branches and tags**, choose **Selected branches and tags** and add `master`, so nothing else can use
-   these secrets.
-
-Add these **environment secrets** to `production`. The names must match exactly.
-
-| Secret | Value |
-| --- | --- |
-| `ASC_KEY_ID` | The Key ID from step 4 (10 characters) |
-| `ASC_ISSUER_ID` | The Issuer ID from step 4 (a UUID) |
-| `ASC_KEY_P8` | The **base64** of `AuthKey_<KEYID>.p8`, on one line |
-| `IOS_DIST_CERT_P12` | The base64 of `dist.p12`, on one line (the contents of `dist.p12.b64`) |
-| `IOS_DIST_CERT_PASSWORD` | The `.p12` password from step 5 |
-
-Add one **variable**: `API_BASE_URL`, the production API address with a trailing slash, for example
-`https://api.example.com/`. Make it a repository variable (Settings > Secrets and variables > Actions > Variables), because
-the unsigned `ios` and `android` jobs read it too and they don't use the environment. A `production` environment variable
-with the same name would override it for this job only.
-
-The same with the GitHub CLI, run from the repository folder:
-
-```sh
-gh secret set ASC_KEY_ID --env production --body "ABCDE12345"
-gh secret set ASC_ISSUER_ID --env production --body "00000000-0000-0000-0000-000000000000"
-base64 -i AuthKey_ABCDE12345.p8 | tr -d '\n' | gh secret set ASC_KEY_P8 --env production
-gh secret set IOS_DIST_CERT_P12 --env production < dist.p12.b64
-gh secret set IOS_DIST_CERT_PASSWORD --env production       # prompts; nothing lands in shell history
-gh variable set API_BASE_URL --body "https://api.example.com/"
-```
-
-The job checks the five secrets before doing anything:
-- **None set:** a "TestFlight upload skipped" notice, and the job is green.
-- **Some set:** the run fails and lists the missing names.
-- **All set, no `API_BASE_URL`:** the run fails.
-
-## 7. Run the workflow
-
-Either push a change under `src/CustomGolfStats.App/**` (or the other paths in the workflow's `on:` list) to `master`, or
-open **Actions > Mobile release builds > Run workflow** and choose `master`.
-
-Open the **ios-testflight** job:
-1. "Fetch or create the App Store provisioning profile" says either `Reusing App Store profile …` or
-   `Created App Store profile …`.
-2. "Upload to TestFlight" ends with `No errors uploading`, and a notice gives the build number.
-3. The IPA is attached to the run as `ios-testflight-<run number>` for 14 days. If the upload failed, you can upload this
-   file by hand with Apple's Transporter app, without rebuilding.
-
-App Store Connect processes the build for 5–30 minutes. Apple emails you when it's ready, and it appears under the app's
-**TestFlight** tab.
-
-Don't use **Re-run jobs** for a new upload. A re-run keeps the run number, so App Store Connect rejects the duplicate
-build number. Start a new run instead.
-
-## 8. Add internal testers
-
-Internal testers are App Store Connect users on your team, up to 100 people. Builds reach them without Beta App Review.
-
-1. Each tester needs an App Store Connect user. Go to **Users and Access > +**, enter their name and email, and give them a
-   role such as **Customer Support** or **Marketing**; any role can test. They accept the email invitation. You, as the
-   Account Holder, are already a user.
-2. Open the app > **TestFlight > Internal Testing > +** to create a group, for example `Team`. Turn on **Enable automatic
-   distribution** so every new build goes to the group.
-3. Add the testers to the group. If the group existed before the build, select the build and add it to the group.
-4. Testers install **TestFlight** from the App Store and accept the invitation from the email. Each build lasts 90 days.
-
-**External testers** (anyone with an email or a public link, up to 10,000) need more first:
-- the **Test Information** page filled in: a feedback email, a description, and a sign-in account for the reviewer;
-- a privacy policy URL;
-- a Beta App Review of the first build of each version, which usually takes about a day.
-
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `TestFlight secrets incomplete: Missing … ` | One or more of the five secrets is missing from `production`. Check the names in step 6. |
-| `ASC_KEY_P8 invalid` | The secret holds the raw `.p8` and not its base64, or the base64 is wrapped across lines. Redo it with `base64 -i … \| tr -d '\n'`. |
-| `security: SecKeychainItemImport: MAC verification failed` | Wrong `IOS_DIST_CERT_PASSWORD`, or an OpenSSL 3 `.p12` made without `-legacy` (step 5). |
-| `No distribution identity` | The `.p12` lacks the private key, or holds a Development certificate. Redo step 5 with an Apple Distribution certificate. |
-| `no iOS App ID for com.customgolfstats.app` | Step 2 isn't done. |
-| `no distribution certificate with serial …` | The certificate was revoked or belongs to another team. Redo step 5. |
-| HTTP 401 from the profile step | The Key ID, the Issuer ID or the `.p8` don't belong together, or the key was revoked. |
-| HTTP 403 from the profile step | The key's role can't create profiles. See the end of step 4. |
-| altool: `The bundle version must be higher than the previously uploaded version` | A re-run reused a run number. Start a new run. |
-| altool: `No suitable application records were found` | Step 3 isn't done, or the record has another bundle id. |
+| Notice `TestFlight upload skipped … Missing: …` | Set the named secrets or variables (step 1, step 4). |
+| `Bundle id mismatch` | The `APPLE_BUNDLE_ID` secret differs from the csproj `ApplicationId`. Fix the secret, or delete it. |
+| `APPLE_API_KEY invalid` | The secret is neither the `.p8` text nor its base64. Set it again from the file (step 2). |
+| `security: SecKeychainItemImport: MAC verification failed` | Wrong `IOS_DIST_CERT_PASSWORD`, or an OpenSSL 3 `.p12` made without `-legacy`. |
+| `No distribution identity` | The `.p12` lacks the private key, or holds a Development certificate. Export again, with the key, from My Certificates (step 4). |
+| `no iOS App ID for …` | Step 3 (App ID) isn't done. |
+| `none matches IOS_DIST_CERT_P12` | The `.p12` certificate was revoked or belongs to another team. Compare it with the list printed above the error, then redo step 4. |
+| HTTP 401 from the profile step | `ASC_KEY_ID`, `ASC_ISSUER_ID` and `APPLE_API_KEY` don't belong together, or the key was revoked. |
+| HTTP 403 from the profile step, or altool errors that mention agreements | The Account Holder must accept the latest agreements in App Store Connect (Business). Otherwise the key's role is too low (step 2). As a stopgap, create one App Store profile by hand under Profiles > **+**; the job reuses it. |
+| altool: `The bundle version must be higher than the previously uploaded version` | The run number restarted (renamed workflow). Bump `ApplicationDisplayVersion`. |
+| altool: `No suitable application records were found` | The App Store Connect record (step 3) is missing or has another bundle id. |
 | Xcode / workload mismatch errors | The `setup-xcode` version and `--version` on `dotnet workload install` move together. See the comments in the `ios` job. |
+
+## Certificate with openssl (no Xcode)
+
+This works on any machine.
+
+```sh
+openssl genrsa -out dist.key 2048
+openssl req -new -key dist.key -out dist.csr -subj "/emailAddress=you@example.com/CN=Your Name/C=US"
+```
+
+Upload `dist.csr` at Certificates > **+** > **Apple Distribution**, and download `distribution.cer`. Then:
+
+```sh
+openssl x509 -inform DER -in distribution.cer -out dist.pem
+curl -fsSLo wwdr.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+openssl x509 -inform DER -in wwdr.cer -out wwdr.pem
+# OpenSSL 3.x needs -legacy (macOS `security import` rejects its default .p12 encryption). LibreSSL (macOS
+# /usr/bin/openssl) doesn't know -legacy: leave it out there.
+openssl pkcs12 -export -legacy -inkey dist.key -in dist.pem -certfile wwdr.pem -name "Apple Distribution" -out dist.p12
+```
+
+Then set the secrets as in step 4, and delete the loose key files.
