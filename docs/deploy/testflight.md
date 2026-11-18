@@ -132,9 +132,9 @@ Open the **ios-testflight** job:
 3. "Upload to TestFlight" runs altool. If it succeeds, the build has been handed over to Apple. It hasn't been accepted yet:
    App Store Connect then processes it for 5–30 minutes, and emails you if it rejects the build. When it's ready, it
    appears under the app's **TestFlight** tab.
-4. The IPA is attached to the run as `ios-testflight-<run>.<attempt>` for 7 days. If the upload step failed, you can upload
-   this file by hand with Apple's Transporter app. Anyone with read access to the repository can download it. It holds
-   the signed app and the API address, but no secrets.
+4. The signed IPA is not kept: TestFlight is how it is distributed. The repository is public, so its workflow logs and
+   artifacts are public too, and a signed build attached to a run would be downloadable by anyone. If the upload step
+   failed, use **Re-run jobs** (it builds and signs again, with a higher build number).
 
 **Build numbers.** The build number (`CFBundleVersion`) is `<run number>.<attempt>`, for example `57.1`, and a re-run
 becomes `57.2`, so **Re-run jobs** works. The run number starts again at 1 if the workflow file is renamed or recreated. If
@@ -170,8 +170,12 @@ Internal testers are App Store Connect users on your team, up to 100 people. Bui
 | `ASC_ISSUER_ID` | Repository variable | The team's Issuer ID |
 | `API_BASE_URL` | Repository variable | The production API address, with a trailing slash |
 
+**The logs are public**, like the repository. The job never prints a secret, and GitHub masks secret values anyway. It
+does print the signing identity's name (`Apple Distribution: <name> (<team id>)`), the certificate serial and the
+provisioning profile's name and UUID. None of these is secret: they are inside every app signed with them.
+
 Because `APPLE_BUNDLE_ID` is a secret, GitHub shows the bundle id as `***` wherever it appears in the logs. This is
-harmless. If you'd rather read it in the logs, delete the secret.
+harmless (the bundle id is public, in the csproj). If you'd rather read it in the logs, delete the secret.
 
 How it signs:
 - **The API key.** The job writes it to `~/.appstoreconnect/private_keys/AuthKey_<id>.p8` and uses it for two things:

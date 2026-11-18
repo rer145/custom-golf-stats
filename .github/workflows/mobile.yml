@@ -5,6 +5,9 @@ name: Mobile release builds
 # The ios-testflight job signs the iOS app and uploads it to TestFlight, on master pushes and manual runs on master only, and
 # only when the signing secrets and variables exist (forks, pull requests and an unconfigured repo skip it, green).
 # Setup: docs/deploy/testflight.md.
+# The repository is public, and so are this workflow's logs and artifacts: nothing secret may be printed or uploaded.
+# Secrets are masked by GitHub and only ever passed through env; the signed IPA is not kept as an artifact (TestFlight
+# is how it is distributed).
 # The API address comes from the variable API_BASE_URL (Settings > Secrets and variables > Actions > Variables).
 
 on:
@@ -33,6 +36,12 @@ on:
 
 permissions:
   contents: read
+
+# Pull requests: a new push cancels the run in progress. master and manual runs never cancel a running build (a TestFlight
+# upload in flight must finish); a newer run waits, and ios-testflight has its own non-cancelling group on top.
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   API_BASE_URL: ${{ vars.API_BASE_URL || 'https://api.example.invalid/' }}
@@ -79,8 +88,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.1xx  # matches global.json (10.0.1xx feature band)
-      # Restore evaluates every target framework, so both workloads are needed.
-      - run: dotnet workload install ios android
+      # Restore evaluates every target framework, so both workloads are needed. Same workload set as the ios jobs.
+      - run: dotnet workload install ios android --version 10.0.112
       - name: Build Android (Release AAB, debug-signed)
         run: >
           dotnet publish src/CustomGolfStats.App/CustomGolfStats.App.csproj
@@ -230,6 +239,8 @@ jobs:
           pem=$(security find-certificate -c "$identity" -p "$keychain")
           serial=$(printf '%s\n' "$pem" | openssl x509 -noout -serial | sed 's/^serial=//')
           sha1=$(printf '%s\n' "$pem" | openssl x509 -noout -fingerprint -sha1 | sed 's/^.*=//' | tr -d ':')
+          # The log is public. The identity name ("Apple Distribution: <name> (<team id>)"), the team id and the
+          # certificate serial are not secret: they are in every app signed with this certificate.
           echo "Signing with: $identity (serial $serial)"
           {
             # The generic prefix ("Apple Distribution") lets the build pick the identity that matches the profile, and keeps
@@ -280,16 +291,6 @@ jobs:
             exit 1
           fi
           echo "path=$ipa" >> "$GITHUB_OUTPUT"
-
-      # Kept for a week so a failed upload can be retried by hand (Transporter) without rebuilding. Anyone with read access
-      # to this repository can download it; it holds the signed app and the API address, no secrets.
-      - if: steps.gate.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-testflight-${{ github.run_number }}.${{ github.run_attempt }}
-          path: ${{ steps.ipa.outputs.path }}
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload to TestFlight
         if: steps.gate.outputs.enabled == 'true'
