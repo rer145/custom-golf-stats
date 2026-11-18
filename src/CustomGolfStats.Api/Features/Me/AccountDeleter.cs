@@ -40,12 +40,13 @@ public enum AccountDeletionOutcome
 /// null), so the explicit statements here and the cascades agree; the explicit ones keep the rule readable and survive a future
 /// change to a foreign key. Everything runs in one transaction.</para>
 /// <para>Removing the account row ends every session: a refresh token is checked against the account's security stamp, which no
-/// longer exists. An access token already issued is stateless and outlives the account by at most its lifetime (1 hour), but its
-/// account is gone, so reads find nothing and writes are refused by the foreign keys.</para>
+/// longer exists, and an access token already issued fails the active-account check every authorized request passes
+/// (<see cref="ActiveAccountRequirement"/>), so it is answered 401.</para>
 /// <para>An admin may delete their account only while another active (not disabled) admin exists, so the admin tools are never
 /// left without anyone able to use them.</para>
 /// </summary>
-public sealed class AccountDeleter(AppDbContext db, UserManager<Account> users, IExternalTokenValidator externalTokens)
+public sealed class AccountDeleter(
+    AppDbContext db, UserManager<Account> users, IExternalTokenValidator externalTokens, AccountStatusCache status)
 {
     public async Task<AccountDeletionOutcome> DeleteAsync(
         Guid accountId, string? password, string? externalProvider, string? externalIdToken, CancellationToken ct)
@@ -73,8 +74,7 @@ public sealed class AccountDeleter(AppDbContext db, UserManager<Account> users, 
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-        if (account.Role == Role.Admin
-            && !await db.Users.AnyAsync(a => a.Id != account.Id && a.Role == Role.Admin && a.DisabledAt == null, ct))
+        if (account.Role == Role.Admin && !await AnotherActiveAdminAsync(account.Id, ct))
         {
             return AccountDeletionOutcome.LastAdmin;
         }
@@ -104,7 +104,20 @@ public sealed class AccountDeleter(AppDbContext db, UserManager<Account> users, 
         }
 
         await transaction.CommitAsync(ct);
+        status.Evict(account.Id); // access tokens already issued are refused from the next request on
         return AccountDeletionOutcome.Deleted;
+    }
+
+    /// <summary>
+    /// Locks the active admin rows (<c>FOR UPDATE</c>) for the rest of the transaction, so two admins deleting themselves at the
+    /// same moment can't both see the other as the remaining admin: the second waits, then no longer finds the first.
+    /// </summary>
+    private async Task<bool> AnotherActiveAdminAsync(Guid accountId, CancellationToken ct)
+    {
+        var admins = await db.Database
+            .SqlQuery<Guid>($"SELECT id AS \"Value\" FROM accounts WHERE role = {nameof(Role.Admin)} AND disabled_at IS NULL FOR UPDATE")
+            .ToListAsync(ct);
+        return admins.Any(id => id != accountId);
     }
 
     /// <summary>Wrong passwords count towards Identity's lockout, so a stolen access token can't be used to guess the password.</summary>
@@ -122,6 +135,8 @@ public sealed class AccountDeleter(AppDbContext db, UserManager<Account> users, 
 
         if (await users.CheckPasswordAsync(account, password))
         {
+            // Earlier wrong guesses don't linger if the deletion is then refused (only admin) and the golfer stays.
+            await users.ResetAccessFailedCountAsync(account);
             return AccountDeletionOutcome.Deleted;
         }
 

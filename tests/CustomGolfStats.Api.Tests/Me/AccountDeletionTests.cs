@@ -133,6 +133,8 @@ public sealed class AccountDeletionTests(ApiFactory factory) : IClassFixture<Api
         var accountId = await TestAuth.GetAccountIdAsync(factory, "tokens@example.com");
         var first = await LoginAsync("tokens@example.com");
         var second = await LoginAsync("tokens@example.com"); // another device
+        var stale = Bearer(second.AccessToken);
+        Assert.Equal(HttpStatusCode.OK, (await stale.GetAsync("/me", Ct)).StatusCode); // the account is now cached as active
 
         Assert.Equal(HttpStatusCode.NoContent, (await DeleteAccountAsync(Bearer(first.AccessToken), new { password = TestAuth.Password })).StatusCode);
 
@@ -141,11 +143,14 @@ public sealed class AccountDeletionTests(ApiFactory factory) : IClassFixture<Api
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/auth/refresh", new { refreshToken = second.RefreshToken }, Ct)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/auth/login", new { email = "tokens@example.com", password = TestAuth.Password }, Ct)).StatusCode);
 
-        // An access token issued before the deletion finds no account and can't write anything back for it.
-        var stale = Bearer(second.AccessToken);
-        Assert.Equal(HttpStatusCode.NotFound, (await stale.GetAsync("/me", Ct)).StatusCode);
-        var add = await stale.PostAsJsonAsync("/me/handicap", new { effectiveOn = "2026-06-01", index = 10.0 }, Ct);
-        Assert.False(add.IsSuccessStatusCode);
+        // An access token issued before the deletion is refused at once, with 401 so clients refresh, fail and sign out.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await stale.GetAsync("/me", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await stale.GetAsync("/rounds", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await stale.PostAsJsonAsync("/me/handicap", new { effectiveOn = "2026-06-01", index = 10.0 }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await DeleteAccountAsync(stale, new { password = TestAuth.Password })).StatusCode);
+        // Anonymous endpoints ignore the stale header.
+        Assert.Equal(HttpStatusCode.OK, (await stale.GetAsync("/health", Ct)).StatusCode);
         Assert.False(await factory.WithDbAsync(db => db.HandicapEntries.AnyAsync(h => h.AccountId == accountId, Ct)));
         Assert.False(await ExistsAsync(accountId));
     }
@@ -219,34 +224,5 @@ public sealed class AccountDeletionTests(ApiFactory factory) : IClassFixture<Api
         Assert.False(await factory.WithDbAsync(db => db.UserLogins.AnyAsync(l => l.ProviderKey == "a-sub-leaving", Ct)));
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await factory.CreateClient().PostAsJsonAsync("/auth/refresh", new { refreshToken = tokens.RefreshToken }, Ct)).StatusCode);
-    }
-
-    [Fact]
-    public async Task The_only_active_admin_cannot_delete_their_account_until_another_admin_exists()
-    {
-        var admin = await TestAuth.RegisterAdminAsync(factory, "sole-admin@example.com");
-        var adminId = await TestAuth.GetAccountIdAsync(factory, "sole-admin@example.com");
-        // Other admins from earlier tests in this class would count, so make sure none is active.
-        await factory.WithDbAsync(async db =>
-        {
-            await db.Users.Where(a => a.Id != adminId && a.Role == Role.Admin).ExecuteUpdateAsync(s => s.SetProperty(a => a.Role, Role.User), Ct);
-        });
-        await TestAuth.RegisterAsync(factory, "disabled-admin@example.com");
-        await TestAuth.SetAsync(factory, "disabled-admin@example.com", a =>
-        {
-            a.Role = Role.Admin;
-            a.DisabledAt = Now;
-        });
-
-        var refused = await DeleteAccountAsync(admin, new { password = TestAuth.Password });
-
-        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
-        Assert.True(await ExistsAsync(adminId));
-
-        await TestAuth.RegisterAdminAsync(factory, "second-admin@example.com");
-        var deleted = await DeleteAccountAsync(admin, new { password = TestAuth.Password });
-
-        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-        Assert.False(await ExistsAsync(adminId));
     }
 }

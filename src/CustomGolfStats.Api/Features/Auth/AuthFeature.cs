@@ -1,5 +1,7 @@
 using CustomGolfStats.Api.Data.Entities;
+using CustomGolfStats.Api.Infrastructure;
 using Microsoft.AspNetCore.Authentication.BearerToken;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 
@@ -20,6 +22,21 @@ public static class AuthFeature
                 if (env.IsDevelopment() && config.GetValue<TimeSpan?>("Auth:BearerTokenExpiration") is { } expiration)
                     options.BearerTokenExpiration = expiration;
             });
+
+        // Every authenticated request needs a live account (see ActiveAccountRequirement). PostConfigure runs after the composition
+        // root's policies are configured, so the default policy and the Admin policy defined there both gain the requirement.
+        services.AddMemoryCache();
+        services.AddSingleton<AccountStatusCache>();
+        services.AddScoped<IAuthorizationHandler, ActiveAccountHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActiveAccountResultHandler>();
+        services.PostConfigure<AuthorizationOptions>(options =>
+        {
+            options.DefaultPolicy = WithActiveAccount(options.DefaultPolicy);
+            if (options.GetPolicy(Policies.Admin) is { } admin)
+            {
+                options.AddPolicy(Policies.Admin, WithActiveAccount(admin));
+            }
+        });
 
         services.AddSingleton<IExternalTokenValidator>(sp => new ExternalTokenValidator(
             ExternalAuthOptions.From(sp.GetRequiredService<IConfiguration>()),
@@ -130,6 +147,11 @@ public static class AuthFeature
         await signIn.SignInAsync(account, isPersistent: false);
         return TypedResults.Empty;
     }
+
+    private static AuthorizationPolicy WithActiveAccount(AuthorizationPolicy policy) =>
+        policy.Requirements.OfType<ActiveAccountRequirement>().Any()
+            ? policy
+            : new AuthorizationPolicyBuilder().Combine(policy).AddRequirements(new ActiveAccountRequirement()).Build();
 
     private static ProblemHttpResult StoreFailure() =>
         TypedResults.Problem("The account could not be saved.", statusCode: StatusCodes.Status500InternalServerError);
