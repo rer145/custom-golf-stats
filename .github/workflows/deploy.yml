@@ -203,11 +203,13 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         # Only the files committed under deploy/ at this commit (.env is git-ignored, so never among them); the server
-        # side excludes .env as well, so its .env is never overwritten. Nothing is deleted on the server.
+        # side excludes .env as well, so its .env is never overwritten. Nothing else is deleted on the server, except
+        # deploy/postgres, which is replaced whole: deploy/postgres-tag.sh hashes every file in it, so a file removed
+        # from the repo but left on the server would give a content tag that was never published.
         run: |
           git archive --format=tar "$TAG:deploy" \
             | ssh -F "$SSH_CONFIG" deploy-target \
-                "mkdir -p $REMOTE_DIR && tar -x --no-same-owner --exclude=.env --exclude=./.env -C $REMOTE_DIR -f -"
+                "mkdir -p $REMOTE_DIR && rm -rf $REMOTE_DIR/postgres && tar -x --no-same-owner --exclude=.env --exclude=./.env -C $REMOTE_DIR -f -"
 
       - name: Log the server in to GHCR
         id: login
