@@ -63,8 +63,18 @@ export const routes: FakeRoute[] = [
       const user = requireUser(req);
       const b = (req.body ?? {}) as Partial<Schemas['DeleteAccountRequest']>;
       if (!b.password && !b.externalIdToken) return problem(400, 'One or more validation errors occurred.', undefined, { password: ['Enter your password to confirm.'] });
-      if (b.password !== user.password) return problem(400, 'One or more validation errors occurred.', undefined, { password: ['The password is incorrect.'] });
       const { state } = req;
+      // Like Identity's lockout: the 5th wrong password in a row locks the account (429 from then on in the fake).
+      const failures = (state.data.get('deleteFailures') as Map<string, number> | undefined) ?? new Map<string, number>();
+      state.data.set('deleteFailures', failures);
+      const tooMany = () => problem(429, 'Too Many Requests', 'Too many wrong passwords. Try again later.');
+      if ((failures.get(user.email) ?? 0) >= 5) return tooMany();
+      if (b.password !== user.password) {
+        const count = (failures.get(user.email) ?? 0) + 1;
+        failures.set(user.email, count);
+        return count >= 5 ? tooMany() : problem(400, 'One or more validation errors occurred.', undefined, { password: ['The password is incorrect.'] });
+      }
+      failures.delete(user.email);
       if (user.role === 'Admin' && !state.users.some((u) => u !== user && u.role === 'Admin' && !u.disabled)) {
         return problem(409, 'Conflict', 'You are the only admin. Make another account an admin before deleting yours.');
       }
