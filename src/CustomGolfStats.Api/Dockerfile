@@ -11,7 +11,9 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS
 ARG TARGETARCH
 WORKDIR /src
 # Restore first (cached until a project or package version changes).
-COPY global.json Directory.Build.props Directory.Packages.props ./
+# global.json is left out on purpose: it pins local and CI builds to the 10.0.1xx SDK band (for the mobile workloads),
+# while the official SDK images only ship the newest band. The API builds the same on any 10.0 SDK.
+COPY Directory.Build.props Directory.Packages.props ./
 COPY .config/dotnet-tools.json .config/
 COPY src/CustomGolfStats.Domain/CustomGolfStats.Domain.csproj src/CustomGolfStats.Domain/
 COPY src/CustomGolfStats.Api/CustomGolfStats.Api.csproj src/CustomGolfStats.Api/

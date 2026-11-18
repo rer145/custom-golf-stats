@@ -1,6 +1,5 @@
 # Build context is the repository root; only what the API image needs is sent (no .env, no secrets, no other projects).
 *
-!global.json
 !Directory.Build.props
 !Directory.Packages.props
 !.config/dotnet-tools.json
