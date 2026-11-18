@@ -197,6 +197,7 @@ public sealed partial class ProfileViewModel(
 
         IsBusy = true;
         var deleted = false;
+        var sessionEnded = false;
         try
         {
             try
@@ -221,6 +222,13 @@ public sealed partial class ProfileViewModel(
             {
                 DeleteError = UiText.DeleteAccountLastAdmin;
             }
+            catch (ApiException ex) when (ex.StatusCode == 401)
+            {
+                // The session is over (the refresh was refused too, so the tokens are already cleared): sign in again. Nothing
+                // local is removed, since this device can't tell whether the account still exists.
+                sessionEnded = true;
+                DeleteError = UiText.DeleteAccountSessionEnded;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 DeleteError = UiText.DeleteAccountFailed;
@@ -235,7 +243,9 @@ public sealed partial class ProfileViewModel(
             IsBusy = false;
         }
 
-        if (deleted)
+        if (sessionEnded)
+            await TryAsync(tokens.SignOutAsync);
+        if (deleted || sessionEnded)
             await navigator.NavigateAsync(Route.SignIn);
     }
 

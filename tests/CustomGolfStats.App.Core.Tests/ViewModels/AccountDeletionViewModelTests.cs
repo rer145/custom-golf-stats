@@ -51,6 +51,8 @@ public sealed class AccountDeletionViewModelTests
                 return deleteStatus == HttpStatusCode.BadRequest
                     ? StubHandler.Json(HttpStatusCode.BadRequest, new { title = "Bad", status = 400, errors = new { password = new[] { "The password is incorrect." } } })
                     : StubHandler.Status(deleteStatus);
+            if (r.Path == "/auth/refresh")
+                return StubHandler.Status(HttpStatusCode.Unauthorized); // the account is gone: no new tokens
             if (r.Method == HttpMethod.Put && Interlocked.Increment(ref puts) == 1)
             {
                 started.TrySetResult();
@@ -147,6 +149,23 @@ public sealed class AccountDeletionViewModelTests
         Assert.NotEmpty(rig.Store.Values);
         Assert.True(await AccountSwitchService.IsSyncAllowedAsync(rig.Db));
         Assert.Empty(rig.Nav.Visits);
+    }
+
+    [Fact]
+    public async Task An_ended_session_goes_to_sign_in_and_keeps_the_rounds_on_this_device()
+    {
+        await using var rig = await CreateAsync(HttpStatusCode.Unauthorized);
+
+        rig.Vm.DeletePassword = "Fairway-123";
+        await rig.Vm.DeleteAccountCommand.ExecuteAsync(null);
+
+        Assert.Contains(rig.Stub.Requests, r => r.Path == "/auth/refresh");
+        Assert.Equal(UiText.DeleteAccountSessionEnded, rig.Vm.DeleteError);
+        Assert.Empty(rig.Store.Values);
+        Assert.Equal(Route.SignIn, rig.Nav.Last.Route);
+        Assert.Equal(2, await rig.Db.Rounds.CountDirtyAsync());
+        Assert.Null(await rig.Db.SyncState.GetAsync(AccountSwitchService.PendingKey)); // marker lifted
+        Assert.False(rig.Vm.IsBusy);
     }
 
     [Fact]
