@@ -108,6 +108,7 @@ expect_calls "deploy.sh a" "failed rollback"
 t "invalid tags are refused before anything runs"
 run 2 deploy 'x;rm -rf ~'
 run 2 deploy '-x'
+# shellcheck disable=SC2016 # a literal command substitution, which must be refused as a tag
 run 2 rollback '$(id)'
 run 2 deploy
 expect_calls "" "invalid tags"
