@@ -1,0 +1,237 @@
+name: Deploy
+
+# Deploys one image tag (a commit SHA on master published by images.yml) to the production server over SSH.
+#   Manual: Actions > Deploy > Run workflow, with the tag to deploy (empty = the latest successful Images run on master).
+#           Running it with an older SHA is the full rollback: that commit's deploy/ files and images.
+#   On merge: after Images succeeds for a push to master, but only when the repository variable DEPLOY_ON_MERGE is
+#           `true`, so nothing deploys before there is a server.
+# Steps: copy the commit's deploy/ files (never .env) to ~/custom-golf-stats/deploy, log the server in to GHCR with this
+# job's short-lived token, run deploy/remote-deploy.sh (deploy.sh: pull, migrate, up -d --wait; it goes back to the
+# previous tag by itself if that fails), check the public URLs, and roll back to the previous tag if they are unhealthy.
+# Not configured (secrets or variables missing): the job says which and ends green without touching anything.
+# Server setup, secrets and variables: docs/deploy/README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Full commit SHA on master to deploy (its Images run must have succeeded). Empty = the latest one.
+        required: false
+        default: ""
+  workflow_run:
+    workflows: [Images]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+  # gh run list (default tag) and the job token the server pulls the GHCR images with.
+  actions: read
+  packages: read
+
+# One deploy at a time, never cancelled half-way. A newer queued deploy replaces an older queued one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # On the server, relative to the deploy user's home directory (where SSH commands start).
+  REMOTE_DIR: custom-golf-stats/deploy
+
+jobs:
+  deploy:
+    name: deploy
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.DEPLOY_ON_MERGE == 'true' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'master' &&
+       github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check configuration
+        id: config
+        env:
+          HAS_DEPLOY_HOST: ${{ secrets.DEPLOY_HOST != '' }}
+          HAS_DEPLOY_USER: ${{ secrets.DEPLOY_USER != '' }}
+          HAS_DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS != '' }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+        run: |
+          missing=()
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            has="HAS_$name"
+            [ "${!has}" = "true" ] || missing+=("secret $name")
+          done
+          for name in PUBLIC_API_URL PUBLIC_WEB_URL; do
+            [ -n "${!name}" ] || missing+=("variable $name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            list="$(printf '%s, ' "${missing[@]}")"
+            list="${list%, }"
+            echo "::notice title=Deploy skipped::Deployment is not configured. Missing: $list. See docs/deploy/README.md."
+            echo "Deploy skipped: missing $list (see docs/deploy/README.md)." >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for name in PUBLIC_API_URL PUBLIC_WEB_URL; do
+            case "${!name}" in
+              https://*) ;;
+              *) echo "::error::The variable $name must be an https:// URL."; exit 1 ;;
+            esac
+          done
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the tag
+        id: tag
+        if: steps.config.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            tag="$RUN_SHA"
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow images.yml --branch master --status success \
+              --limit 20 --json headSha,event --jq '[.[] | select(.event != "pull_request")][0].headSha // empty')"
+            [ -n "$tag" ] || { echo "::error::No successful Images run on master to deploy."; exit 1; }
+          fi
+          if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The tag must be a full 40-character commit SHA (images are tagged with it); got '$tag'."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Deploying \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a commit on master
+        if: steps.config.outputs.configured == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if ! git merge-base --is-ancestor "$TAG" origin/master; then
+            echo "::error::$TAG is not on master; only master builds are deployed."
+            exit 1
+          fi
+
+      - name: Set up SSH
+        if: steps.config.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          dir="$RUNNER_TEMP/deploy-ssh"
+          install -d -m 700 "$dir"
+          ( umask 077
+            printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$dir/key"
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$dir/known_hosts"
+            # Host key checking stays strict: only the pinned key in DEPLOY_KNOWN_HOSTS is accepted.
+            cat > "$dir/config" <<EOF
+          Host deploy-target
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            Port ${DEPLOY_PORT:-22}
+            IdentityFile $dir/key
+            IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
+            GlobalKnownHostsFile /dev/null
+            StrictHostKeyChecking yes
+            UpdateHostKeys no
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+          )
+          if ! ssh-keygen -y -P '' -f "$dir/key" > /dev/null 2>&1; then
+            echo "::error::DEPLOY_SSH_KEY is not a usable private key (it must be the whole OpenSSH key file, without a passphrase)."
+            exit 1
+          fi
+          echo "SSH_CONFIG=$dir/config" >> "$GITHUB_ENV"
+          ssh -F "$dir/config" deploy-target true
+          echo "Connected to the server."
+
+      - name: Copy the deploy files
+        if: steps.config.outputs.configured == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        # Only the files committed under deploy/ at this commit (.env is git-ignored, so never among them); the server
+        # side excludes .env as well, so its .env is never overwritten. Nothing is deleted on the server.
+        run: |
+          git archive --format=tar "$TAG:deploy" \
+            | ssh -F "$SSH_CONFIG" deploy-target \
+                "mkdir -p $REMOTE_DIR && tar -x --no-same-owner --exclude=.env --exclude=./.env -C $REMOTE_DIR -f -"
+
+      - name: Log the server in to GHCR
+        id: login
+        if: steps.config.outputs.configured == 'true'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        # The job token (packages: read) goes over stdin and expires when this job ends; the last step logs out again.
+        run: |
+          printf '%s\n%s\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" \
+            | ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh login"
+
+      - name: Deploy
+        id: deploy
+        if: steps.config.outputs.configured == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh deploy $TAG"
+
+      - name: Check health through the public URLs
+        id: health
+        if: steps.config.outputs.configured == 'true'
+        env:
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+        run: |
+          check() {
+            local url="$1" code
+            for attempt in $(seq 1 24); do
+              code="$(curl --silent --show-error --location --max-redirs 5 --max-time 10 \
+                --output /dev/null --write-out '%{http_code}' "$url" || true)"
+              if [ "$code" = "200" ]; then echo "$url: 200"; return 0; fi
+              echo "$url: ${code:-no answer} (attempt $attempt)"
+              sleep 5
+            done
+            echo "::error::$url is not healthy"
+            return 1
+          }
+          check "${PUBLIC_API_URL%/}/health"
+          check "${PUBLIC_WEB_URL%/}/sign-in"
+
+      - name: Roll back
+        if: failure() && steps.deploy.outcome == 'success' && steps.health.outcome == 'failure'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          echo "::error::The deploy of $TAG is unhealthy; rolling back to the previous tag."
+          ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh rollback $TAG"
+          echo "Rolled back: $TAG was unhealthy." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Status
+        if: always() && steps.config.outputs.configured == 'true' && env.SSH_CONFIG != ''
+        run: ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh status" || true
+
+      - name: Log the server out of GHCR
+        if: always() && steps.login.outcome != 'skipped' && env.SSH_CONFIG != ''
+        run: ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh logout" || true
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/deploy-ssh"
