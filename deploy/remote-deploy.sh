@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # Server-side wrapper around deploy.sh that remembers which image tag is deployed, so a failed deploy can go back.
 # .github/workflows/deploy.yml runs it over SSH; it works the same by hand on the server:
-#   remote-deploy.sh deploy <tag>       deploy <tag> with deploy.sh. On success <tag> becomes current and the tag it
+#   remote-deploy.sh deploy [--no-pull] <tag>
+#                                       deploy <tag> with deploy.sh. On success <tag> becomes current and the tag it
 #                                       replaced becomes previous. If deploy.sh fails, the tag that was current is
-#                                       deployed again (deploy.sh <current>) and the command exits 1.
-#   remote-deploy.sh rollback [<tag>]   deploy the previous tag again and make it current. With <tag>, refuse unless
-#                                       <tag> is the current one (the workflow passes the tag it just deployed, so it
-#                                       never rolls back someone else's deploy).
+#                                       deployed again from the images on disk and the command exits 1.
+#                                       --no-pull uses the images on disk (SKIP_PULL=1 for deploy.sh): no registry
+#                                       access is needed when they are all there.
+#   remote-deploy.sh rollback [<tag>]   deploy the previous tag again, from the images on disk, and make it current.
+#                                       With <tag>, refuse unless <tag> is the current one (the workflow passes the tag
+#                                       it just deployed, so it never rolls back someone else's deploy).
+#   remote-deploy.sh start <command> [<args>...]
+#                                       run deploy or rollback detached from this SSH session (it survives a dropped
+#                                       connection) and print a run id; its output goes to $CGS_STATE_DIR/runs/<id>.log.
+#   remote-deploy.sh wait <id>          print that run's output as it is written, then exit with its exit code. Safe to
+#                                       repeat after a dropped connection (the output is printed again from the start).
 #   remote-deploy.sh status             print the current and previous tags and the recent history.
+#   remote-deploy.sh current            print the current tag (empty when there is none).
 #   remote-deploy.sh compose <args...>  docker compose for this stack with IMAGE_TAG set to the current tag,
 #                                       e.g. `remote-deploy.sh compose ps` or `remote-deploy.sh compose logs api`.
 #   remote-deploy.sh login              docker login ghcr.io; reads the user name and then the token, one per line,
@@ -32,7 +41,7 @@ project="${COMPOSE_PROJECT_NAME:-custom-golf-stats}"
 registry="ghcr.io"
 
 usage() {
-  sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -72,7 +81,10 @@ lock() {
   fi
 }
 
-run_deploy() { "$deploy_script" "$1"; }
+# run_deploy <tag> [no-pull]
+run_deploy() {
+  if [[ "${2:-}" == "no-pull" ]]; then SKIP_PULL=1 "$deploy_script" "$1"; else SKIP_PULL="" "$deploy_script" "$1"; fi
+}
 
 # Caddy reads its Caddyfile through a bind mount, and the workflow replaces the file, so the running container keeps the
 # old one: recreate Caddy whenever the file differs from the one last deployed.
@@ -89,14 +101,16 @@ refresh_caddy() {
 }
 
 cmd_deploy() {
-  local tag="${1:-}" current
-  [[ -n "$tag" ]] || usage
+  local mode="" tag current
+  if [[ "${1:-}" == "--no-pull" ]]; then mode="no-pull"; shift; fi
+  [[ $# -eq 1 && -n "$1" ]] || usage
+  tag="$1"
   valid_tag "$tag" || { err "not a valid image tag: $tag"; exit 2; }
   lock
   current="$(current_tag)"
 
   log "Deploying $tag (current: ${current:-none})"
-  if run_deploy "$tag" && refresh_caddy "$tag"; then
+  if run_deploy "$tag" "$mode" && refresh_caddy "$tag"; then
     if [[ "$tag" != "$current" ]]; then
       [[ -z "$current" ]] || write_state previous-tag "$current"
       write_state current-tag "$tag"
@@ -117,7 +131,7 @@ cmd_deploy() {
     exit 1
   fi
   log "Going back to $current"
-  if run_deploy "$current"; then
+  if run_deploy "$current" no-pull; then
     write_state current-tag "$current"
     history "restored $current after the failed deploy of $tag"
     log "Restored $current"
@@ -144,7 +158,7 @@ cmd_rollback() {
   fi
 
   log "Rolling back from ${current:-unknown} to $previous"
-  if run_deploy "$previous"; then
+  if run_deploy "$previous" no-pull; then
     write_state current-tag "$previous"
     # The tag rolled away from is not offered as the next rollback target.
     rm -f "$state/previous-tag"
@@ -164,6 +178,58 @@ cmd_status() {
     echo "history (latest last):"
     tail -n 20 "$state/history.log" | sed 's/^/  /'
   fi
+}
+
+runs_dir() { mkdir -p "$state/runs"; chmod 700 "$state" "$state/runs"; echo "$state/runs"; }
+
+# Runs remote-deploy.sh <command> in its own session with no terminal, so a dropped SSH connection neither hangs it up
+# nor breaks its output; `wait` follows it.
+cmd_start() {
+  local runs id
+  case "${1:-}" in deploy | rollback) ;; *) usage ;; esac
+  runs="$(runs_dir)"
+  id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  : >"$runs/$id.log"
+  setsid "${BASH_SOURCE[0]}" _run "$id" "$@" </dev/null >>"$runs/$id.log" 2>&1 &
+  # Keep the last 20 runs.
+  find "$runs" -maxdepth 1 -name '*.log' -printf '%f\n' | sort | head -n -20 | while read -r old; do
+    rm -f "$runs/$old" "$runs/${old%.log}.pid" "$runs/${old%.log}.status"
+  done
+  echo "$id"
+}
+
+cmd_run() {
+  local id="$1" runs status=0
+  shift
+  runs="$(runs_dir)"
+  echo "$$" >"$runs/$id.pid"
+  "${BASH_SOURCE[0]}" "$@" || status=$?
+  echo "$status" >"$runs/$id.status.tmp"
+  mv -f "$runs/$id.status.tmp" "$runs/$id.status"
+}
+
+cmd_wait() {
+  local id="${1:-}" runs pid status
+  [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || usage
+  runs="$(runs_dir)"
+  [[ -e "$runs/$id.log" ]] || { err "no run $id"; exit 2; }
+  for _ in $(seq 1 60); do
+    [[ -s "$runs/$id.pid" || -e "$runs/$id.status" ]] && break
+    sleep 0.5
+  done
+  pid="$(cat "$runs/$id.pid" 2>/dev/null || true)"
+  if [[ -n "$pid" && ! -e "$runs/$id.status" ]]; then
+    tail -n +1 --pid="$pid" -f "$runs/$id.log"
+  else
+    cat "$runs/$id.log"
+  fi
+  for _ in $(seq 1 20); do
+    [[ -e "$runs/$id.status" ]] && break
+    sleep 0.5
+  done
+  status="$(cat "$runs/$id.status" 2>/dev/null || true)"
+  [[ "$status" =~ ^[0-9]+$ ]] || { err "run $id ended without an exit status"; exit 3; }
+  exit "$status"
 }
 
 cmd_compose() {
@@ -188,9 +254,13 @@ cmd_logout() { docker logout "$registry" >/dev/null 2>&1 || true; log "Logged ou
 command="${1:-}"
 [[ $# -gt 0 ]] && shift
 case "$command" in
-  deploy) [[ $# -eq 1 ]] || usage; cmd_deploy "$1" ;;
+  deploy) cmd_deploy "$@" ;;
   rollback) [[ $# -le 1 ]] || usage; cmd_rollback "${1:-}" ;;
+  start) cmd_start "$@" ;;
+  _run) [[ $# -ge 2 ]] || usage; cmd_run "$@" ;;
+  wait) [[ $# -eq 1 ]] || usage; cmd_wait "$1" ;;
   status) cmd_status ;;
+  current) current_tag || true ;;
   compose) cmd_compose "$@" ;;
   login) cmd_login ;;
   logout) cmd_logout ;;

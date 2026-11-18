@@ -7,7 +7,9 @@ name: Deploy
 #           `true`, so nothing deploys before there is a server.
 # Steps: copy the commit's deploy/ files (never .env) to ~/custom-golf-stats/deploy, log the server in to GHCR with this
 # job's short-lived token, run deploy/remote-deploy.sh (deploy.sh: pull, migrate, up -d --wait; it goes back to the
-# previous tag by itself if that fails), check the public URLs, and roll back to the previous tag if they are unhealthy.
+# previous tag by itself if that fails), check the public URLs, and roll back to the previous tag if they are unhealthy
+# (unless the tag was already running before this deploy). Deploys and rollbacks run detached on the server
+# (remote-deploy.sh start/wait), so a dropped SSH connection doesn't interrupt them; the job reconnects and waits.
 # Not configured (secrets or variables missing): the job says which and ends green without touching anything.
 # Server setup, secrets and variables: docs/deploy/README.md.
 
@@ -41,12 +43,16 @@ env:
 jobs:
   deploy:
     name: deploy
+    # Manual runs only from master (the workflow file that runs is the dispatched ref's). Automatic runs only for this
+    # repository's own master builds, never a fork's.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (vars.DEPLOY_ON_MERGE == 'true' &&
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_run' &&
+       vars.DEPLOY_ON_MERGE == 'true' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'master' &&
-       github.event.workflow_run.event != 'pull_request')
+       github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -102,7 +108,8 @@ jobs:
             [ -n "$tag" ] || { echo "::error::No successful Images run on master to deploy."; exit 1; }
           fi
           if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::The tag must be a full 40-character commit SHA (images are tagged with it); got '$tag'."
+            shown="${tag//[$'\r\n']/}"
+            echo "::error::The tag must be a full 40-character commit SHA (images are tagged with it); got '${shown:0:100}'."
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -161,7 +168,33 @@ jobs:
             echo "::error::DEPLOY_SSH_KEY is not a usable private key (it must be the whole OpenSSH key file, without a passphrase)."
             exit 1
           fi
+          # remote-run <command> <tag>: runs remote-deploy.sh <command> <tag> detached on the server (start), then follows
+          # it (wait). If the connection drops, the run carries on there; this reconnects and waits again (printing the
+          # output again from the start). Exits with the remote command's exit code.
+          cat > "$dir/remote-run" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          remote() { ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh $*"; }
+          for arg in "$@"; do
+            [[ "$arg" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || { echo "::error::unexpected argument"; exit 2; }
+          done
+          id="$(remote start "$@")"
+          [[ "$id" =~ ^[0-9A-Za-z-]+$ ]] || { echo "::error::remote-deploy.sh start returned no run id"; exit 1; }
+          echo "Remote run $id"
+          for attempt in 1 2 3 4 5 6; do
+            status=0
+            remote wait "$id" || status=$?
+            # 255 is ssh's own failure (the connection), not the remote command's exit code.
+            [[ "$status" -ne 255 ]] && exit "$status"
+            echo "::warning::Lost the SSH connection (attempt $attempt); the run continues on the server. Reconnecting."
+            sleep 10
+          done
+          echo "::error::Could not reconnect to follow run $id; check the server (remote-deploy.sh status)."
+          exit 1
+          EOF
+          chmod 700 "$dir/remote-run"
           echo "SSH_CONFIG=$dir/config" >> "$GITHUB_ENV"
+          echo "REMOTE_RUN=$dir/remote-run" >> "$GITHUB_ENV"
           ssh -F "$dir/config" deploy-target true
           echo "Connected to the server."
 
@@ -191,7 +224,11 @@ jobs:
         if: steps.config.outputs.configured == 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-        run: ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh deploy $TAG"
+        # changed=false when the tag was already running: a failed health check then has nothing to roll back to.
+        run: |
+          before="$(ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh current")"
+          if [ "$before" = "$TAG" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          "$REMOTE_RUN" deploy "$TAG"
 
       - name: Check health through the public URLs
         id: health
@@ -216,12 +253,14 @@ jobs:
           check "${PUBLIC_WEB_URL%/}/sign-in"
 
       - name: Roll back
-        if: failure() && steps.deploy.outcome == 'success' && steps.health.outcome == 'failure'
+        if: >-
+          failure() && steps.deploy.outcome == 'success' && steps.health.outcome == 'failure' &&
+          steps.deploy.outputs.changed == 'true'
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           echo "::error::The deploy of $TAG is unhealthy; rolling back to the previous tag."
-          ssh -F "$SSH_CONFIG" deploy-target "$REMOTE_DIR/remote-deploy.sh rollback $TAG"
+          "$REMOTE_RUN" rollback "$TAG"
           echo "Rolled back: $TAG was unhealthy." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Status
