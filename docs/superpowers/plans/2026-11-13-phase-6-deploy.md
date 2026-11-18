@@ -61,7 +61,7 @@ Images are built by GitHub Actions and pushed to GitHub Container Registry (GHCR
 
   Shared courses stay, with `CreatedByAccountId` cleared. It requires the current password, or a fresh external sign-in token, as confirmation. The app and the web site each get a clearly warned delete flow, and the app clears its local data afterwards.
 - **iOS.**
-  - Bundle id `com.customgolfstats.app`.
+  - Bundle id `xyz.rsquaredsolutions.customgolfstats`.
   - The build number is the GitHub run number, so every upload is unique.
   - Signing is automatic via the App Store Connect API key.
   - The TestFlight upload job runs only when the secrets exist, so forks and PRs skip it.
