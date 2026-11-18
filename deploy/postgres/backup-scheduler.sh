@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Entry point of the pg-backup sidecar (deploy/compose.yaml): runs backup-now once a day at BACKUP_TIME (HH:MM, UTC,
-# default 03:00). When the storage holds no base backup yet (a new deployment, or a new WALG_S3_PREFIX) the first
-# backup runs right away, so archived WAL is restorable from the start. A failed run is logged and retried after
+# default 03:00). On start it looks at the newest base backup in storage: with none yet (a new deployment, or a new
+# WALG_S3_PREFIX) the first backup runs right away, so archived WAL is restorable from the start; otherwise the next one
+# runs at BACKUP_TIME or 24 hours after the newest, whichever comes first (at once when that is already past). So a
+# restart or a deploy-time recreate of this container never skips a night. A failed run is logged and retried after
 # BACKUP_RETRY_SECONDS (default 3600); the scheduler itself never exits on a failure, so a storage outage cannot fail a
 # deploy that waits for the stack to be up. Every ARCHIVE_CHECK_SECONDS (default 900) it also checks the server's WAL
 # archiver and logs a WARNING while its last failure is newer than its last success (segments then pile up in pg_wal on
@@ -61,6 +63,19 @@ next_daily() {
   if (( today > now )); then echo "$today"; else date -u -d "tomorrow $backup_time" +%s; fi
 }
 
+# Prints the epoch time of the newest base backup in storage; prints nothing when there is none or the listing fails.
+# `backup-list --json` prints a JSON array of backups, each with "time": when the backup finished (its sentinel's
+# upload time), e.g. "2026-11-18T03:00:41.123Z".
+newest_backup() {
+  local list t e newest=0
+  list="$(wal-g backup-list --json 2>/dev/null)" || return 0
+  while IFS= read -r t; do
+    e="$(date -u -d "$t" +%s 2>/dev/null)" || continue
+    if (( e > newest )); then newest=$e; fi
+  done < <(printf '%s\n' "$list" | grep -oE '"time" *: *"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/')
+  if (( newest > 0 )); then echo "$newest"; fi
+}
+
 if [[ "${WALG_S3_PREFIX:-}" == none ]]; then
   log "backups are turned off (WALG_S3_PREFIX=none): idle"
   while true; do pause 86400; done
@@ -69,12 +84,21 @@ fi
 log "waiting for Postgres at ${PGHOST:-localhost}"
 until pg_isready --quiet; do pause 5; done
 
-# `backup-list --json` prints a JSON array of backups; no "backup_name" means none (or the listing failed: try anyway).
-if wal-g backup-list --json 2>/dev/null | grep -q '"backup_name"'; then
-  next="$(next_daily)"
-else
-  log "no base backup in storage yet: taking the first one now"
+# No backup found (or the listing failed): try one now. Otherwise the earlier of BACKUP_TIME and 24 hours after the
+# newest backup, so the gap between two backups never exceeds a day however the container was restarted.
+newest="$(newest_backup)"
+if [[ -z "$newest" ]]; then
+  log "no base backup in storage yet (or the listing failed): taking one now"
   next="$(date -u +%s)"
+else
+  next="$(next_daily)"
+  due=$(( newest + 86400 ))
+  if (( due < next )); then
+    next=$due
+    if (( due <= $(date -u +%s) )); then
+      log "newest base backup ($(date -u -d "@$newest" +%Y-%m-%dT%H:%M:%SZ)) is over 24 hours old: taking one now"
+    fi
+  fi
 fi
 
 while true; do

@@ -39,8 +39,9 @@ services:
       retries: 20
 
   # Nightly full base backup at BACKUP_TIME (UTC), then retention: the newest WALG_RETAIN_FULL full backups and the WAL
-  # after the oldest of them are kept. Takes the first backup at once when the storage has none. Same image as postgres;
-  # reads the data directory read-only. Back up now: `docker compose exec pg-backup backup-now`.
+  # after the oldest of them are kept. On start, backs up at once when the storage has none or the newest is over 24 hours
+  # old, so a deploy that recreates it never skips a night. Same image as postgres; reads the data directory read-only.
+  # Back up now: `docker compose exec pg-backup backup-now`.
   pg-backup:
     image: ${POSTGRES_IMAGE:-ghcr.io/rer145/custom-golf-stats-postgres}:${IMAGE_TAG:?set IMAGE_TAG (deploy.sh does)}
     restart: unless-stopped

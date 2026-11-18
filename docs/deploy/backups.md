@@ -123,7 +123,8 @@ below do that. A stolen key, or a bug, can then only hide backups, and you have 
 ## 2. First start and checks
 
 The deploy starts `postgres` and `pg-backup` with the rest of the stack. If the storage has no base backup yet,
-`pg-backup` takes one right away. After that it backs up nightly.
+`pg-backup` takes one right away. After that it backs up nightly. Whenever it starts again (a deploy recreates it, or
+the server reboots), it backs up at once if the newest backup is over 24 hours old, so a restart never skips a night.
 
 **The first backup:**
 
@@ -263,8 +264,16 @@ history file.
 docker volume rm custom-golf-stats_pgdata_restored custom-golf-stats_pgdata_before_restore
 ```
 
-**Undoing a bad release.** Restore to a point in time before the release was deployed. Then deploy the last good tag,
-as in "Rollback" in [README.md](README.md).
+**Undoing a bad release.** Restore to a point in time before the release was deployed (step 1 with `--target-time`),
+and do steps 2 and 3. **Skip step 4**: it would start the bad release's api and web on the restored database. Instead
+deploy the last good tag, which starts the whole stack on it (its migrations are already in the restored data, so
+there is nothing to apply):
+
+```sh
+./remote-deploy.sh deploy --no-pull <good tag>    # images still on disk; or Actions > Deploy with tag=<good tag>
+```
+
+Then carry on with steps 5 and 6. See also "Rollback" in [README.md](README.md).
 
 **On a new server.** The first deploy creates an empty database. It must not archive into the old server's prefix,
 so turn backups off for that one deploy:
